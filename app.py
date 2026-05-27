@@ -30,12 +30,12 @@ except ImportError:
 st.set_page_config(layout="wide")
 
 # ── KEEPALIVE ────────────────────────────────────────────────
-def _keepalive_thread(intervalo_seg: int = 120):
+def _keepalive_thread(intervalo_seg: int = 90):
     while True:
         _time.sleep(intervalo_seg)
         _ = _time.time()
 
-def iniciar_keepalive(intervalo_seg: int = 120):
+def iniciar_keepalive(intervalo_seg: int = 90):
     if not st.session_state.get("_keepalive_iniciado", False):
         hilo = threading.Thread(
             target=_keepalive_thread,
@@ -46,7 +46,7 @@ def iniciar_keepalive(intervalo_seg: int = 120):
         hilo.start()
         st.session_state["_keepalive_iniciado"] = True
 
-iniciar_keepalive(intervalo_seg=120)
+iniciar_keepalive(intervalo_seg=90)
 
 # ============================================================
 # CONSTANTES
@@ -275,7 +275,6 @@ def conectar_google_sheets():
         return None
 
 sh = conectar_google_sheets()
-
 # ============================================================
 # MIGRACIÓN DE ESQUEMA
 # ============================================================
@@ -324,7 +323,6 @@ def _migrar_encabezados():
                 if "Pagina" not in ws_av.row_values(1):
                     idx = len(COLS_AVISOS) - 1
                     ws_av.update(range_name=f"{chr(ord('A')+idx)}1", values=[["Pagina"]])
-                    # actualizar existentes a "Todas"
                     todos = ws_av.get_all_values()
                     for i in range(2, len(todos)+1):
                         ws_av.update(range_name=f"{chr(ord('A')+idx)}{i}", values=[["Todas"]])
@@ -958,7 +956,6 @@ def _proyectar_tendencia(df_ventas: pd.DataFrame, meses_futuros: int = 6) -> pd.
             "tipo": "proyección"
         })
     return pd.concat([df_mensual, pd.DataFrame(proyecciones)], ignore_index=True)
-
 # ============================================================
 # ESTADO DE SESIÓN
 # ============================================================
@@ -973,7 +970,9 @@ _defaults = {
     "receta_factor": 2.5,
     "receta_modo": "Nueva receta",
     "receta_original": "",
-    "inventario_guardado": False,   # nueva bandera
+    "inventario_guardado": False,
+    # Claves persistentes para el editor bulk de inventario
+    "inv_bulk_data": None,
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -1443,8 +1442,7 @@ if pagina == "Dashboard":
         )
     else:
         st.info("Sin datos históricos. Ejecuta el primer conteo de inventario.")
-
-# ── INVENTARIO (con protección contra guardados repetidos) ──
+# ── INVENTARIO (con protección contra pérdida de datos y guardados repetidos) ──
 elif pagina == "Inventario":
     if not tiene_permiso("Inventario"):
         st.error("No tienes permiso para esta página.")
@@ -1456,17 +1454,17 @@ elif pagina == "Inventario":
         st.error("🔒 Autenticación requerida.")
         st.stop()
 
-    # Si ya se guardó un inventario en esta sesión, mostrar confirmación
+    # Si ya se guardó un inventario en esta sesión, mostrar confirmación y bloquear reenvío
     if st.session_state.get("inventario_guardado", False):
         st.success("✅ Inventario registrado correctamente.")
         if st.button("➕ Nueva captura", use_container_width=True):
             # Limpiar todas las claves de los inputs anteriores
             for key in list(st.session_state.keys()):
-                if key.startswith("a_") or key.startswith("b_") or key.startswith("u_") or key.startswith("tara_") or key.startswith("p_") or key.startswith("c_"):
+                if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_", "inv_bulk_data")):
                     del st.session_state[key]
             st.session_state.inventario_guardado = False
             st.rerun()
-        st.stop()  # detener para no mostrar el formulario
+        st.stop()
 
     col_u, col_r, col_g = st.columns([1,1,2])
     with col_u:
@@ -1492,33 +1490,44 @@ elif pagina == "Inventario":
         st.info("Selecciona al menos un grupo para mostrar insumos.")
     else:
         modo_bulk_inv = st.toggle("🚀 Activar Captura Masiva (Bulk)")
+
+        # ── MODO BULK ────────────────────────────────────────────
         if modo_bulk_inv:
             st.subheader("Captura Masiva de Inventario")
-            bulk_data = []
-            for idx_row, row in df_f.iterrows():
-                nom = str(row.get("Nombre del Insumo",""))
-                prev = buscar_insumo_en_actual(df_actual, nom)
-                v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
-                v_bar_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
-                v_min = limpiar_valor(row.get("Stock Mínimo",0))
-                v_tara_hist = limpiar_valor(prev.get("Tara",0)) if prev is not None else 0.0
-                v_tara_cat = limpiar_valor(row.get("Tara",0))
-                v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
-                v_ud_med = str(row.get("Unidad de Medida","pz")).lower()
-                v_comp_prev = bool(prev.get("Necesita Compra",False)) if prev is not None else False
-                bulk_data.append({
-                    "Insumo": nom,
-                    "Almacén": v_alm_prev,
-                    "Barra": v_bar_prev,
-                    "Tara": v_tara_init,
-                    "Unidad Medida": v_ud_med,
-                    "Neto": v_alm_prev + max(0.0, v_bar_prev - v_tara_init),
-                    "¿Pedir?": v_comp_prev,
-                    "Observaciones": "",
-                    "row": row,
-                    "prev": prev,
-                    "stock_min": v_min,
-                })
+            st.caption("Los datos que escribas aquí se conservarán incluso si la página se recarga accidentalmente. No se perderá tu progreso.")
+
+            # Recuperar datos previos del session_state o construir desde cero
+            if "inv_bulk_data" not in st.session_state or st.session_state.inv_bulk_data is None:
+                bulk_data = []
+                for idx_row, row in df_f.iterrows():
+                    nom = str(row.get("Nombre del Insumo",""))
+                    prev = buscar_insumo_en_actual(df_actual, nom)
+                    v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
+                    v_bar_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
+                    v_min = limpiar_valor(row.get("Stock Mínimo",0))
+                    v_tara_hist = limpiar_valor(prev.get("Tara",0)) if prev is not None else 0.0
+                    v_tara_cat = limpiar_valor(row.get("Tara",0))
+                    v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
+                    v_ud_med = str(row.get("Unidad de Medida","pz")).lower()
+                    v_comp_prev = bool(prev.get("Necesita Compra",False)) if prev is not None else False
+                    bulk_data.append({
+                        "Insumo": nom,
+                        "Almacén": v_alm_prev,
+                        "Barra": v_bar_prev,
+                        "Tara": v_tara_init,
+                        "Unidad Medida": v_ud_med,
+                        "Neto": v_alm_prev + max(0.0, v_bar_prev - v_tara_init),
+                        "¿Pedir?": v_comp_prev,
+                        "Observaciones": "",
+                        "row": row,
+                        "prev": prev,
+                        "stock_min": v_min,
+                    })
+                st.session_state.inv_bulk_data = bulk_data
+            else:
+                bulk_data = st.session_state.inv_bulk_data
+
+            # Construir dataframe editable
             df_bulk = pd.DataFrame(bulk_data)
             edited_df = st.data_editor(
                 df_bulk[["Insumo","Almacén","Barra","Tara","Unidad Medida","Neto","¿Pedir?","Observaciones"]],
@@ -1534,9 +1543,13 @@ elif pagina == "Inventario":
                 },
                 hide_index=True,
                 use_container_width=True,
-                disabled=["Insumo"]
+                disabled=["Insumo"],
+                key="inv_bulk_editor"
             )
-            st.caption("Edita los valores directamente. El Neto es calculado como Alm + (Barra - Tara) por defecto, pero puedes sobrescribirlo.")
+
+            # Actualizar session_state con los datos editados
+            st.session_state.inv_bulk_data = edited_df.to_dict(orient="records")
+
             if st.button("📥 PROCESAR INVENTARIO BULK", type="primary", use_container_width=True):
                 ws_his, err = safe_worksheet(sh, "Historial")
                 if err:
@@ -1572,10 +1585,18 @@ elif pagina == "Inventario":
                     if ok:
                         cargar_datos_integrales.clear()
                         st.session_state.inventario_guardado = True
+                        # Limpiar datos del bulk para la siguiente captura
+                        st.session_state.inv_bulk_data = None
                         st.rerun()
                     else:
                         st.error(msg)
+
+        # ── MODO REGULAR ────────────────────────────────────────
         else:
+            # Limpiar datos del bulk si se cambió de modo
+            if "inv_bulk_data" in st.session_state:
+                st.session_state.inv_bulk_data = None
+
             with st.form("form_inventario", clear_on_submit=False):
                 h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
                 for col, label in zip([h1,h2,h3,h4,h5,h6,h7,h8],
@@ -1663,7 +1684,6 @@ elif pagina == "Inventario":
                         st.rerun()
                     else:
                         st.error(msg)
-
 # ── INGRESOS ─────────────────────────────────────────────────
 elif pagina == "Ingresos":
     if not tiene_permiso("Ingresos"):
@@ -2189,7 +2209,6 @@ elif pagina == "ImportarVentas":
         except Exception as e:
             st.error(f"Error al procesar el archivo: {e}")
             st.exception(e)
-
 # ── IMPRESIÓN ─────────────────────────────────────────────────
 elif pagina == "Impresion":
     if not tiene_permiso("Impresion"):
@@ -2714,7 +2733,183 @@ elif pagina == "BaseCostos":
         # ── EDITOR MANUAL ──
         st.divider()
         st.subheader("✏️ Editor manual de receta")
-        # ... (el editor manual se mantiene idéntico a la versión anterior) ...
+        recetas_existentes = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
+        col1, col2 = st.columns(2)
+        with col1:
+            modo_receta = st.radio("Modo:", ["Nueva receta", "Editar receta existente"])
+        with col2:
+            if modo_receta == "Editar receta existente" and recetas_existentes:
+                receta_edit_sel = st.selectbox("Receta a editar:", recetas_existentes)
+                if st.button("📂 Cargar receta"):
+                    df_edit = df_rec[df_rec["Receta"] == receta_edit_sel]
+                    if not df_edit.empty:
+                        nuevos_ingredientes = []
+                        for _, row in df_edit.iterrows():
+                            costo_unit = 0.0
+                            if not df_ci2.empty:
+                                mask = df_ci2["Nombre_Insumo"] == row["Ingrediente"]
+                                if mask.any():
+                                    costo_unit = limpiar_valor(df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]["Costo_Unitario"])
+                            nuevos_ingredientes.append({
+                                "insumo": row["Ingrediente"],
+                                "cantidad": limpiar_valor(row["Cantidad"]),
+                                "unidad": row["Unidad_Medida"],
+                                "costo_unit": costo_unit,
+                                "total": round(limpiar_valor(row["Cantidad"]) * costo_unit, 4)
+                            })
+                        st.session_state.ingredientes_receta = nuevos_ingredientes
+                        st.session_state.receta_nombre = receta_edit_sel
+                        st.session_state.receta_precio = limpiar_valor(df_edit.iloc[0].get("Precio_Venta", 0))
+                        st.session_state.receta_modo = "Editar receta existente"
+                        st.session_state.receta_original = receta_edit_sel
+                        st.rerun()
+            else:
+                if st.button("🧹 Nueva receta (limpiar)"):
+                    st.session_state.ingredientes_receta = []
+                    st.session_state.receta_nombre = ""
+                    st.session_state.receta_precio = 0.0
+                    st.session_state.receta_modo = "Nueva receta"
+                    st.session_state.receta_original = ""
+                    st.rerun()
+
+        col_r1, col_r2, col_r3 = st.columns(3)
+        with col_r1:
+            nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
+        with col_r2:
+            precio_venta = st.number_input("Precio de Venta ($):", min_value=0.0, step=1.0, value=st.session_state.receta_precio, key="receta_precio_input")
+        with col_r3:
+            factor = st.number_input("Factor de precio sugerido:", min_value=0.1, step=0.1, value=st.session_state.receta_factor, key="receta_factor_input")
+        st.session_state.receta_nombre = nombre_receta
+        st.session_state.receta_precio = precio_venta
+        st.session_state.receta_factor = factor
+
+        with st.expander("➕ Agregar ingrediente a la receta", expanded=(len(st.session_state.ingredientes_receta) == 0)):
+            insumo_opt = insumos_con_costo
+            if insumo_opt:
+                col_i1, col_i2, col_i3 = st.columns(3)
+                with col_i1:
+                    insumo_add = st.selectbox("Ingrediente:", insumo_opt, key="add_ing")
+                with col_i2:
+                    cantidad_add = st.number_input("Cantidad:", min_value=0.0, step=0.1, key="add_cant")
+                costo_uni_add = 0.0
+                unidad_add = "pz"
+                if not df_ci2.empty:
+                    mask = df_ci2["Nombre_Insumo"] == insumo_add
+                    if mask.any():
+                        ultimo = df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]
+                        costo_uni_add = limpiar_valor(ultimo["Costo_Unitario"])
+                        unidad_add = str(ultimo.get("Unidad_Medida", "pz"))
+                else:
+                    unidad_add = str(df_cat2[df_cat2["Nombre del Insumo"]==insumo_add].iloc[0].get("Unidad de Medida","pz")) if not df_cat2.empty else "pz"
+                with col_i3:
+                    st.write(f"Costo unitario: **${costo_uni_add:.4f}**")
+                    st.write(f"Unidad: {unidad_add}")
+                if st.button("Agregar a la receta"):
+                    nuevo_ing = {
+                        "insumo": insumo_add,
+                        "cantidad": cantidad_add,
+                        "unidad": unidad_add,
+                        "costo_unit": costo_uni_add,
+                        "total": round(cantidad_add * costo_uni_add, 4)
+                    }
+                    st.session_state.ingredientes_receta.append(nuevo_ing)
+                    st.rerun()
+            else:
+                st.warning("No hay insumos con costo registrado. Ve a 'Costos de Insumos' primero.")
+
+        st.subheader("📋 Ingredientes de la receta (edita directamente)")
+        if st.session_state.ingredientes_receta:
+            df_ingredientes = pd.DataFrame(st.session_state.ingredientes_receta)
+            for col in ["insumo","cantidad","unidad","costo_unit","total"]:
+                if col not in df_ingredientes.columns:
+                    df_ingredientes[col] = 0.0 if col in ("cantidad","costo_unit","total") else ""
+            df_ingredientes = df_ingredientes[["insumo","cantidad","unidad","costo_unit","total"]]
+            edited_df = st.data_editor(
+                df_ingredientes,
+                column_config={
+                    "insumo": st.column_config.SelectboxColumn(
+                        "Ingrediente",
+                        options=insumos_con_costo,
+                        required=True
+                    ),
+                    "cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, step=0.1),
+                    "unidad": st.column_config.SelectboxColumn("Unidad", options=UNIDADES_MED),
+                    "costo_unit": st.column_config.NumberColumn("Costo Unitario", min_value=0.0, step=0.001),
+                    "total": st.column_config.NumberColumn("Total", min_value=0.0, disabled=True)
+                },
+                hide_index=True,
+                use_container_width=True,
+                num_rows="dynamic"
+            )
+            for idx, row in edited_df.iterrows():
+                edited_df.loc[idx, "total"] = round(row["cantidad"] * row["costo_unit"], 4)
+            st.session_state.ingredientes_receta = edited_df.to_dict(orient="records")
+            costo_total = sum(ing["total"] for ing in st.session_state.ingredientes_receta)
+            precio_sug = costo_total * st.session_state.receta_factor
+            fc_pct = (costo_total / st.session_state.receta_precio * 100) if st.session_state.receta_precio > 0 else 0.0
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Costo Total Receta", f"${costo_total:,.2f}")
+            c2.metric("Precio Sugerido", f"${precio_sug:,.2f}")
+            c3.metric("Food Cost %", f"{fc_pct:.1f}%")
+            c4.metric("Margen Bruto", f"${st.session_state.receta_precio - costo_total:,.2f}" if st.session_state.receta_precio > 0 else "—")
+
+            if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", use_container_width=True):
+                nombre_final = st.session_state.receta_nombre.strip()
+                if not nombre_final:
+                    st.error("Escribe el nombre de la receta en el formulario superior.")
+                elif len(st.session_state.ingredientes_receta) == 0:
+                    st.error("La receta debe tener al menos un ingrediente.")
+                else:
+                    ws_rec, err = _asegurar_hoja_recetas()
+                    if err:
+                        st.error(err)
+                    else:
+                        try:
+                            if st.session_state.receta_modo == "Editar receta existente" and st.session_state.receta_original:
+                                all_data = ws_rec.get_all_values()
+                                if len(all_data) > 1:
+                                    df_all = pd.DataFrame(all_data[1:], columns=all_data[0])
+                                    df_all = df_all[df_all["Receta"] != st.session_state.receta_original]
+                                    ws_rec.clear()
+                                    ws_rec.append_row(COLS_RECETAS)
+                                    if not df_all.empty:
+                                        ws_rec.append_rows(df_all.values.tolist())
+                            filas_guardar = []
+                            for ing in st.session_state.ingredientes_receta:
+                                costo_ing = round(ing["cantidad"] * ing["costo_unit"], 4)
+                                filas_guardar.append([
+                                    nombre_final,
+                                    ing["insumo"],
+                                    ing["cantidad"],
+                                    ing["unidad"],
+                                    costo_ing,
+                                    st.session_state.receta_precio,
+                                    round((costo_ing / st.session_state.receta_precio * 100) if st.session_state.receta_precio > 0 else 0.0, 2),
+                                    ts_hermosillo(),
+                                    st.session_state.current_user
+                                ])
+                            ok, msg = append_rows_con_retry(ws_rec, filas_guardar)
+                            if ok:
+                                cargar_recetas.clear()
+                                cargar_costos_insumos.clear()
+                                st.success(f"Receta '{nombre_final}' guardada ({len(filas_guardar)} ingredientes).")
+                                st.session_state.ingredientes_receta = []
+                                st.session_state.receta_nombre = ""
+                                st.session_state.receta_precio = 0.0
+                                st.session_state.receta_modo = "Nueva receta"
+                                st.session_state.receta_original = ""
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                        except Exception as e:
+                            st.error(f"Error al guardar: {e}")
+        else:
+            st.info("No hay ingredientes. Usa el botón 'Agregar a la receta' para comenzar.")
+        if not df_rec.empty:
+            st.subheader("📋 Recetas registradas")
+            st.dataframe(df_rec, hide_index=True, use_container_width=True)
 
 # ── REGISTRAR MERMA ───────────────────────────────────────────
 elif pagina == "RegistrarMerma":
