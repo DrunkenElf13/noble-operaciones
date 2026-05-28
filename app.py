@@ -19,23 +19,23 @@ iniciar_keepalive(intervalo_seg=90)
 
 from auth import USUARIOS_PIN, LISTA_RESPONSABLES, DF_USUARIOS, tiene_permiso, PERMISOS
 from components.sidebar import render_sidebar
-from pages.dashboard import show_dashboard
-from pages.inventario_captura import show_inventario
-from pages.ingresos import show_ingresos
-from pages.consulta import show_consulta
-from pages.ventas_registro import show_ventas
-from pages.ventas_dashboard import show_dashboard_ventas
-from pages.importar_ventas import show_importar_ventas
-from pages.impresion import show_impresion
-from pages.lista_compra import show_lista_compra
-from pages.reporte_stock import show_reporte_stock
-from pages.corte_mes import show_corte_mes
-from pages.gastos import show_gastos
-from pages.presupuesto import show_presupuesto
-from pages.base_costos import show_base_costos
-from pages.merma import show_merma
-from pages.canales import show_canales
-from pages.dashboard_financiero import show_dashboard_financiero
+from paginas.dashboard import show_dashboard
+from paginas.inventario_captura import show_inventario
+from paginas.ingresos import show_ingresos
+from paginas.consulta import show_consulta
+from paginas.ventas_registro import show_ventas
+from paginas.ventas_dashboard import show_dashboard_ventas
+from paginas.importar_ventas import show_importar_ventas
+from paginas.impresion import show_impresion
+from paginas.lista_compra import show_lista_compra
+from paginas.reporte_stock import show_reporte_stock
+from paginas.corte_mes import show_corte_mes
+from paginas.gastos import show_gastos
+from paginas.presupuesto import show_presupuesto
+from paginas.base_costos import show_base_costos
+from paginas.merma import show_merma
+from paginas.canales import show_canales
+from paginas.dashboard_financiero import show_dashboard_financiero
 
 _defaults = {
     "auth_status": False,
