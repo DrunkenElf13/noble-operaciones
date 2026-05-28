@@ -42,7 +42,7 @@ def show_lista_compra():
             for _, r in com.iterrows():
                 prev_txt += f"• {str(r['Nombre del Insumo'])[:22]}\n  Stock: {r['Stock Neto Calculado']} / Min: {r['Stock Mínimo']}\n{'-'*28}\n"
             st.code(prev_txt, language=None)
-            from pages.impresion import generar_pdf_58mm
+            from paginas.impresion import generar_pdf_58mm
             pdf_bytes = generar_pdf_58mm(f"Compras {u_opcion}", lineas_pdf)
             st.download_button(
                 label="📄 Descargar PDF 58mm", data=pdf_bytes,
