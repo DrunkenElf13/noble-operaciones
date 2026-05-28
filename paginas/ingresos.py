@@ -26,7 +26,8 @@ def show_ingresos():
     responsables = st.session_state.responsables or ["Raúl"]
     resp_idx = responsables.index(st.session_state.current_user) if st.session_state.current_user in responsables else 0
     with col_r:
-        r_sel = st.selectbox("👤 Responsable:", responsables, index=resp_idx, disabled=(st.session_state.user_role != "admin"))
+        r_sel = st.selectbox("👤 Responsable:", responsables, index=resp_idx,
+                             disabled=(st.session_state.user_role != "admin"))
     df_u = df_raw[df_raw["Unidad de Negocio"] == u_sel] if not df_raw.empty else pd.DataFrame()
     if df_u.empty:
         st.warning("Sin insumos registrados para esta unidad.")
@@ -41,8 +42,10 @@ def show_ingresos():
         for _, r in df_u.iterrows():
             nom = r["Nombre del Insumo"]
             prev = buscar_insumo_en_actual(df_actual, nom)
-            bulk_data.append({"Insumo":nom, "Stock Alm":prev["Alm"] if prev is not None else 0.0,
-                               "Stock Barra":prev["Barra"] if prev is not None else 0.0, "+ Ingreso":0.0})
+            bulk_data.append({"Insumo":nom,
+                              "Stock Alm":limpiar_valor(prev["Alm"]) if prev is not None else 0.0,
+                              "Stock Barra":limpiar_valor(prev["Barra"]) if prev is not None else 0.0,
+                              "+ Ingreso":0.0})
         df_edit   = pd.DataFrame(bulk_data)
         edited_df = st.data_editor(df_edit[["Insumo","Stock Alm","Stock Barra","+ Ingreso"]],
                                    hide_index=True, use_container_width=True,
@@ -107,8 +110,8 @@ def show_ingresos():
                 if row_matches.empty: continue
                 row_ins  = row_matches.iloc[0]
                 prev     = buscar_insumo_en_actual(df_actual, nom)
-                v_a_prev = prev["Alm"]   if prev is not None else 0.0
-                v_b_prev = prev["Barra"] if prev is not None else 0.0
+                v_a_prev = limpiar_valor(prev["Alm"])   if prev is not None else 0.0
+                v_b_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
                 v_min    = limpiar_valor(row_ins.get("Stock Mínimo",0))
                 c1,c2,c3,c4,c5 = st.columns([3,2,1.5,1.5,2])
                 with c1:
