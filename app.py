@@ -1,13 +1,9 @@
 import streamlit as st
 import threading
 import time as _time
-import pandas as pd
-import numpy as np
 
-# Configuración inicial
 st.set_page_config(layout="wide")
 
-# Keepalive
 def _keepalive_thread(intervalo_seg: int = 90):
     while True:
         _time.sleep(intervalo_seg)
@@ -21,10 +17,8 @@ def iniciar_keepalive(intervalo_seg: int = 90):
 
 iniciar_keepalive(intervalo_seg=90)
 
-# Importar módulos propios
 from auth import USUARIOS_PIN, LISTA_RESPONSABLES, DF_USUARIOS, tiene_permiso, PERMISOS
 from components.sidebar import render_sidebar
-from components.avisos import mostrar_avisos
 from pages.dashboard import show_dashboard
 from pages.inventario_captura import show_inventario
 from pages.ingresos import show_ingresos
@@ -43,7 +37,6 @@ from pages.merma import show_merma
 from pages.canales import show_canales
 from pages.dashboard_financiero import show_dashboard_financiero
 
-# Estado de sesión
 _defaults = {
     "auth_status": False,
     "current_user": None,
@@ -69,10 +62,8 @@ def cambiar_pagina(nombre: str):
     st.session_state.pagina = nombre
     st.rerun()
 
-# Renderizar sidebar (incluye autenticación)
-render_sidebar()
+render_sidebar(cambiar_pagina)
 
-# Página de bienvenida si no ha iniciado sesión
 if not st.session_state.auth_status:
     st.markdown("""
     <div style='text-align: center; padding: 4rem 1rem;'>
@@ -84,56 +75,38 @@ if not st.session_state.auth_status:
     """, unsafe_allow_html=True)
     st.stop()
 
-# Enrutamiento
 pagina = st.session_state.pagina
 if pagina == "Dashboard":
-    if tiene_permiso("Dashboard"):
-        show_dashboard()
+    if tiene_permiso("Dashboard"): show_dashboard()
 elif pagina == "Inventario":
-    if tiene_permiso("Inventario"):
-        show_inventario()
+    if tiene_permiso("Inventario"): show_inventario()
 elif pagina == "Ingresos":
-    if tiene_permiso("Ingresos"):
-        show_ingresos()
+    if tiene_permiso("Ingresos"): show_ingresos()
 elif pagina == "Consulta":
-    if tiene_permiso("Consulta"):
-        show_consulta()
+    if tiene_permiso("Consulta"): show_consulta()
 elif pagina == "Ventas":
-    if tiene_permiso("Ventas"):
-        show_ventas()
+    if tiene_permiso("Ventas"): show_ventas()
 elif pagina == "DashboardVentas":
-    if tiene_permiso("DashboardVentas"):
-        show_dashboard_ventas()
+    if tiene_permiso("DashboardVentas"): show_dashboard_ventas()
 elif pagina == "ImportarVentas":
-    if tiene_permiso("ImportarVentas"):
-        show_importar_ventas()
+    if tiene_permiso("ImportarVentas"): show_importar_ventas()
 elif pagina == "Impresion":
-    if tiene_permiso("Impresion"):
-        show_impresion()
+    if tiene_permiso("Impresion"): show_impresion()
 elif pagina == "ListaCompra":
-    if tiene_permiso("ListaCompra"):
-        show_lista_compra()
+    if tiene_permiso("ListaCompra"): show_lista_compra()
 elif pagina == "ReporteStock":
-    if tiene_permiso("ReporteStock"):
-        show_reporte_stock()
+    if tiene_permiso("ReporteStock"): show_reporte_stock()
 elif pagina == "CorteMes":
-    if tiene_permiso("CorteMes"):
-        show_corte_mes()
+    if tiene_permiso("CorteMes"): show_corte_mes()
 elif pagina == "RegistrarGasto":
-    if tiene_permiso("RegistrarGasto"):
-        show_gastos()
+    if tiene_permiso("RegistrarGasto"): show_gastos()
 elif pagina == "Presupuesto":
-    if tiene_permiso("Presupuesto"):
-        show_presupuesto()
+    if tiene_permiso("Presupuesto"): show_presupuesto()
 elif pagina == "BaseCostos":
-    if tiene_permiso("BaseCostos"):
-        show_base_costos()
+    if tiene_permiso("BaseCostos"): show_base_costos()
 elif pagina == "RegistrarMerma":
-    if tiene_permiso("RegistrarMerma"):
-        show_merma()
+    if tiene_permiso("RegistrarMerma"): show_merma()
 elif pagina == "CanalesVenta":
-    if tiene_permiso("CanalesVenta"):
-        show_canales()
+    if tiene_permiso("CanalesVenta"): show_canales()
 elif pagina == "DashboardFinanciero":
-    if tiene_permiso("DashboardFinanciero"):
-        show_dashboard_financiero()
+    if tiene_permiso("DashboardFinanciero"): show_dashboard_financiero()
