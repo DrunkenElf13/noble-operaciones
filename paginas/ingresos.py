@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import time
-# ↓↓↓ CORRECCIÓN AQUÍ: importación correcta y directa
+
+# Importación directa y segura
 from data_loaders import cargar_datos_integrales
+
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
 from sheets import safe_worksheet, sh, append_rows_con_retry
 from utils import limpiar_valor, ts_hermosillo
@@ -14,7 +16,14 @@ def show_ingresos():
     if not tiene_permiso("Ingresos"):
         st.error("No tienes permiso para esta página.")
         st.stop()
-    df_raw, df_historial = cargar_datos_integrales()
+
+    # Carga de datos con manejo de errores
+    try:
+        df_raw, df_historial = cargar_datos_integrales()
+    except Exception as e:
+        st.error(f"Error al cargar los datos: {e}")
+        st.stop()
+
     st.title("📥 Entrada de compras")
     mostrar_avisos("Ingresos")
     if not st.session_state.auth_status:
