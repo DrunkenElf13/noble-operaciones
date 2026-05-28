@@ -10,7 +10,7 @@ from auth import tiene_permiso
 from config import COLS_VENTAS
 
 # Reutilizamos la función de construcción de fila de venta (definida en ventas_registro)
-from pages.ventas_registro import _construir_fila_venta
+from paginas.ventas_registro import _construir_fila_venta
 
 def show_importar_ventas():
     if not tiene_permiso("ImportarVentas"):
