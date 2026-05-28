@@ -40,6 +40,7 @@ def show_dashboard():
     if not df_actual.empty:
         st.divider()
         st.subheader("🛒 Lista de compras (todas las unidades)")
+        # FILTRO: solo artículos que necesitan compra
         com_global = df_actual[df_actual["Necesita Compra"] == True].copy()
         if not com_global.empty:
             cols_compra = ["Unidad de Negocio","Nombre del Insumo","Marca","Proveedor","Grupo",
