@@ -42,7 +42,7 @@ def show_reporte_stock():
             prev_txt += f"{str(r['Nombre del Insumo'])[:20]}\n Alm:{r['Alm']} Bar:{r['Barra']} Total:{r['Stock Neto Calculado']}\n"
         prev_txt += "-" * 28 + "\n"
         st.code(prev_txt, language=None)
-    from pages.impresion import generar_pdf_58mm
+    from paginas.impresion import generar_pdf_58mm
     pdf_bytes = generar_pdf_58mm(f"Stock {u_sel}", lineas_pdf)
     st.download_button(
         label="📄 Descargar PDF 58mm", data=pdf_bytes,
