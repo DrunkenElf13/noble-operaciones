@@ -1,6 +1,7 @@
 import pandas as pd
 import unicodedata
 import re
+import numpy as np
 from datetime import datetime, timezone, timedelta
 
 TZ_HERMOSILLO = timezone(timedelta(hours=-7))
@@ -70,3 +71,43 @@ def normalizar_dataframe(df: pd.DataFrame, columnas_esperadas: list,
     for col in cols_faltantes:
         df[col] = None
     return df[columnas_esperadas]
+
+def _proyectar_tendencia(df_ventas: pd.DataFrame, meses_futuros: int = 6) -> pd.DataFrame:
+    """Devuelve un DataFrame con ventas mensuales reales + proyección lineal."""
+    if df_ventas.empty:
+        return pd.DataFrame()
+    df_v2 = df_ventas.copy()
+    df_v2["Mes_num"] = df_v2["Mes"].apply(limpiar_valor).astype(int)
+    df_v2["Año_num"] = df_v2["Año"].apply(limpiar_valor).astype(int)
+    df_v2 = df_v2[(df_v2["Mes_num"] > 0) & (df_v2["Año_num"] > 0)]
+    df_mensual = (
+        df_v2.groupby(["Año_num","Mes_num"])["Venta_Diaria"]
+        .sum()
+        .reset_index()
+        .sort_values(["Año_num","Mes_num"])
+        .reset_index(drop=True)
+    )
+    df_mensual["idx"] = range(len(df_mensual))
+    df_mensual["tipo"] = "real"
+    if len(df_mensual) < 2:
+        return df_mensual
+    x = df_mensual["idx"].values.astype(float)
+    y = df_mensual["Venta_Diaria"].values.astype(float)
+    coef = np.polyfit(x, y, 1)
+    poly = np.poly1d(coef)
+    last_idx  = int(df_mensual["idx"].max())
+    last_año  = int(df_mensual["Año_num"].iloc[-1])
+    last_mes  = int(df_mensual["Mes_num"].iloc[-1])
+    proyecciones = []
+    for i in range(1, meses_futuros + 1):
+        mes_abs = last_mes - 1 + i
+        fut_mes = (mes_abs % 12) + 1
+        fut_año = last_año + (mes_abs // 12)
+        proyecciones.append({
+            "Año_num": fut_año, "Mes_num": fut_mes,
+            "idx": last_idx + i,
+            "Venta_Diaria": max(0.0, float(poly(last_idx + i))),
+            "tipo": "proyección"
+        })
+    df_proyecciones = pd.DataFrame(proyecciones)
+    return pd.concat([df_mensual, df_proyecciones], ignore_index=True)
