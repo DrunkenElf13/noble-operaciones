@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
+# ↓↓↓ CORRECCIÓN AQUÍ: importación correcta y directa
 from data_loaders import cargar_datos_integrales
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
 from sheets import safe_worksheet, sh, append_rows_con_retry
@@ -89,7 +90,6 @@ def show_ingresos():
                 else:
                     ok, msg = append_rows_con_retry(ws_his, filas_bulk)
                     if ok:
-                        from data_loaders import cargar_datos_integrales
                         cargar_datos_integrales.clear()
                         st.success(f"Ingreso masivo registrado: {len(filas_bulk)} refs. {msg}")
                         time.sleep(1)
@@ -160,7 +160,6 @@ def show_ingresos():
                     ok, msg = append_rows_con_retry(ws_his, filas)
                     st.session_state["_procesando_ingreso"] = False
                     if ok:
-                        from data_loaders import cargar_datos_integrales
                         cargar_datos_integrales.clear()
                         st.success(f"Ingreso registrado. {msg}")
                         time.sleep(0.5)
