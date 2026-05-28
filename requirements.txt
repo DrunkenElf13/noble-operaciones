@@ -1,6 +1,7 @@
 streamlit
 gspread
-google-auth
 pandas
+numpy
 reportlab
+plotly
 openpyxl
