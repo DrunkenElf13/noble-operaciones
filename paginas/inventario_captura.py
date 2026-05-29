@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
-# Importación directa y segura
-from data_loaders import cargar_datos_integrales
+import data_loaders as dl
 
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
 from sheets import safe_worksheet, sh, append_rows_con_retry
@@ -16,7 +15,7 @@ def show_inventario():
         st.error("No tienes permiso para esta página.")
         st.stop()
     try:
-        df_raw, df_historial = cargar_datos_integrales()
+        df_raw, df_historial = dl.cargar_datos_integrales()
     except Exception as e:
         st.error(f"Error al cargar los datos: {e}")
         st.stop()
@@ -42,7 +41,8 @@ def show_inventario():
     responsables = st.session_state.responsables or ["Raúl"]
     resp_idx = responsables.index(st.session_state.current_user) if st.session_state.current_user in responsables else 0
     with col_r:
-        r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx, disabled=(st.session_state.user_role != "admin"))
+        r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx,
+                             disabled=(st.session_state.user_role != "admin"))
     df_u = df_raw[df_raw["Unidad de Negocio"] == u_sel] if not df_raw.empty else pd.DataFrame()
     with col_g:
         grps  = sorted(df_u["Grupo"].dropna().unique().tolist()) if not df_u.empty and "Grupo" in df_u.columns else GRUPOS
@@ -171,7 +171,7 @@ def show_inventario():
                     ))
                 ok, msg = append_rows_con_retry(ws_his, filas)
                 if ok:
-                    cargar_datos_integrales.clear()
+                    dl.cargar_datos_integrales.clear()
                     st.session_state.inventario_guardado = True
                     st.session_state.inv_bulk_data = None
                     st.rerun()
@@ -282,7 +282,7 @@ def show_inventario():
                     ))
                 ok, msg = append_rows_con_retry(ws_his, filas)
                 if ok:
-                    cargar_datos_integrales.clear()
+                    dl.cargar_datos_integrales.clear()
                     st.session_state.inventario_guardado = True
                     st.rerun()
                 else:
