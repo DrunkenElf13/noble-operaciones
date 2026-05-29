@@ -1,9 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-
-# Importación directa y segura
-from data_loaders import cargar_datos_integrales
+import data_loaders as dl
 
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
 from sheets import safe_worksheet, sh, append_rows_con_retry
@@ -16,14 +14,11 @@ def show_ingresos():
     if not tiene_permiso("Ingresos"):
         st.error("No tienes permiso para esta página.")
         st.stop()
-
-    # Carga de datos con manejo de errores
     try:
-        df_raw, df_historial = cargar_datos_integrales()
+        df_raw, df_historial = dl.cargar_datos_integrales()
     except Exception as e:
         st.error(f"Error al cargar los datos: {e}")
         st.stop()
-
     st.title("📥 Entrada de compras")
     mostrar_avisos("Ingresos")
     if not st.session_state.auth_status:
@@ -99,7 +94,7 @@ def show_ingresos():
                 else:
                     ok, msg = append_rows_con_retry(ws_his, filas_bulk)
                     if ok:
-                        cargar_datos_integrales.clear()
+                        dl.cargar_datos_integrales.clear()
                         st.success(f"Ingreso masivo registrado: {len(filas_bulk)} refs. {msg}")
                         time.sleep(1)
                         st.rerun()
@@ -169,7 +164,7 @@ def show_ingresos():
                     ok, msg = append_rows_con_retry(ws_his, filas)
                     st.session_state["_procesando_ingreso"] = False
                     if ok:
-                        cargar_datos_integrales.clear()
+                        dl.cargar_datos_integrales.clear()
                         st.success(f"Ingreso registrado. {msg}")
                         time.sleep(0.5)
                         st.rerun()
