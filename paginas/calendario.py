@@ -98,51 +98,46 @@ def show_calendario():
             if dia.month != st.session_state.cal_mes:
                 cols[i].markdown("")
                 continue
+
             cols[i].markdown(f"**{dia.day}**")
             eventos_dia = [e for e in eventos if e["fecha"].date() == dia]
             ventas_noble = [e for e in eventos_dia if e["tipo_evento"] == "Venta Noble"]
             otros = [e for e in eventos_dia if e["tipo_evento"] != "Venta Noble"]
             total_noble = sum(e["total_cotizado"] for e in ventas_noble)
-            if total_noble > 0:
-                meta = ventas_noble[0].get("meta_diaria", 145000/26) if ventas_noble else 145000/26
-                pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
-                if pct >= 100:
-                    color_bar = "#48B065"
-                elif pct >= 50:
-                    color_bar = "#EF9F27"
-                else:
-                    color_bar = "#E24B4A"
-                barra = f"<div style='background:#ddd; border-radius:4px; height:6px; width:100%; margin-top:2px;'><div style='width:{pct}%; height:6px; border-radius:4px; background:{color_bar};'></div></div>"
-                # Expander pequeño para venta POS
-                with cols[i].expander(f"💰 ${total_noble:,.0f}", expanded=False):
-                    st.markdown(f"<div style='font-size:11px;'>{barra}</div>", unsafe_allow_html=True)
-                    if ventas_noble:
+            hay_info = total_noble > 0 or len(otros) > 0
+
+            if hay_info:
+                # Botón pequeño que abre el popover flotante
+                with cols[i].popover("📋", use_container_width=False):
+                    if total_noble > 0:
+                        st.subheader("💵 Venta Noble")
+                        # Termómetro de color
+                        meta = ventas_noble[0].get("meta_diaria", 145000/26) if ventas_noble else 145000/26
+                        pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
+                        if pct >= 100:
+                            color_bar = "#48B065"
+                        elif pct >= 50:
+                            color_bar = "#EF9F27"
+                        else:
+                            color_bar = "#E24B4A"
+                        barra_html = (
+                            f"<div style='background:#ddd; border-radius:4px; height:8px; width:100%; margin:4px 0;'>"
+                            f"<div style='width:{pct}%; height:8px; border-radius:4px; background:{color_bar};'></div></div>"
+                        )
+                        st.markdown(barra_html, unsafe_allow_html=True)
+                        st.write(f"Total: ${total_noble:,.2f} ({pct:.0f}% de meta diaria)")
                         ev = ventas_noble[0]
-                        st.write(f"**Total: ${ev['total_cotizado']:,.2f}**")
                         st.write(f"Efectivo: ${ev['efectivo']:,.2f} | Transferencias: ${ev['transferencias']:,.2f} | Tarjeta: ${ev['tarjeta']:,.2f}")
                         st.write(f"Uber Eats: ${ev['uber_eats']:,.2f} | Rappi: ${ev['rappi']:,.2f}")
                         st.write(f"Tickets POS: {ev['tickets_pos']} | Uber: {ev['tickets_uber']} | Rappi: {ev['tickets_rappi']}")
                         if ev.get("notas_venta"):
                             st.caption(f"Notas: {ev['notas_venta']}")
                         st.write(f"Responsable: {ev.get('responsable','')}")
-            # Mostrar otros eventos resumidos
-            for ev in otros[:2]:
-                color = ev.get("color", "#AAAAAA")
-                titulo = ev["titulo"][:20]
-                cols[i].markdown(
-                    f"<div style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px; color:#111;'>{titulo}</div>",
-                    unsafe_allow_html=True
-                )
-            if len(otros) > 2:
-                cols[i].markdown(f"<small>+{len(otros)-2} más</small>", unsafe_allow_html=True)
-
-            # Expander general del día para ver todos los eventos
-            if eventos_dia:
-                with cols[i].expander("🔍 Detalles", expanded=False):
-                    for ev in eventos_dia:
-                        if ev["tipo_evento"] == "Venta Noble":
-                            continue  # ya se mostró arriba
-                        else:
+                    if otros:
+                        if total_noble > 0:
+                            st.divider()
+                        st.subheader("📌 Eventos")
+                        for ev in otros:
                             st.write(f"**{ev['tipo_evento']}**")
                             st.write(f"Título: {ev['titulo']}")
                             if ev.get("cliente"): st.write(f"Cliente: {ev['cliente']}")
@@ -237,7 +232,7 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # Edición de evento pendiente (se cargó desde el calendario)
+    # Edición de evento pendiente
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
         st.subheader(f"Editando: {ev['titulo']}")
