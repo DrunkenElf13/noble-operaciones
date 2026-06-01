@@ -10,17 +10,17 @@ from auth import tiene_permiso
 from config import CANALES_VENTA, COLS_VENTAS, COLS_CALENDARIO
 from components.calendario_utils import agregar_evento
 
-# Paleta de 8 colores
-PALETA_COLORES = [
-    "#4A90D9",  # azul
-    "#9B59B6",  # morado
-    "#E24B4A",  # rojo
-    "#48B065",  # verde
-    "#EF9F27",  # naranja
-    "#F1C40F",  # amarillo
-    "#1ABC9C",  # turquesa
-    "#34495E",  # gris oscuro
-]
+# Paleta de colores con nombres y códigos
+PALETA_COLORES = {
+    "🔵 Azul": "#4A90D9",
+    "🟣 Morado": "#9B59B6",
+    "🔴 Rojo": "#E24B4A",
+    "🟢 Verde": "#48B065",
+    "🟠 Naranja": "#EF9F27",
+    "🟡 Amarillo": "#F1C40F",
+    "🩵 Turquesa": "#1ABC9C",
+    "⚫ Gris": "#34495E",
+}
 
 def _construir_fila_venta(
     fecha, efectivo, transferencias, tarjeta, uber, rappi,
@@ -64,6 +64,8 @@ def _construir_fila_venta_canal(datos_evento: dict, canal: str):
         datos_evento.get("notas", ""),
         datos_evento.get("color", "#4A90D9"),
         datos_evento.get("responsable", ""),
+        datos_evento.get("anticipo", 0),
+        datos_evento.get("fecha_fin", ""),
     ]
 
 def show_ventas():
@@ -205,19 +207,17 @@ def show_ventas():
                 ubicacion_ev = st.text_input("Ubicación")
                 descripcion_ev = st.text_area("Descripción")
                 metodo_pago = st.text_input("Método de pago")
-                color_ev = st.selectbox(
-                    "Color del evento",
-                    options=PALETA_COLORES,
-                )
-                st.markdown(
-                    f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>",
-                    unsafe_allow_html=True
-                )
+                # Selector de color visual
+                color_nombre = st.selectbox("Color del evento", list(PALETA_COLORES.keys()))
+                color_ev = PALETA_COLORES[color_nombre]
+                st.markdown(f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>", unsafe_allow_html=True)
             with col2:
                 monto_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0)
                 adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0)
+                anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0)
                 fecha_contr_ev = st.date_input("Fecha contratación", value=hoy)
                 fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy)
+                fecha_fin_ev = st.date_input("Fecha fin (rango)", value=hoy, help="Si el evento dura varios días, elige la fecha final")
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
             enviar = st.form_submit_button("💾 Guardar venta")
@@ -243,7 +243,9 @@ def show_ventas():
                     "abonos": abonos_ev,
                     "notas": notas_ev,
                     "color": color_ev,
-                    "responsable": st.session_state.current_user
+                    "responsable": st.session_state.current_user,
+                    "anticipo": anticipo_ev,
+                    "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_venta else "",
                 }
                 # 1. Guardar en la hoja del canal
                 ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
