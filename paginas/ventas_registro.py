@@ -10,7 +10,6 @@ from auth import tiene_permiso
 from config import CANALES_VENTA, COLS_VENTAS, COLS_CALENDARIO
 from components.calendario_utils import agregar_evento
 
-# Paleta de colores con nombres y códigos
 PALETA_COLORES = {
     "🔵 Azul": "#4A90D9",
     "🟣 Morado": "#9B59B6",
@@ -207,7 +206,6 @@ def show_ventas():
                 ubicacion_ev = st.text_input("Ubicación")
                 descripcion_ev = st.text_area("Descripción")
                 metodo_pago = st.text_input("Método de pago")
-                # Selector de color visual
                 color_nombre = st.selectbox("Color del evento", list(PALETA_COLORES.keys()))
                 color_ev = PALETA_COLORES[color_nombre]
                 st.markdown(f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>", unsafe_allow_html=True)
@@ -229,7 +227,7 @@ def show_ventas():
                 import uuid
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
-                    "tipo": f"Venta {canal_sel}",
+                    "tipo": f"💰 Venta {canal_sel}",      # tipo diferenciado para venta
                     "titulo": f"Venta {canal_sel} - {cliente_ev}" if cliente_ev else f"Venta {canal_sel}",
                     "cliente": cliente_ev,
                     "contacto": contacto_ev,
@@ -265,7 +263,8 @@ def show_ventas():
                 if fecha_entr_ev != fecha_venta:
                     datos_evento_entrega = datos_evento.copy()
                     datos_evento_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
-                    datos_evento_entrega["tipo"] = f"Entrega {canal_sel}"
+                    datos_evento_entrega["tipo"] = f"📦 Entrega {canal_sel}"
+                    datos_evento_entrega["titulo"] = f"Entrega {canal_sel}: {cliente_ev}" if cliente_ev else f"Entrega {canal_sel}"
                     agregar_evento(datos_evento_entrega)
 
                 if ok1:
