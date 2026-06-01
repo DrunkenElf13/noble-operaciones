@@ -35,6 +35,28 @@ PALETA_COLORES = {
 def show_calendario():
     st.title("📅 Calendario Noble")
 
+    # ---- Inyectar estilos para mejorar la apariencia del popover y los puntos ----
+    st.markdown("""
+    <style>
+    div[data-testid="stPopover"] button {
+        font-size: 12px;
+        padding: 2px 6px;
+        background-color: #f0f2f6;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        color: #111;
+    }
+    .punto-venta {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background-color: #48B065;
+        border-radius: 50%;
+        margin-top: 2px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     hoy = datetime.now()
     if "cal_mes" not in st.session_state:
         st.session_state.cal_mes = hoy.month
@@ -88,7 +110,6 @@ def show_calendario():
 
     eventos = cargar_eventos_mes(st.session_state.cal_mes, st.session_state.cal_año)
 
-    # ----- Cuadrícula del calendario -----
     cal = calendar.Calendar()
     dias_mes = cal.monthdatescalendar(st.session_state.cal_año, st.session_state.cal_mes)
 
@@ -104,39 +125,66 @@ def show_calendario():
                 cols[i].markdown("")
                 continue
 
-            cols[i].markdown(f"**{dia.day}**")
+            # ---- Número del día como botón ----
+            dia_str = str(dia.day)
+            dia_key = f"dia_{dia.day}_{dia.month}_{dia.year}"
+
+            # Contenido del popover (se muestra al hacer clic en el número)
             eventos_dia = [e for e in eventos if e["fecha"].date() == dia]
             ventas_noble = [e for e in eventos_dia if e["tipo_evento"] == "Venta Noble"]
             otros = [e for e in eventos_dia if e["tipo_evento"] != "Venta Noble"]
-            total_noble = sum(e["total_cotizado"] for e in ventas_noble)
 
-            if total_noble > 0:
-                meta = ventas_noble[0].get("meta_diaria", 145000/26) if ventas_noble else 145000/26
-                pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
-                if pct >= 100:
-                    color_bar = "#48B065"
-                elif pct >= 50:
-                    color_bar = "#EF9F27"
-                else:
-                    color_bar = "#E24B4A"
-                barra = (
-                    f"<div style='background:#ddd; border-radius:4px; height:6px; width:100%; margin-top:2px;'>"
-                    f"<div style='width:{pct}%; height:6px; border-radius:4px; background:{color_bar};'></div></div>"
-                )
-                # Botón emergente con el monto
-                with cols[i].popover(f"💰 ${total_noble:,.0f}", use_container_width=False):
-                    st.markdown(f"**Venta Noble**  ")
-                    st.markdown(barra, unsafe_allow_html=True)
-                    st.write(f"Total: ${total_noble:,.2f} ({pct:.0f}% de meta diaria)")
-                    ev = ventas_noble[0]
-                    st.write(f"Efectivo: ${ev['efectivo']:,.2f} | Transferencias: ${ev['transferencias']:,.2f} | Tarjeta: ${ev['tarjeta']:,.2f}")
-                    st.write(f"Uber Eats: ${ev['uber_eats']:,.2f} | Rappi: ${ev['rappi']:,.2f}")
-                    st.write(f"Tickets POS: {ev['tickets_pos']} | Uber: {ev['tickets_uber']} | Rappi: {ev['tickets_rappi']}")
-                    if ev.get("notas_venta"):
-                        st.caption(f"Notas: {ev['notas_venta']}")
-                    st.write(f"Responsable: {ev.get('responsable','')}")
+            # Si hay información para mostrar, el botón abre un popover; si no, es solo el número
+            if ventas_noble or otros:
+                with cols[i].popover(dia_str, use_container_width=False):
+                    # Venta Noble
+                    for ev in ventas_noble:
+                        total = ev["total_cotizado"]
+                        meta = ev.get("meta_diaria", 145000/26)
+                        pct = min(total / meta * 100, 100) if meta > 0 else 0
+                        if pct >= 100:
+                            color_bar = "#48B065"
+                        elif pct >= 50:
+                            color_bar = "#EF9F27"
+                        else:
+                            color_bar = "#E24B4A"
+                        barra_html = (
+                            f"<div style='background:#ddd; border-radius:4px; height:10px; width:100%; margin:8px 0;'>"
+                            f"<div style='width:{pct}%; height:10px; border-radius:4px; background:{color_bar};'></div></div>"
+                        )
+                        st.markdown("**💵 Venta Noble**")
+                        st.markdown(barra_html, unsafe_allow_html=True)
+                        st.write(f"Total: ${total:,.2f} ({pct:.0f}% de meta)")
+                        st.write(f"Efectivo: ${ev['efectivo']:,.2f} | Transferencias: ${ev['transferencias']:,.2f} | Tarjeta: ${ev['tarjeta']:,.2f}")
+                        st.write(f"Uber Eats: ${ev['uber_eats']:,.2f} | Rappi: ${ev['rappi']:,.2f}")
+                        st.write(f"Tickets POS: {ev['tickets_pos']} | Uber: {ev['tickets_uber']} | Rappi: {ev['tickets_rappi']}")
+                        if ev.get("notas_venta"):
+                            st.caption(f"Notas: {ev['notas_venta']}")
+                        st.write(f"Responsable: {ev.get('responsable','')}")
+                        st.divider()
+                    # Eventos
+                    for ev in otros:
+                        st.write(f"**{ev['tipo_evento']}**")
+                        st.write(f"Título: {ev['titulo']}")
+                        if ev.get("cliente"): st.write(f"Cliente: {ev['cliente']}")
+                        if ev.get("contacto"): st.write(f"Contacto: {ev['contacto']}")
+                        if ev.get("ubicacion"): st.write(f"Ubicación: {ev['ubicacion']}")
+                        if ev.get("descripcion"): st.write(f"Descripción: {ev['descripcion']}")
+                        st.write(f"Total: ${ev['total_cotizado']:,.2f} | Adeudo: ${ev['adeudo']:,.2f} | Anticipo: ${ev['anticipo']:,.2f}")
+                        if ev.get("metodo_pago"): st.write(f"Método: {ev['metodo_pago']}")
+                        if ev.get("fecha_entrega"): st.write(f"Entrega: {ev['fecha_entrega']}")
+                        if ev.get("fecha_fin"): st.write(f"Hasta: {ev['fecha_fin']}")
+                        if ev.get("abonos"): st.write(f"Abonos: {ev['abonos']}")
+                        if ev.get("notas"): st.write(f"Notas: {ev['notas']}")
+                        st.write(f"Responsable: {ev.get('responsable','')}")
+                        st.divider()
+                # Indicador visual debajo del número
+                cols[i].markdown("<div class='punto-venta'></div>", unsafe_allow_html=True)
+            else:
+                # Día sin eventos ni venta: solo el número (sin botón, lo ponemos como texto)
+                cols[i].markdown(dia_str)
 
-            # Mostrar etiquetas de eventos (máx. 2)
+            # Mostrar pequeñas etiquetas de eventos (máx 2) debajo del día, solo si hay otros eventos
             for ev in otros[:2]:
                 color = ev.get("color", "#AAAAAA")
                 titulo = ev["titulo"][:20]
