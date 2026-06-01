@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from sheets import safe_worksheet, sh, _asegurar_hoja_calendario, append_rows_con_retry
-from data_loaders import cargar_config_canales, cargar_todas_ventas
+from data_loaders import cargar_todas_ventas
 from utils import limpiar_valor
 import uuid
 
@@ -54,44 +54,41 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Canales adicionales (hojas Config_Canales)
-    try:
-        df_canales = cargar_config_canales()
-        if not df_canales.empty:
-            for _, canal in df_canales.iterrows():
-                nombre_canal = canal["Canal"]
-                ws_canal, _ = safe_worksheet(sh, nombre_canal)
-                if ws_canal:
-                    datos_canal = ws_canal.get_all_values()
-                    if len(datos_canal) > 1:
-                        df_canal = pd.DataFrame(datos_canal[1:], columns=datos_canal[0])
-                        for _, row in df_canal.iterrows():
-                            fecha = _parse_fecha(row.get("Fecha", ""))
-                            if fecha and fecha.month == mes and fecha.year == año:
-                                eventos.append({
-                                    "id": f"{nombre_canal}_{row.get('Fecha','')}",
-                                    "fecha": fecha,
-                                    "tipo_evento": f"Canal: {nombre_canal}",
-                                    "titulo": f"Venta {nombre_canal}",
-                                    "cliente": row.get("Descripcion", ""),
-                                    "contacto": "",
-                                    "ubicacion": "",
-                                    "descripcion": row.get("Descripcion", ""),
-                                    "total_cotizado": limpiar_valor(row.get("Monto", 0)),
-                                    "adeudo": limpiar_valor(row.get("Adeudo_Saldo_Pendiente", 0)),
-                                    "metodo_pago": row.get("Metodo_Pago", ""),
-                                    "fecha_contratacion": "",
-                                    "fecha_entrega": row.get("Fecha_Servicio_Entrega", ""),
-                                    "abonos": "",
-                                    "notas": "",
-                                    "color": "#EF9F27",
-                                    "responsable": row.get("Responsable", ""),
-                                    "origen": "canal"
-                                })
-    except Exception as e:
-        st.warning(f"Error al leer canales: {e}")
+    # 2. Hojas de CoffeeStation y NobleToGo (nuevo formato Calendario)
+    for hoja in ["CoffeeStation", "NobleToGo"]:
+        ws, _ = safe_worksheet(sh, hoja)
+        if ws:
+            try:
+                datos = ws.get_all_values()
+                if len(datos) > 1:
+                    df = pd.DataFrame(datos[1:], columns=datos[0])
+                    for _, row in df.iterrows():
+                        fecha = _parse_fecha(row.get("Fecha", ""))
+                        if fecha and fecha.month == mes and fecha.year == año:
+                            eventos.append({
+                                "id": row.get("ID", ""),
+                                "fecha": fecha,
+                                "tipo_evento": row.get("Tipo", f"Venta {hoja}"),
+                                "titulo": row.get("Título", ""),
+                                "cliente": row.get("Cliente", ""),
+                                "contacto": row.get("Contacto", ""),
+                                "ubicacion": row.get("Ubicacion", ""),
+                                "descripcion": row.get("Descripcion", ""),
+                                "total_cotizado": limpiar_valor(row.get("Total_Cotizado", 0)),
+                                "adeudo": limpiar_valor(row.get("Adeudo", 0)),
+                                "metodo_pago": row.get("Metodo_Pago", ""),
+                                "fecha_contratacion": row.get("Fecha_Contratacion", ""),
+                                "fecha_entrega": row.get("Fecha_Entrega", ""),
+                                "abonos": row.get("Abonos", ""),
+                                "notas": row.get("Notas", ""),
+                                "color": row.get("Color", "#4A90D9"),
+                                "responsable": row.get("Responsable", ""),
+                                "origen": "calendario"
+                            })
+            except Exception as e:
+                st.warning(f"Error al leer {hoja}: {e}")
 
-    # 3. Ventas diarias de todos los canales
+    # 3. Ventas diarias de todos los canales (para el acumulado POS)
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
@@ -100,26 +97,27 @@ def cargar_eventos_mes(mes, año):
                 if fecha and fecha.month == mes and fecha.year == año:
                     canal_venta = row.get("Canal", "Noble") or "Noble"
                     monto = limpiar_valor(row.get("Venta_Diaria", 0))
-                    eventos.append({
-                        "id": f"venta_{fecha.strftime('%Y-%m-%d')}_{canal_venta}",
-                        "fecha": fecha,
-                        "tipo_evento": f"Venta {canal_venta}",
-                        "titulo": f"Venta {canal_venta}",
-                        "cliente": "",
-                        "contacto": "",
-                        "ubicacion": "",
-                        "descripcion": f"Venta del día: ${monto:,.2f}",
-                        "total_cotizado": monto,
-                        "adeudo": 0,
-                        "metodo_pago": "",
-                        "fecha_contratacion": "",
-                        "fecha_entrega": "",
-                        "abonos": "",
-                        "notas": "",
-                        "color": "#48B065" if canal_venta == "Noble" else "#4A90D9",
-                        "responsable": row.get("Responsable", ""),
-                        "origen": "venta"
-                    })
+                    if canal_venta == "Noble":
+                        eventos.append({
+                            "id": f"venta_{fecha.strftime('%Y-%m-%d')}_Noble",
+                            "fecha": fecha,
+                            "tipo_evento": "Venta Noble",
+                            "titulo": "Venta Noble",
+                            "cliente": "",
+                            "contacto": "",
+                            "ubicacion": "",
+                            "descripcion": f"Venta del día: ${monto:,.2f}",
+                            "total_cotizado": monto,
+                            "adeudo": 0,
+                            "metodo_pago": "",
+                            "fecha_contratacion": "",
+                            "fecha_entrega": "",
+                            "abonos": "",
+                            "notas": "",
+                            "color": "#48B065",
+                            "responsable": row.get("Responsable", ""),
+                            "origen": "venta"
+                        })
     except Exception as e:
         st.warning(f"Error al leer ventas: {e}")
 
