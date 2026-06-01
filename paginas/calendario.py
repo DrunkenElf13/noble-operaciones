@@ -104,7 +104,6 @@ def show_calendario():
             otros = [e for e in eventos_dia if e["tipo_evento"] != "Venta Noble"]
             total_noble = sum(e["total_cotizado"] for e in ventas_noble)
             if total_noble > 0:
-                # Termómetro de color
                 meta = ventas_noble[0].get("meta_diaria", 145000/26) if ventas_noble else 145000/26
                 pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
                 if pct >= 100:
@@ -114,10 +113,19 @@ def show_calendario():
                 else:
                     color_bar = "#E24B4A"
                 barra = f"<div style='background:#ddd; border-radius:4px; height:6px; width:100%; margin-top:2px;'><div style='width:{pct}%; height:6px; border-radius:4px; background:{color_bar};'></div></div>"
-                cols[i].markdown(
-                    f"<div style='background-color:rgba(72,176,101,0.2); padding:2px 4px; border-radius:4px; font-size:11px; color:#111;'>💰 ${total_noble:,.0f}{barra}</div>",
-                    unsafe_allow_html=True
-                )
+                # Expander pequeño para venta POS
+                with cols[i].expander(f"💰 ${total_noble:,.0f}", expanded=False):
+                    st.markdown(f"<div style='font-size:11px;'>{barra}</div>", unsafe_allow_html=True)
+                    if ventas_noble:
+                        ev = ventas_noble[0]
+                        st.write(f"**Total: ${ev['total_cotizado']:,.2f}**")
+                        st.write(f"Efectivo: ${ev['efectivo']:,.2f} | Transferencias: ${ev['transferencias']:,.2f} | Tarjeta: ${ev['tarjeta']:,.2f}")
+                        st.write(f"Uber Eats: ${ev['uber_eats']:,.2f} | Rappi: ${ev['rappi']:,.2f}")
+                        st.write(f"Tickets POS: {ev['tickets_pos']} | Uber: {ev['tickets_uber']} | Rappi: {ev['tickets_rappi']}")
+                        if ev.get("notas_venta"):
+                            st.caption(f"Notas: {ev['notas_venta']}")
+                        st.write(f"Responsable: {ev.get('responsable','')}")
+            # Mostrar otros eventos resumidos
             for ev in otros[:2]:
                 color = ev.get("color", "#AAAAAA")
                 titulo = ev["titulo"][:20]
@@ -128,20 +136,12 @@ def show_calendario():
             if len(otros) > 2:
                 cols[i].markdown(f"<small>+{len(otros)-2} más</small>", unsafe_allow_html=True)
 
-            # Expander con detalle de venta Noble y eventos
+            # Expander general del día para ver todos los eventos
             if eventos_dia:
                 with cols[i].expander("🔍 Detalles", expanded=False):
                     for ev in eventos_dia:
                         if ev["tipo_evento"] == "Venta Noble":
-                            st.write("**💵 Venta Noble**")
-                            st.write(f"Total: ${ev['total_cotizado']:,.2f}")
-                            st.write(f"Efectivo: ${ev['efectivo']:,.2f} | Transferencias: ${ev['transferencias']:,.2f} | Tarjeta: ${ev['tarjeta']:,.2f}")
-                            st.write(f"Uber Eats: ${ev['uber_eats']:,.2f} | Rappi: ${ev['rappi']:,.2f}")
-                            st.write(f"Tickets POS: {ev['tickets_pos']} | Uber: {ev['tickets_uber']} | Rappi: {ev['tickets_rappi']}")
-                            if ev.get("notas_venta"):
-                                st.caption(f"Notas: {ev['notas_venta']}")
-                            st.write(f"Responsable: {ev.get('responsable','')}")
-                            st.divider()
+                            continue  # ya se mostró arriba
                         else:
                             st.write(f"**{ev['tipo_evento']}**")
                             st.write(f"Título: {ev['titulo']}")
@@ -156,17 +156,6 @@ def show_calendario():
                             if ev.get("abonos"): st.write(f"Abonos: {ev['abonos']}")
                             if ev.get("notas"): st.write(f"Notas: {ev['notas']}")
                             st.write(f"Responsable: {ev.get('responsable','')}")
-                            # Botón para editar (solo si origen calendario)
-                            if ev.get("origen") == "calendario":
-                                if st.button("✏️ Editar", key=f"edit_{ev['id']}"):
-                                    st.session_state["editando_evento"] = ev
-                                    st.rerun()
-                                if st.button("🗑️ Eliminar", key=f"del_{ev['id']}"):
-                                    if eliminar_evento(ev["id"]):
-                                        st.success("Eliminado")
-                                        st.rerun()
-                                    else:
-                                        st.error("Error al eliminar")
                             st.divider()
 
     st.divider()
