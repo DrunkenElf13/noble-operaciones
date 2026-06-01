@@ -36,6 +36,7 @@ from paginas.base_costos import show_base_costos
 from paginas.merma import show_merma
 from paginas.canales import show_canales
 from paginas.dashboard_financiero import show_dashboard_financiero
+from paginas.calendario import show_calendario
 
 _defaults = {
     "auth_status": False,
@@ -110,3 +111,5 @@ elif pagina == "CanalesVenta":
     if tiene_permiso("CanalesVenta"): show_canales()
 elif pagina == "DashboardFinanciero":
     if tiene_permiso("DashboardFinanciero"): show_dashboard_financiero()
+elif pagina == "Calendario":
+    show_calendario()   # ← sin verificación de permisos (acordado)
