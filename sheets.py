@@ -2,7 +2,11 @@ import streamlit as st
 import gspread
 import time
 from google.oauth2.service_account import Credentials
-from config import SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO, COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_CANALES_CONFIG, COLS_EVENTO_CANAL, COLS_MERMA
+from config import (
+    SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO,
+    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_CANALES_CONFIG,
+    COLS_EVENTO_CANAL, COLS_MERMA, COLS_CALENDARIO
+)
 
 @st.cache_resource
 def conectar_google_sheets():
@@ -135,3 +139,17 @@ def _asegurar_hoja_merma():
         except Exception as e:
             return None, f"No se pudo crear hoja Merma: {e}"
     return ws, None
+
+# NUEVA FUNCIÓN PARA ASEGURAR LA HOJA CALENDARIO
+def _asegurar_hoja_calendario():
+    try:
+        return sh.worksheet("Calendario"), None
+    except gspread.exceptions.WorksheetNotFound:
+        try:
+            ws = sh.add_worksheet(title="Calendario", rows="1000", cols=str(len(COLS_CALENDARIO)))
+            ws.append_row(COLS_CALENDARIO)
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja Calendario: {e}"
+    except Exception as e:
+        return None, f"Error accediendo a Calendario: {e}"
