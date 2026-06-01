@@ -10,6 +10,18 @@ from auth import tiene_permiso
 from config import CANALES_VENTA, COLS_VENTAS, COLS_CALENDARIO
 from components.calendario_utils import agregar_evento
 
+# Paleta de 8 colores
+PALETA_COLORES = [
+    "#4A90D9",  # azul
+    "#9B59B6",  # morado
+    "#E24B4A",  # rojo
+    "#48B065",  # verde
+    "#EF9F27",  # naranja
+    "#F1C40F",  # amarillo
+    "#1ABC9C",  # turquesa
+    "#34495E",  # gris oscuro
+]
+
 def _construir_fila_venta(
     fecha, efectivo, transferencias, tarjeta, uber, rappi,
     tickets_pos, tickets_uber, tickets_rappi,
@@ -35,7 +47,7 @@ def _construir_fila_venta_canal(datos_evento: dict, canal: str):
     """Construye una fila para la hoja del canal con las columnas de Calendario."""
     import uuid
     return [
-        str(uuid.uuid4())[:8],  # ID
+        str(uuid.uuid4())[:8],
         datos_evento.get("fecha", ""),
         datos_evento.get("tipo", ""),
         datos_evento.get("titulo", ""),
@@ -66,7 +78,7 @@ def show_ventas():
 
     canal_sel = st.selectbox("🏢 Canal de venta:", CANALES_VENTA)
 
-    df_ventas = cargar_ventas()  # solo para verificar registro del día (POS)
+    df_ventas = cargar_ventas()
     hoy = ahora_hermosillo().date()
 
     ya_registrado = False
@@ -193,6 +205,14 @@ def show_ventas():
                 ubicacion_ev = st.text_input("Ubicación")
                 descripcion_ev = st.text_area("Descripción")
                 metodo_pago = st.text_input("Método de pago")
+                color_ev = st.selectbox(
+                    "Color del evento",
+                    options=PALETA_COLORES,
+                )
+                st.markdown(
+                    f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>",
+                    unsafe_allow_html=True
+                )
             with col2:
                 monto_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0)
                 adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0)
@@ -200,14 +220,12 @@ def show_ventas():
                 fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy)
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
-                color_ev = st.color_picker("Color del evento", value="#4A90D9")
             enviar = st.form_submit_button("💾 Guardar venta")
 
         if enviar:
             if monto_ev <= 0:
                 st.error("El monto debe ser mayor a cero.")
             else:
-                # Preparar datos del evento
                 import uuid
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
@@ -227,7 +245,7 @@ def show_ventas():
                     "color": color_ev,
                     "responsable": st.session_state.current_user
                 }
-                # 1. Guardar en la hoja del canal (con todas las columnas)
+                # 1. Guardar en la hoja del canal
                 ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
                 if err_canal:
                     st.error(err_canal)
@@ -240,11 +258,17 @@ def show_ventas():
                     from data_loaders import cargar_todas_ventas
                     cargar_todas_ventas.clear()
 
-                # 2. Guardar evento en Calendario (para trazabilidad)
-                ok_ev, msg_ev = agregar_evento(datos_evento)
-                if ok_ev:
+                # 2. Guardar en Calendario (con ambas fechas si son distintas)
+                ok1, _ = agregar_evento(datos_evento)
+                if fecha_entr_ev != fecha_venta:
+                    datos_evento_entrega = datos_evento.copy()
+                    datos_evento_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
+                    datos_evento_entrega["tipo"] = f"Entrega {canal_sel}"
+                    agregar_evento(datos_evento_entrega)
+
+                if ok1:
                     st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
                     time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error(f"Error al crear evento: {msg_ev}")
+                    st.error("Error al guardar en calendario")
