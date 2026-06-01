@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from sheets import safe_worksheet, sh, _asegurar_hoja_calendario, append_rows_con_retry
-from data_loaders import cargar_config_canales, cargar_ventas
+from data_loaders import cargar_config_canales, cargar_todas_ventas
 from utils import limpiar_valor
 import uuid
 
@@ -54,7 +54,7 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Canales adicionales
+    # 2. Canales adicionales (hojas Config_Canales)
     try:
         df_canales = cargar_config_canales()
         if not df_canales.empty:
@@ -91,9 +91,9 @@ def cargar_eventos_mes(mes, año):
     except Exception as e:
         st.warning(f"Error al leer canales: {e}")
 
-    # 3. Ventas diarias
+    # 3. Ventas diarias de todos los canales
     try:
-        df_ventas = cargar_ventas()
+        df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
             for _, row in df_ventas.iterrows():
                 fecha = _parse_fecha(row.get("Fecha"))
