@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-from data_loaders import cargar_datos_integrales
+import data_loaders as dl
 from inventario import obtener_ultimo_inventario, construir_fila_historial
 from sheets import safe_worksheet, sh, append_rows_con_retry
 from utils import ts_hermosillo
@@ -11,7 +11,7 @@ def show_corte_mes():
     if not tiene_permiso("CorteMes"):
         st.error("No tienes permiso para esta página.")
         st.stop()
-    _, df_historial = cargar_datos_integrales()
+    _, df_historial = dl.cargar_datos_integrales()
     if st.session_state.user_role != "admin":
         st.error("🚫 Acceso denegado. Solo administradores.")
         st.stop()
@@ -69,8 +69,7 @@ def show_corte_mes():
                 st.write("4/4 — Reiniciando Historial...")
                 ws_his.clear()
                 ws_his.append_row(encabezados)
-                from data_loaders import cargar_datos_integrales
-                cargar_datos_integrales.clear()
+                dl.cargar_datos_integrales.clear()
                 status.update(label="✅ Cierre completado", state="complete")
                 st.success(f"{len(filas_corte)} referencias consolidadas en 'Cierres'.")
                 time.sleep(2)
