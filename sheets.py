@@ -140,7 +140,6 @@ def _asegurar_hoja_merma():
             return None, f"No se pudo crear hoja Merma: {e}"
     return ws, None
 
-# NUEVA FUNCIÓN PARA ASEGURAR LA HOJA CALENDARIO
 def _asegurar_hoja_calendario():
     try:
         return sh.worksheet("Calendario"), None
@@ -153,3 +152,16 @@ def _asegurar_hoja_calendario():
             return None, f"No se pudo crear hoja Calendario: {e}"
     except Exception as e:
         return None, f"Error accediendo a Calendario: {e}"
+
+# NUEVA: asegurar hojas de canales de venta
+def _asegurar_hoja_canal_ventas(nombre_canal: str):
+    """Crea una hoja con las columnas de Ventas para un canal específico."""
+    ws, err = safe_worksheet(sh, nombre_canal)
+    if err:
+        try:
+            ws = sh.add_worksheet(title=nombre_canal, rows="2000", cols=str(len(COLS_VENTAS)))
+            ws.append_row(COLS_VENTAS)
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja {nombre_canal}: {e}"
+    return ws, None
