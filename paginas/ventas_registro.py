@@ -1,16 +1,15 @@
 import streamlit as st
 import time
 from data_loaders import cargar_ventas
-from sheets import _asegurar_hoja_ventas, append_rows_con_retry
+from sheets import (
+    _asegurar_hoja_ventas, append_rows_con_retry, _asegurar_hoja_canal_ventas
+)
 from utils import limpiar_valor, ahora_hermosillo
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
-from config import CANALES_VENTA
+from config import CANALES_VENTA, COLS_VENTAS
 from components.calendario_utils import agregar_evento
 
-# ------------------------------------------------------------
-# Función auxiliar para construir fila de venta (POS)
-# ------------------------------------------------------------
 def _construir_fila_venta(
     fecha, efectivo, transferencias, tarjeta, uber, rappi,
     tickets_pos, tickets_uber, tickets_rappi,
@@ -32,9 +31,6 @@ def _construir_fila_venta(
         responsable, notas, canal,
     ]
 
-# ------------------------------------------------------------
-# Función auxiliar para construir fila de venta (canales secundarios)
-# ------------------------------------------------------------
 def _construir_fila_venta_canal(
     fecha, monto, metodo_pago, responsable, notas, canal,
 ):
@@ -50,9 +46,6 @@ def _construir_fila_venta_canal(
         responsable, notas, canal,
     ]
 
-# ------------------------------------------------------------
-# Página principal: Registrar Ventas
-# ------------------------------------------------------------
 def show_ventas():
     if not tiene_permiso("Ventas"):
         st.error("No tienes permiso para esta página.")
@@ -65,13 +58,13 @@ def show_ventas():
 
     canal_sel = st.selectbox("🏢 Canal de venta:", CANALES_VENTA)
 
-    df_ventas = cargar_ventas()
+    df_ventas = cargar_ventas()  # solo para verificar registro del día (POS)
     hoy = ahora_hermosillo().date()
 
     ya_registrado = False
     if not df_ventas.empty and "Fecha" in df_ventas.columns:
         ya_registrado = any(f.date() == hoy for f in df_ventas["Fecha"].dropna())
-    if ya_registrado:
+    if ya_registrado and canal_sel == "Noble":
         st.info(f"ℹ️ Ya existe un registro para hoy ({hoy.strftime('%d/%m/%Y')}). Puedes guardar una corrección si es necesario.")
 
     responsables = st.session_state.responsables or ["Raúl"]
@@ -86,7 +79,7 @@ def show_ventas():
 
     st.divider()
 
-    # ---------- POS (Noble) ----------
+    # ──────── POS (Noble) ────────
     if canal_sel == "Noble":
         meta_default = 145000.0
         dias_default = 26
@@ -181,7 +174,7 @@ def show_ventas():
                     else:
                         st.error(msg)
 
-    # ---------- Coffee Station / Noble To Go ----------
+    # ──────── Coffee Station / Noble To Go ────────
     else:
         st.subheader(f"📋 Datos del evento — {canal_sel}")
         with st.form("f_evento_canal", clear_on_submit=True):
@@ -206,10 +199,10 @@ def show_ventas():
             if monto_ev <= 0:
                 st.error("El monto debe ser mayor a cero.")
             else:
-                # 1. Guardar en Ventas
-                ws_v, err = _asegurar_hoja_ventas()
-                if err:
-                    st.error(err)
+                # 1. Guardar en la hoja del canal (CoffeeStation o NobleToGo)
+                ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
+                if err_canal:
+                    st.error(err_canal)
                 else:
                     fila = _construir_fila_venta_canal(
                         fecha=fecha_venta,
@@ -219,11 +212,13 @@ def show_ventas():
                         notas=notas_ev,
                         canal=canal_sel,
                     )
-                    ok, msg = append_rows_con_retry(ws_v, [fila])
+                    ok, msg = append_rows_con_retry(ws_canal, [fila])
                     if not ok:
                         st.error(msg)
                         st.stop()
-                    cargar_ventas.clear()
+                    # Limpiar caché de la función que carga todas las ventas
+                    from data_loaders import cargar_todas_ventas
+                    cargar_todas_ventas.clear()
 
                 # 2. Guardar evento en Calendario
                 datos_evento = {
