@@ -34,7 +34,6 @@ def cargar_eventos_mes(mes, año):
                     fecha_fin_str = row.get("Fecha_Fin", "")
                     fecha_fin = _parse_fecha(fecha_fin_str) if fecha_fin_str else None
                     id_base = row.get("ID", "")
-                    # Crear un evento por cada día del rango
                     if fecha_inicio:
                         if fecha_fin and fecha_fin > fecha_inicio:
                             fechas_rango = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
@@ -64,14 +63,13 @@ def cargar_eventos_mes(mes, año):
                                     "anticipo": limpiar_valor(row.get("Anticipo", 0)),
                                     "fecha_fin": fecha_fin_str
                                 }
-                                # Solo añadir si el ID no está ya (para el mismo día evitamos duplicados)
                                 if ev["id"] not in ids_vistos:
                                     eventos.append(ev)
                                     ids_vistos.add(ev["id"])
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Hojas de CoffeeStation y NobleToGo
+    # 2. Hojas de CoffeeStation y NobleToGo (formato Calendario)
     for hoja in ["CoffeeStation", "NobleToGo"]:
         ws, _ = safe_worksheet(sh, hoja)
         if ws:
@@ -87,7 +85,7 @@ def cargar_eventos_mes(mes, año):
                             ev = {
                                 "id": id_base,
                                 "fecha": fecha_venta,
-                                "tipo_evento": row.get("Tipo", f"Venta {hoja}"),
+                                "tipo_evento": row.get("Tipo", f"💰 Venta {hoja}"),
                                 "titulo": row.get("Título", ""),
                                 "cliente": row.get("Cliente", ""),
                                 "contacto": row.get("Contacto", ""),
@@ -112,12 +110,13 @@ def cargar_eventos_mes(mes, año):
                         # Fecha de entrega (si es distinta)
                         fecha_entrega = _parse_fecha(row.get("Fecha_Entrega", ""))
                         if fecha_entrega and fecha_entrega != fecha_venta and fecha_entrega.month == mes and fecha_entrega.year == año:
+                            cliente = row.get("Cliente", "")
                             ev2 = {
                                 "id": id_base + "_entrega",
                                 "fecha": fecha_entrega,
-                                "tipo_evento": f"Entrega {hoja}",
-                                "titulo": f"Entrega: {row.get('Título', '')}",
-                                "cliente": row.get("Cliente", ""),
+                                "tipo_evento": f"📦 Entrega {hoja}",
+                                "titulo": f"Entrega {hoja}: {cliente}" if cliente else f"Entrega {hoja}",
+                                "cliente": cliente,
                                 "contacto": row.get("Contacto", ""),
                                 "ubicacion": row.get("Ubicacion", ""),
                                 "descripcion": row.get("Descripcion", ""),
@@ -140,7 +139,7 @@ def cargar_eventos_mes(mes, año):
             except Exception as e:
                 st.warning(f"Error al leer {hoja}: {e}")
 
-    # 3. Ventas diarias de todos los canales (para el acumulado POS)
+    # 3. Ventas diarias de todos los canales (solo Noble POS)
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
