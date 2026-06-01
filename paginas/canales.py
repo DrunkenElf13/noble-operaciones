@@ -94,7 +94,11 @@ def show_canales():
                     data = ws_cn.get_all_values()
                     if len(data) > 1:
                         df_cn = pd.DataFrame(data[1:], columns=data[0])
-                        df_cn = df_cn[["Canal","Fecha","Monto","Descripcion","Fecha_Servicio_Entrega","Metodo_Pago","Adeudo_Saldo_Pendiente"]]
+                        expected_cols = ["Canal","Fecha","Monto","Descripcion","Fecha_Servicio_Entrega","Metodo_Pago","Adeudo_Saldo_Pendiente"]
+                        for col in expected_cols:
+                            if col not in df_cn.columns:
+                                df_cn[col] = ""
+                        df_cn = df_cn[expected_cols]
                         all_events.append(df_cn)
             if all_events:
                 df_all_events = pd.concat(all_events, ignore_index=True)
