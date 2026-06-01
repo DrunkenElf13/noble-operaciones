@@ -18,6 +18,7 @@ def _parse_fecha(fecha):
     except Exception:
         return None
 
+@st.cache_data(ttl=60, show_spinner="Cargando eventos del mes...")
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
@@ -137,25 +138,21 @@ def cargar_eventos_mes(mes, año):
             except Exception as e:
                 st.warning(f"Error al leer {hoja}: {e}")
 
-    # 3. Ventas diarias de todos los canales (para acumulado POS con meta)
+    # 3. Ventas diarias de todos los canales (solo Noble POS)
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
-            # Obtener meta mensual de Noble (suponemos 145000 y 26 días hábiles)
-            # Podríamos obtenerla de la hoja Presupuesto o de los datos de ventas del mes actual
-            # Para simplificar, usamos el promedio de Meta_Mensual del mes actual si existe, sino 145000
+            # Obtener meta diaria del mes en curso
             now = datetime.now()
             if now.month == mes and now.year == año:
                 df_mes_actual = df_ventas[
                     (df_ventas["Mes"].apply(limpiar_valor) == mes) &
                     (df_ventas["Año"].apply(limpiar_valor) == año)
                 ]
+                meta_mensual = 145000.0
+                dias_habiles = 26
                 if not df_mes_actual.empty and "Meta_Mensual" in df_mes_actual.columns:
                     meta_mensual = limpiar_valor(df_mes_actual["Meta_Mensual"].iloc[-1]) or 145000.0
-                else:
-                    meta_mensual = 145000.0
-                # Días hábiles: suponer 26 o tomar el valor más reciente
-                dias_habiles = 26
                 if "Dias_Habiles" in df_mes_actual.columns and not df_mes_actual.empty:
                     dias_habiles = int(limpiar_valor(df_mes_actual["Dias_Habiles"].iloc[-1]) or 26)
             else:
@@ -191,7 +188,6 @@ def cargar_eventos_mes(mes, año):
                             "anticipo": 0,
                             "fecha_fin": "",
                             "meta_diaria": meta_diaria,
-                            # Datos adicionales para el desglose
                             "efectivo": limpiar_valor(row.get("Efectivo", 0)),
                             "transferencias": limpiar_valor(row.get("Transferencias", 0)),
                             "tarjeta": limpiar_valor(row.get("Tarjeta", 0)),
@@ -210,6 +206,7 @@ def cargar_eventos_mes(mes, año):
 
     return eventos
 
+# (funciones agregar_evento, actualizar_evento, eliminar_evento, registrar_abono se mantienen igual)
 def agregar_evento(datos: dict):
     ws, err = _asegurar_hoja_calendario()
     if err:
