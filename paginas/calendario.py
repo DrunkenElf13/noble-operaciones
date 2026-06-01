@@ -19,16 +19,16 @@ COLORES_TIPO = {
     "Venta Noble To Go": "#9B59B6",
 }
 
-PALETA_COLORES = [
-    "#4A90D9",
-    "#9B59B6",
-    "#E24B4A",
-    "#48B065",
-    "#EF9F27",
-    "#F1C40F",
-    "#1ABC9C",
-    "#34495E",
-]
+PALETA_COLORES = {
+    "🔵 Azul": "#4A90D9",
+    "🟣 Morado": "#9B59B6",
+    "🔴 Rojo": "#E24B4A",
+    "🟢 Verde": "#48B065",
+    "🟠 Naranja": "#EF9F27",
+    "🟡 Amarillo": "#F1C40F",
+    "🩵 Turquesa": "#1ABC9C",
+    "⚫ Gris": "#34495E",
+}
 
 def show_calendario():
     st.title("📅 Calendario Noble")
@@ -119,12 +119,21 @@ def show_calendario():
     st.divider()
     st.subheader("📋 Eventos del mes")
     if eventos:
-        # Filtrar para no mostrar ventas POS repetitivas
         eventos_filtrados = [e for e in eventos if e["tipo_evento"] != "Venta Noble"]
         if eventos_filtrados:
-            df_eventos = pd.DataFrame(eventos_filtrados)
+            # Agrupar eventos con mismo ID base (rango) para mostrar una sola línea
+            eventos_unicos = {}
+            for ev in eventos_filtrados:
+                id_base = ev["id"].split("_dia_")[0].split("_entrega")[0]
+                if id_base not in eventos_unicos:
+                    ev_copia = ev.copy()
+                    # Si tiene fecha_fin, mostrar rango en el título
+                    if ev.get("fecha_fin") and ev["fecha_fin"] != ev["fecha"].strftime("%Y-%m-%d"):
+                        ev_copia["titulo"] = f"{ev['titulo']} (hasta {ev['fecha_fin']})"
+                    eventos_unicos[id_base] = ev_copia
+            df_eventos = pd.DataFrame(list(eventos_unicos.values()))
             df_eventos["fecha_str"] = df_eventos["fecha"].dt.strftime("%d/%m/%Y")
-            cols_show = ["fecha_str", "tipo_evento", "titulo", "cliente", "total_cotizado", "adeudo", "ubicacion"]
+            cols_show = ["fecha_str", "tipo_evento", "titulo", "cliente", "total_cotizado", "adeudo", "anticipo", "ubicacion"]
             df_display = df_eventos[cols_show].sort_values("fecha_str")
             st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
@@ -147,16 +156,16 @@ def show_calendario():
             with col2:
                 total_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0)
                 adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0)
+                anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0)
                 metodo_ev = st.text_input("Método de pago")
                 fecha_contr_ev = st.date_input("Fecha contratación", value=hoy.date())
                 fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy.date())
+                fecha_fin_ev = st.date_input("Fecha fin (rango)", value=hoy.date(), help="Si el evento dura varios días")
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
-                color_ev = st.selectbox("Color del evento", options=PALETA_COLORES)
-                st.markdown(
-                    f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>",
-                    unsafe_allow_html=True
-                )
+                color_nombre = st.selectbox("Color del evento", list(PALETA_COLORES.keys()))
+                color_ev = PALETA_COLORES[color_nombre]
+                st.markdown(f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>", unsafe_allow_html=True)
             if st.form_submit_button("💾 Guardar evento"):
                 if not titulo_ev.strip():
                     st.error("El título es obligatorio.")
@@ -177,7 +186,9 @@ def show_calendario():
                         "abonos": abonos_ev.strip(),
                         "notas": notas_ev.strip(),
                         "color": color_ev,
-                        "responsable": st.session_state.current_user
+                        "responsable": st.session_state.current_user,
+                        "anticipo": anticipo_ev,
+                        "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_ev else "",
                     }
                     ok, msg = agregar_evento(datos)
                     if ok:
@@ -190,7 +201,13 @@ def show_calendario():
         st.subheader("✏️ Editar o eliminar eventos")
         eventos_cal = [e for e in eventos if e["origen"] == "calendario"]
         if eventos_cal:
-            opciones = {f"{e['fecha'].strftime('%d/%m/%Y')} - {e['titulo']} (ID:{e['id']})": e for e in eventos_cal}
+            # Agrupar por ID base
+            eventos_unicos_edit = {}
+            for ev in eventos_cal:
+                id_base = ev["id"].split("_dia_")[0].split("_entrega")[0]
+                if id_base not in eventos_unicos_edit:
+                    eventos_unicos_edit[id_base] = ev
+            opciones = {f"{e['fecha'].strftime('%d/%m/%Y')} - {e['titulo']} (ID:{e['id']})": e for e in eventos_unicos_edit.values()}
             sel_key = st.selectbox("Selecciona un evento", list(opciones.keys()))
             if sel_key:
                 ev = opciones[sel_key]
@@ -224,12 +241,19 @@ def show_calendario():
                 with col2:
                     total_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=ev.get("total_cotizado", 0.0))
                     adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=ev.get("adeudo", 0.0))
+                    anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=ev.get("anticipo", 0.0))
                     metodo_ev = st.text_input("Método de pago", value=ev.get("metodo_pago", ""))
                     fecha_contr_ev = st.date_input("Fecha contratación", value=pd.to_datetime(ev.get("fecha_contratacion")).date() if ev.get("fecha_contratacion") else hoy.date())
                     fecha_entr_ev = st.date_input("Fecha entrega/evento", value=pd.to_datetime(ev.get("fecha_entrega")).date() if ev.get("fecha_entrega") else hoy.date())
+                    fecha_fin_ev = st.date_input("Fecha fin (rango)", value=pd.to_datetime(ev.get("fecha_fin")).date() if ev.get("fecha_fin") else hoy.date())
                     abonos_ev = st.text_area("Abonos", value=ev.get("abonos", ""))
                     notas_ev = st.text_area("Notas", value=ev.get("notas", ""))
-                    color_ev = st.selectbox("Color", options=PALETA_COLORES, index=PALETA_COLORES.index(ev.get("color", "#4A90D9")) if ev.get("color") in PALETA_COLORES else 0)
+                    # Color
+                    color_actual = ev.get("color", "#4A90D9")
+                    color_nombre_actual = [k for k, v in PALETA_COLORES.items() if v == color_actual]
+                    color_nombre = st.selectbox("Color", list(PALETA_COLORES.keys()),
+                                               index=list(PALETA_COLORES.keys()).index(color_nombre_actual[0]) if color_nombre_actual else 0)
+                    color_ev = PALETA_COLORES[color_nombre]
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.form_submit_button("💾 Actualizar"):
@@ -249,7 +273,9 @@ def show_calendario():
                             "abonos": abonos_ev.strip(),
                             "notas": notas_ev.strip(),
                             "color": color_ev,
-                            "responsable": st.session_state.current_user
+                            "responsable": st.session_state.current_user,
+                            "anticipo": anticipo_ev,
+                            "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_ev else "",
                         }
                         ok, msg = actualizar_evento(ev["id"], datos)
                         if ok:
