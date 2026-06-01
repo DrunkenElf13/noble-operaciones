@@ -3,7 +3,7 @@ import pandas as pd
 import calendar
 from datetime import datetime, timedelta
 
-from data_loaders import cargar_datos_integrales, cargar_ventas
+from data_loaders import cargar_datos_integrales, cargar_todas_ventas
 from inventario import obtener_ultimo_inventario, fecha_max_segura
 from utils import limpiar_valor, ahora_hermosillo
 from auth import tiene_permiso
@@ -25,7 +25,7 @@ def show_dashboard():
 
     # ---------- VENTA ACUMULADA DEL MES ----------
     st.subheader("💰 Venta acumulada del mes")
-    df_v_dash = cargar_ventas()
+    df_v_dash = cargar_todas_ventas()
     if not df_v_dash.empty:
         df_v_mes_dash = df_v_dash[
             (df_v_dash["Mes"].apply(limpiar_valor) == ahora.month) &
@@ -37,8 +37,6 @@ def show_dashboard():
         meta_noble = 145000.0
         if not df_v_mes_dash.empty and "Meta_Mensual" in df_v_mes_dash.columns:
             meta_noble = limpiar_valor(df_v_mes_dash["Meta_Mensual"].iloc[-1]) or meta_noble
-        # Las metas de Coffee Station y To Go aún no están en Ventas, se pondrán luego en Presupuesto
-        # Por ahora, calculamos solo el total global
         avance_global = (venta_acum_dash / meta_noble * 100) if meta_noble > 0 else 0.0
         dias_con_venta_dash = int((df_v_mes_dash["Venta_Diaria"] > 0).sum()) if not df_v_mes_dash.empty else 0
         prom_diario_dash = venta_acum_dash / dias_con_venta_dash if dias_con_venta_dash > 0 else 0.0
@@ -53,7 +51,6 @@ def show_dashboard():
         st.subheader("📊 Ventas por canal")
         if "Canal" in df_v_mes_dash.columns:
             ventas_por_canal = df_v_mes_dash.groupby("Canal")["Venta_Diaria"].sum()
-            # Mostrar como tarjetas en columnas
             cols_canales = st.columns(len(CANALES_VENTA))
             for i, canal in enumerate(CANALES_VENTA):
                 monto = ventas_por_canal.get(canal, 0.0)
@@ -67,9 +64,7 @@ def show_dashboard():
     st.divider()
     st.subheader("⚠️ Adeudos pendientes")
 
-    # Cargar eventos del mes actual (podrían haber adeudos de meses anteriores también, así que ampliamos)
     eventos = []
-    # Buscar eventos de los últimos 3 meses para cubrir posibles arrastres
     for mes_offset in [0, -1, -2]:
         mes = ahora.month + mes_offset
         año = ahora.year
@@ -78,14 +73,12 @@ def show_dashboard():
             año -= 1
         eventos.extend(cargar_eventos_mes(mes, año))
 
-    # Filtrar eventos con adeudo > 0 y cuya fecha de entrega (o fecha) ya haya pasado
     hoy = ahora.date()
     adeudos = []
     for ev in eventos:
         adeudo = ev.get("adeudo", 0)
         if adeudo <= 0:
             continue
-        # Determinar la fecha límite: usar fecha_entrega si existe, sino fecha del evento
         fecha_limite_str = ev.get("fecha_entrega") or ev.get("fecha")
         if isinstance(fecha_limite_str, str):
             try:
