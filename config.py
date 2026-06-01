@@ -19,14 +19,15 @@ COLS_VENTAS  = [
     "Uber_Eats", "Rappi", "Venta_Diaria",
     "Tickets_POS", "Tickets_Uber", "Tickets_Rappi", "Total_Tickets",
     "Ticket_Promedio", "Meta_Mensual", "Dias_Habiles", "Meta_Diaria",
-    "Responsable", "Notas",
+    "Responsable", "Notas", "Canal",
 ]
 COLS_GASTOS = [
     "ID", "Fecha", "Periodo", "Tipo", "Categoria", "Concepto",
     "Monto", "Responsable", "Notas"
 ]
 COLS_PRESUPUESTO = [
-    "Año", "Mes", "Meta_Total", "Meta_POS", "Meta_Uber", "Meta_Rappi", "Notas"
+    "Año", "Mes", "Meta_Total", "Meta_POS", "Meta_Uber", "Meta_Rappi",
+    "Meta_CoffeeStation", "Meta_ToGo", "Notas"
 ]
 COLS_BASE_COSTOS = [
     "Producto", "Ingrediente", "Marca", "Proveedor", "Unidad_Medida",
@@ -52,11 +53,22 @@ COLS_EVENTO_CANAL = [
 ]
 COLS_PERMISOS = ["Rol", "Pagina"]
 
+# NUEVA CONSTANTE PARA EL CALENDARIO
+COLS_CALENDARIO = [
+    "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
+    "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
+    "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
+    "Abonos", "Notas", "Color", "Responsable"
+]
+
 COLS_CRITICAS_INSUMOS   = {"Nombre del Insumo", "Grupo", "Stock Mínimo"}
 COLS_CRITICAS_HISTORIAL = {"Nombre del Insumo", "Alm", "Barra", "Fecha de Inventario"}
 
 GRUPOS       = ["A", "B", "C", "D", "E", "F", "G"]
 UNIDADES     = ["Noble", "Coffee Station"]
 UNIDADES_MED = ["pz", "ml", "gr", "kg", "lt"]
+
+# NUEVA CONSTANTE PARA CANALES DE VENTA PRINCIPALES
+CANALES_VENTA = ["Noble", "Coffee Station", "Noble To Go"]
 
 SPREADSHEET_ID = "1VZV81p-JqoaRPzMzsRurF6wntVefyaN5ozs3RJe6uJs"
