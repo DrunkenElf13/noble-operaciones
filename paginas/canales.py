@@ -99,6 +99,8 @@ def show_canales():
                             if col not in df_cn.columns:
                                 df_cn[col] = ""
                         df_cn = df_cn[expected_cols]
+                        # ELIMINAR COLUMNAS DUPLICADAS (corrección del error)
+                        df_cn = df_cn.loc[:, ~df_cn.columns.duplicated()]
                         all_events.append(df_cn)
             if all_events:
                 df_all_events = pd.concat(all_events, ignore_index=True)
