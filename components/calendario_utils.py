@@ -18,7 +18,6 @@ def _parse_fecha(fecha):
     except Exception:
         return None
 
-# SIN CACHÉ: siempre lee de Sheets
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
@@ -70,7 +69,7 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Hojas de CoffeeStation y NobleToGo
+    # 2. Hojas de CoffeeStation y NobleToGo (formato Calendario)
     for hoja in ["CoffeeStation", "NobleToGo"]:
         ws, _ = safe_worksheet(sh, hoja)
         if ws:
@@ -80,6 +79,7 @@ def cargar_eventos_mes(mes, año):
                     df = pd.DataFrame(datos[1:], columns=datos[0])
                     for _, row in df.iterrows():
                         id_base = row.get("ID", str(uuid.uuid4())[:8])
+                        # Fecha de venta
                         fecha_venta = _parse_fecha(row.get("Fecha", ""))
                         if fecha_venta and fecha_venta.month == mes and fecha_venta.year == año:
                             ev = {
@@ -107,6 +107,7 @@ def cargar_eventos_mes(mes, año):
                             if ev["id"] not in ids_vistos:
                                 eventos.append(ev)
                                 ids_vistos.add(ev["id"])
+                        # Fecha de entrega (si es distinta)
                         fecha_entrega = _parse_fecha(row.get("Fecha_Entrega", ""))
                         if fecha_entrega and fecha_entrega != fecha_venta and fecha_entrega.month == mes and fecha_entrega.year == año:
                             cliente = row.get("Cliente", "")
@@ -142,7 +143,6 @@ def cargar_eventos_mes(mes, año):
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
-            # Obtener meta diaria del mes en curso
             now = datetime.now()
             if now.month == mes and now.year == año:
                 df_mes_actual = df_ventas[
@@ -206,7 +206,6 @@ def cargar_eventos_mes(mes, año):
 
     return eventos
 
-# (funciones agregar_evento, actualizar_evento, eliminar_evento, registrar_abono se mantienen igual)
 def agregar_evento(datos: dict):
     ws, err = _asegurar_hoja_calendario()
     if err:
