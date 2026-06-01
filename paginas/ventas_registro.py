@@ -7,7 +7,7 @@ from sheets import (
 from utils import limpiar_valor, ahora_hermosillo
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
-from config import CANALES_VENTA, COLS_VENTAS
+from config import CANALES_VENTA, COLS_VENTAS, COLS_CALENDARIO
 from components.calendario_utils import agregar_evento
 
 def _construir_fila_venta(
@@ -31,19 +31,27 @@ def _construir_fila_venta(
         responsable, notas, canal,
     ]
 
-def _construir_fila_venta_canal(
-    fecha, monto, metodo_pago, responsable, notas, canal,
-):
-    venta_diaria = monto
+def _construir_fila_venta_canal(datos_evento: dict, canal: str):
+    """Construye una fila para la hoja del canal con las columnas de Calendario."""
+    import uuid
     return [
-        canal,
-        fecha.strftime("%Y-%m-%d"),
-        fecha.day, fecha.month, fecha.year,
-        0.0, 0.0, 0.0, monto,
-        0.0, 0.0, venta_diaria,
-        0, 0, 0, 0,
-        0.0, 0.0, 0, 0.0,
-        responsable, notas, canal,
+        str(uuid.uuid4())[:8],  # ID
+        datos_evento.get("fecha", ""),
+        datos_evento.get("tipo", ""),
+        datos_evento.get("titulo", ""),
+        datos_evento.get("cliente", ""),
+        datos_evento.get("contacto", ""),
+        datos_evento.get("ubicacion", ""),
+        datos_evento.get("descripcion", ""),
+        datos_evento.get("total_cotizado", 0),
+        datos_evento.get("adeudo", 0),
+        datos_evento.get("metodo_pago", ""),
+        datos_evento.get("fecha_contratacion", ""),
+        datos_evento.get("fecha_entrega", ""),
+        datos_evento.get("abonos", ""),
+        datos_evento.get("notas", ""),
+        datos_evento.get("color", "#4A90D9"),
+        datos_evento.get("responsable", ""),
     ]
 
 def show_ventas():
@@ -199,28 +207,8 @@ def show_ventas():
             if monto_ev <= 0:
                 st.error("El monto debe ser mayor a cero.")
             else:
-                # 1. Guardar en la hoja del canal (CoffeeStation o NobleToGo)
-                ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
-                if err_canal:
-                    st.error(err_canal)
-                else:
-                    fila = _construir_fila_venta_canal(
-                        fecha=fecha_venta,
-                        monto=monto_ev,
-                        metodo_pago=metodo_pago,
-                        responsable=responsable_v,
-                        notas=notas_ev,
-                        canal=canal_sel,
-                    )
-                    ok, msg = append_rows_con_retry(ws_canal, [fila])
-                    if not ok:
-                        st.error(msg)
-                        st.stop()
-                    # Limpiar caché de la función que carga todas las ventas
-                    from data_loaders import cargar_todas_ventas
-                    cargar_todas_ventas.clear()
-
-                # 2. Guardar evento en Calendario
+                # Preparar datos del evento
+                import uuid
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
                     "tipo": f"Venta {canal_sel}",
@@ -239,6 +227,20 @@ def show_ventas():
                     "color": color_ev,
                     "responsable": st.session_state.current_user
                 }
+                # 1. Guardar en la hoja del canal (con todas las columnas)
+                ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
+                if err_canal:
+                    st.error(err_canal)
+                else:
+                    fila = _construir_fila_venta_canal(datos_evento, canal_sel)
+                    ok, msg = append_rows_con_retry(ws_canal, [fila])
+                    if not ok:
+                        st.error(msg)
+                        st.stop()
+                    from data_loaders import cargar_todas_ventas
+                    cargar_todas_ventas.clear()
+
+                # 2. Guardar evento en Calendario (para trazabilidad)
                 ok_ev, msg_ev = agregar_evento(datos_evento)
                 if ok_ev:
                     st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
