@@ -18,7 +18,7 @@ def _parse_fecha(fecha):
     except Exception:
         return None
 
-@st.cache_data(ttl=60, show_spinner="Cargando eventos del mes...")
+# SIN CACHÉ: siempre lee de Sheets
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
@@ -138,7 +138,7 @@ def cargar_eventos_mes(mes, año):
             except Exception as e:
                 st.warning(f"Error al leer {hoja}: {e}")
 
-    # 3. Ventas diarias de todos los canales (solo Noble POS)
+    # 3. Ventas diarias (solo Noble POS)
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
