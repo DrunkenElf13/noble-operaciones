@@ -19,6 +19,17 @@ COLORES_TIPO = {
     "Venta Noble To Go": "#9B59B6",
 }
 
+PALETA_COLORES = [
+    "#4A90D9",
+    "#9B59B6",
+    "#E24B4A",
+    "#48B065",
+    "#EF9F27",
+    "#F1C40F",
+    "#1ABC9C",
+    "#34495E",
+]
+
 def show_calendario():
     st.title("📅 Calendario Noble")
 
@@ -28,7 +39,6 @@ def show_calendario():
     if "cal_año" not in st.session_state:
         st.session_state.cal_año = hoy.year
 
-    # ---- Navegación con selectores ----
     col_anio, col_mes, col_btn = st.columns([1,1,2])
     with col_anio:
         años_opts = list(range(2024, 2031))
@@ -109,15 +119,19 @@ def show_calendario():
     st.divider()
     st.subheader("📋 Eventos del mes")
     if eventos:
-        df_eventos = pd.DataFrame(eventos)
-        df_eventos["fecha_str"] = df_eventos["fecha"].dt.strftime("%d/%m/%Y")
-        cols_show = ["fecha_str", "tipo_evento", "titulo", "cliente", "total_cotizado", "adeudo", "ubicacion"]
-        df_display = df_eventos[cols_show].sort_values("fecha_str")
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        # Filtrar para no mostrar ventas POS repetitivas
+        eventos_filtrados = [e for e in eventos if e["tipo_evento"] != "Venta Noble"]
+        if eventos_filtrados:
+            df_eventos = pd.DataFrame(eventos_filtrados)
+            df_eventos["fecha_str"] = df_eventos["fecha"].dt.strftime("%d/%m/%Y")
+            cols_show = ["fecha_str", "tipo_evento", "titulo", "cliente", "total_cotizado", "adeudo", "ubicacion"]
+            df_display = df_eventos[cols_show].sort_values("fecha_str")
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay eventos este mes (solo ventas regulares).")
     else:
         st.info("No hay eventos este mes.")
 
-    # Formulario nuevo evento (solo eventos manuales, no ventas)
     st.divider()
     with st.expander("➕ Nuevo evento manual (no ventas)", expanded=False):
         with st.form("f_evento", clear_on_submit=True):
@@ -138,7 +152,11 @@ def show_calendario():
                 fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy.date())
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
-                color_ev = st.color_picker("Color del evento", value="#4A90D9")
+                color_ev = st.selectbox("Color del evento", options=PALETA_COLORES)
+                st.markdown(
+                    f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>",
+                    unsafe_allow_html=True
+                )
             if st.form_submit_button("💾 Guardar evento"):
                 if not titulo_ev.strip():
                     st.error("El título es obligatorio.")
@@ -168,7 +186,6 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # Editar / Eliminar eventos
     if eventos:
         st.subheader("✏️ Editar o eliminar eventos")
         eventos_cal = [e for e in eventos if e["origen"] == "calendario"]
@@ -212,7 +229,7 @@ def show_calendario():
                     fecha_entr_ev = st.date_input("Fecha entrega/evento", value=pd.to_datetime(ev.get("fecha_entrega")).date() if ev.get("fecha_entrega") else hoy.date())
                     abonos_ev = st.text_area("Abonos", value=ev.get("abonos", ""))
                     notas_ev = st.text_area("Notas", value=ev.get("notas", ""))
-                    color_ev = st.color_picker("Color", value=ev.get("color", "#4A90D9"))
+                    color_ev = st.selectbox("Color", options=PALETA_COLORES, index=PALETA_COLORES.index(ev.get("color", "#4A90D9")) if ev.get("color") in PALETA_COLORES else 0)
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.form_submit_button("💾 Actualizar"):
@@ -246,7 +263,6 @@ def show_calendario():
                         del st.session_state["editando_evento"]
                         st.rerun()
 
-        # Registrar abono
         st.subheader("💵 Registrar abono")
         with st.expander("Añadir abono a un evento con adeudo"):
             eventos_con_adeudo = [e for e in eventos if e.get("adeudo", 0) > 0 and e["origen"] == "calendario"]
