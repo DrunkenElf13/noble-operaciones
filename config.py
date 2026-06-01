@@ -1,4 +1,3 @@
-# Constantes del sistema
 COLS_INSUMOS = [
     "Unidad de Negocio", "Nombre del Insumo", "Marca", "Proveedor", "Grupo",
     "Espacio_1", "Presentación de Compra", "Unidad de Medida",
@@ -53,12 +52,12 @@ COLS_EVENTO_CANAL = [
 ]
 COLS_PERMISOS = ["Rol", "Pagina"]
 
-# NUEVA CONSTANTE PARA EL CALENDARIO
+# NUEVA CONSTANTE PARA EL CALENDARIO (con Anticipo y Fecha_Fin)
 COLS_CALENDARIO = [
     "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
     "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
     "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
-    "Abonos", "Notas", "Color", "Responsable"
+    "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin"
 ]
 
 COLS_CRITICAS_INSUMOS   = {"Nombre del Insumo", "Grupo", "Stock Mínimo"}
@@ -68,7 +67,6 @@ GRUPOS       = ["A", "B", "C", "D", "E", "F", "G"]
 UNIDADES     = ["Noble", "Coffee Station"]
 UNIDADES_MED = ["pz", "ml", "gr", "kg", "lt"]
 
-# NUEVA CONSTANTE PARA CANALES DE VENTA PRINCIPALES
 CANALES_VENTA = ["Noble", "Coffee Station", "Noble To Go"]
 
 SPREADSHEET_ID = "1VZV81p-JqoaRPzMzsRurF6wntVefyaN5ozs3RJe6uJs"
