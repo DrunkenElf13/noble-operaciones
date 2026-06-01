@@ -7,7 +7,6 @@ from utils import limpiar_valor
 import uuid
 
 def _parse_fecha(fecha):
-    """Convierte cualquier fecha a datetime de manera segura."""
     if fecha is None:
         return None
     try:
@@ -15,7 +14,6 @@ def _parse_fecha(fecha):
             return fecha
         if isinstance(fecha, pd.Timestamp):
             return fecha.to_pydatetime()
-        # Intentar parsear string
         return pd.to_datetime(str(fecha)).to_pydatetime()
     except Exception:
         return None
@@ -23,7 +21,7 @@ def _parse_fecha(fecha):
 def cargar_eventos_mes(mes, año):
     eventos = []
 
-    # 1. Eventos de la hoja Calendario
+    # 1. Calendario
     ws_cal, err = _asegurar_hoja_calendario()
     if ws_cal:
         try:
@@ -56,7 +54,7 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Eventos de hojas de canales adicionales
+    # 2. Canales adicionales
     try:
         df_canales = cargar_config_canales()
         if not df_canales.empty:
