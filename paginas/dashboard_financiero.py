@@ -4,10 +4,14 @@ import numpy as np
 import calendar
 import plotly.graph_objects as go
 import plotly.express as px
-from data_loaders import cargar_ventas, cargar_gastos, cargar_presupuesto, cargar_costos_insumos, cargar_merma, cargar_config_canales, cargar_recetas
+from data_loaders import (
+    cargar_ventas, cargar_gastos, cargar_presupuesto,
+    cargar_costos_insumos, cargar_merma, cargar_config_canales, cargar_recetas
+)
 from sheets import safe_worksheet, sh
-from utils import limpiar_valor, ahora_hermosillo
+from utils import limpiar_valor, ahora_hermosillo, _proyectar_tendencia
 from auth import tiene_permiso
+from config import CANALES_VENTA
 
 def _gauge(valor, minimo, maximo, titulo, sufijo="%", umbral_verde=80, umbral_amarillo=60):
     try:
@@ -66,10 +70,30 @@ def show_dashboard_financiero():
         df_vm = df_vm[(df_vm["Mes_num"] > 0) & (df_vm["Año_num"] > 0)]
         ventas_mens = (
             df_vm.groupby(["Año_num","Mes_num"])
-            .agg(Ventas=("Venta_Diaria","sum"), POS=("Total_POS","sum"),
-                 Uber=("Uber_Eats","sum"), Rappi=("Rappi","sum"))
+            .agg(Ventas=("Venta_Diaria","sum"),
+                 POS=("Total_POS","sum"),
+                 Uber=("Uber_Eats","sum"),
+                 Rappi=("Rappi","sum"))
             .reset_index()
         )
+        # Añadir ventas por canal (puede no existir columna Canal en datos históricos)
+        if "Canal" in df_vm.columns:
+            ventas_por_canal = (
+                df_vm.groupby(["Año_num","Mes_num","Canal"])["Venta_Diaria"]
+                .sum().reset_index()
+                .pivot(index=["Año_num","Mes_num"], columns="Canal", values="Venta_Diaria")
+                .fillna(0).reset_index()
+            )
+            # Asegurar columnas para todos los canales
+            for c in CANALES_VENTA:
+                if c not in ventas_por_canal.columns:
+                    ventas_por_canal[c] = 0.0
+            ventas_mens = ventas_mens.merge(ventas_por_canal, on=["Año_num","Mes_num"], how="left").fillna(0)
+        else:
+            # Sin columna Canal, solo Noble tiene datos
+            for c in CANALES_VENTA:
+                ventas_mens[c] = 0.0
+            ventas_mens["Noble"] = ventas_mens["Ventas"]
         if not df_gf.empty and "Fecha" in df_gf.columns:
             df_gm = df_gf.copy()
             df_gm["_fecha"] = pd.to_datetime(df_gm["Fecha"], errors="coerce")
@@ -99,13 +123,14 @@ def show_dashboard_financiero():
         df_agrup = (
             df_comp.groupby("Grupo", sort=False)
             .agg(Ventas=("Ventas","sum"), Gastos=("Gastos","sum"), Utilidad=("Utilidad","sum"),
-                 POS=("POS","sum"), Uber=("Uber","sum"), Rappi=("Rappi","sum"), _sort=("_sort","min"))
+                 POS=("POS","sum"), Uber=("Uber","sum"), Rappi=("Rappi","sum"),
+                 Noble=("Noble","sum"), CoffeeStation=("Coffee Station","sum"), ToGo=("Noble To Go","sum"),
+                 _sort=("_sort","min"))
             .reset_index()
             .sort_values("_sort")
             .drop(columns=["_sort"])
         )
         try:
-            import plotly.graph_objects as go
             fig_comp = go.Figure()
             fig_comp.add_trace(go.Bar(name="Ventas",   x=df_agrup["Grupo"], y=df_agrup["Ventas"],   marker_color="#48B065"))
             fig_comp.add_trace(go.Bar(name="Gastos",   x=df_agrup["Grupo"], y=df_agrup["Gastos"],   marker_color="#E24B4A"))
@@ -113,66 +138,61 @@ def show_dashboard_financiero():
             fig_comp.update_layout(barmode="group", title="Ventas vs Gastos vs Utilidad", height=400,
                                     legend=dict(orientation="h", yanchor="bottom", y=1.02))
             st.plotly_chart(fig_comp, use_container_width=True)
-            st.subheader("🥧 Canales de venta por período")
-            fig_can = go.Figure()
-            fig_can.add_trace(go.Bar(name="POS",      x=df_agrup["Grupo"], y=df_agrup["POS"],   marker_color="#48B065"))
-            fig_can.add_trace(go.Bar(name="Uber Eats",x=df_agrup["Grupo"], y=df_agrup["Uber"],  marker_color="#EF9F27"))
-            fig_can.add_trace(go.Bar(name="Rappi",    x=df_agrup["Grupo"], y=df_agrup["Rappi"], marker_color="#E24B4A"))
-            fig_can.update_layout(barmode="stack", title="Mix de canales", height=350,
+            st.subheader("🥧 Canales de venta (Noble / Coffee Station / To Go)")
+            fig_can2 = go.Figure()
+            colores_canal = {"Noble": "#48B065", "Coffee Station": "#9B59B6", "Noble To Go": "#E24B4A"}
+            for canal in CANALES_VENTA:
+                if canal in df_agrup.columns:
+                    fig_can2.add_trace(go.Bar(name=canal, x=df_agrup["Grupo"], y=df_agrup[canal],
+                                              marker_color=colores_canal.get(canal, "#AAAAAA")))
+            fig_can2.update_layout(barmode="stack", title="Mix por canal", height=350,
                                    legend=dict(orientation="h", yanchor="bottom", y=1.02))
-            st.plotly_chart(fig_can, use_container_width=True)
+            st.plotly_chart(fig_can2, use_container_width=True)
         except Exception:
             st.bar_chart(df_agrup.set_index("Grupo")[["Ventas","Gastos","Utilidad"]])
         st.subheader("📋 Tabla de datos")
         st.dataframe(df_agrup, hide_index=True, use_container_width=True)
     with tab_proy:
-        st.subheader("🔮 Proyecciones de Ventas")
+        st.subheader("🔮 Proyecciones de Ventas por Canal")
         hoy_pr        = ahora_hermosillo().date()
         dias_en_mes_pr = calendar.monthrange(hoy_pr.year, hoy_pr.month)[1]
         df_vf_mes_pr = df_vf[
             (df_vf["Mes"].apply(limpiar_valor) == hoy_pr.month) &
             (df_vf["Año"].apply(limpiar_valor) == hoy_pr.year)
         ].copy()
-        venta_acum_pr    = df_vf_mes_pr["Venta_Diaria"].sum() if not df_vf_mes_pr.empty else 0.0
-        dias_con_v_pr    = int((df_vf_mes_pr["Venta_Diaria"] > 0).sum()) if not df_vf_mes_pr.empty else 0
+        venta_acum_pr = df_vf_mes_pr["Venta_Diaria"].sum() if not df_vf_mes_pr.empty else 0.0
+        dias_con_v_pr = int((df_vf_mes_pr["Venta_Diaria"] > 0).sum()) if not df_vf_mes_pr.empty else 0
         dias_restantes_pr = dias_en_mes_pr - hoy_pr.day
-        avg_diario_pr    = venta_acum_pr / dias_con_v_pr if dias_con_v_pr > 0 else 0.0
+        avg_diario_pr = venta_acum_pr / dias_con_v_pr if dias_con_v_pr > 0 else 0.0
         proyeccion_cierre = venta_acum_pr + (avg_diario_pr * dias_restantes_pr)
-        meta_pr = 145000.0
-        if not df_vf_mes_pr.empty and "Meta_Mensual" in df_vf_mes_pr.columns:
-            meta_pr = limpiar_valor(df_vf_mes_pr["Meta_Mensual"].iloc[-1]) or meta_pr
+        # Metas por canal desde presupuesto
+        metas_canal = {"Noble": 145000.0, "Coffee Station": 0.0, "Noble To Go": 0.0}
         if not df_pptof.empty:
             ppto_mes_pr = df_pptof[
                 (df_pptof["Mes"].apply(limpiar_valor) == hoy_pr.month) &
                 (df_pptof["Año"].apply(limpiar_valor) == hoy_pr.year)
             ]
             if not ppto_mes_pr.empty:
-                meta_ppto_pr = limpiar_valor(ppto_mes_pr["Meta_Total"].iloc[-1])
-                if meta_ppto_pr > 0:
-                    meta_pr = meta_ppto_pr
-        cumpl_actual_pr   = min((venta_acum_pr   / meta_pr * 100), 150) if meta_pr > 0 else 0.0
-        cumpl_proy_pr     = min((proyeccion_cierre / meta_pr * 100), 150) if meta_pr > 0 else 0.0
+                metas_canal["Noble"] = limpiar_valor(ppto_mes_pr["Meta_Total"].iloc[-1]) or 145000.0
+                metas_canal["Coffee Station"] = limpiar_valor(ppto_mes_pr["Meta_CoffeeStation"].iloc[-1]) or 0.0
+                metas_canal["Noble To Go"] = limpiar_valor(ppto_mes_pr["Meta_ToGo"].iloc[-1]) or 0.0
+        # Acumulados por canal
+        ventas_por_canal_mes = {}
+        for canal in CANALES_VENTA:
+            if "Canal" in df_vf_mes_pr.columns:
+                ventas_por_canal_mes[canal] = df_vf_mes_pr[df_vf_mes_pr["Canal"] == canal]["Venta_Diaria"].sum()
+            else:
+                ventas_por_canal_mes[canal] = venta_acum_pr if canal == "Noble" else 0.0
         st.subheader(f"📅 {calendar.month_name[hoy_pr.month].capitalize()} {hoy_pr.year}")
-        pm1, pm2, pm3 = st.columns(3)
-        pm1.metric("Venta acumulada",    f"${venta_acum_pr:,.2f}")
-        pm2.metric("Promedio diario",    f"${avg_diario_pr:,.2f}", f"({dias_con_v_pr} días con venta)")
-        pm3.metric("Proyección cierre",  f"${proyeccion_cierre:,.2f}",
-                    f"Meta: ${meta_pr:,.0f}", delta_color="normal" if proyeccion_cierre >= meta_pr else "inverse")
-        try:
-            import plotly.graph_objects as go
-            gc1, gc2 = st.columns(2)
-            with gc1:
-                _gauge(cumpl_actual_pr, 0, 150, "Cumplimiento actual del mes", sufijo="%")
-            with gc2:
-                _gauge(cumpl_proy_pr, 0, 150, "Cumplimiento proyectado al cierre", sufijo="%")
-        except Exception:
-            cc1, cc2 = st.columns(2)
-            cc1.metric("Cumplimiento actual",    f"{cumpl_actual_pr:.1f}%")
-            cc2.metric("Cumplimiento proyectado", f"{cumpl_proy_pr:.1f}%")
+        cols_meta = st.columns(len(CANALES_VENTA))
+        for i, canal in enumerate(CANALES_VENTA):
+            acum = ventas_por_canal_mes.get(canal, 0.0)
+            meta = metas_canal.get(canal, 0.0)
+            avance = (acum / meta * 100) if meta > 0 else 0.0
+            cols_meta[i].metric(f"{canal}", f"${acum:,.2f}", f"Meta: ${meta:,.0f} ({avance:.0f}%)")
         st.divider()
         st.subheader("📈 Datos para tus propias gráficas")
         st.markdown("Descarga el archivo CSV con las ventas mensuales y crea tus propias visualizaciones en Excel.")
-        from utils import _proyectar_tendencia
         df_trend = _proyectar_tendencia(df_vf, meses_futuros=6)
         if not df_trend.empty:
             csv_proy = df_trend.to_csv(index=False).encode("utf-8")
@@ -186,7 +206,7 @@ def show_dashboard_financiero():
         st.divider()
         st.subheader(f"📊 Cumplimiento anual vs presupuesto — {hoy_pr.year}")
         venta_anual_pr = df_vf[df_vf["Año"].apply(limpiar_valor) == hoy_pr.year]["Venta_Diaria"].sum()
-        ppto_anual_pr  = 0.0
+        ppto_anual_pr = 0.0
         if not df_pptof.empty:
             ppto_año_pr = df_pptof[df_pptof["Año"].apply(limpiar_valor) == hoy_pr.year]
             if not ppto_año_pr.empty:
@@ -256,7 +276,6 @@ def show_dashboard_financiero():
             tf2.metric("Margen Bruto Promedio", f"{margen_prom_tab:.1f}%")
             tf3.metric("Productos en base", len(df_por_prod))
             try:
-                import plotly.graph_objects as go
                 colores_fc_tab = [
                     "#E24B4A" if fc > 35 else ("#EF9F27" if fc > 25 else "#48B065")
                     for fc in df_por_prod["Food_Cost_Pct"]
@@ -315,7 +334,6 @@ def show_dashboard_financiero():
             mm3.metric("% Merma vs Ventas",       f"{pct_merma_d:.2f}%",
                         delta_color="inverse" if pct_merma_d > 3 else "normal")
             try:
-                import plotly.express as px
                 if not df_md_fil.empty:
                     cc_md1, cc_md2 = st.columns(2)
                     with cc_md1:
@@ -371,17 +389,12 @@ def show_dashboard_financiero():
             (df_vf["Mes"].apply(limpiar_valor) == mes_pe) &
             (df_vf["Año"].apply(limpiar_valor) == año_pe)
         ]["Venta_Diaria"].sum()
-        with st.expander("✏️ Ajuste manual de gastos (opcional — se usa si no hay datos en el módulo de Gastos)",
-                         expanded=(gastos_fijos_pe + gastos_var_pe == 0)):
+        with st.expander("✏️ Ajuste manual de gastos", expanded=(gastos_fijos_pe + gastos_var_pe == 0)):
             col_gf_pe, col_gv_pe = st.columns(2)
             with col_gf_pe:
-                gastos_fijos_pe = st.number_input("Gastos Fijos ($):", min_value=0.0, step=100.0,
-                                                   value=float(gastos_fijos_pe),
-                                                   help="Renta, nómina, servicios fijos, etc.")
+                gastos_fijos_pe = st.number_input("Gastos Fijos ($):", min_value=0.0, step=100.0, value=float(gastos_fijos_pe))
             with col_gv_pe:
-                gastos_var_pe = st.number_input("Gastos Variables ($):", min_value=0.0, step=100.0,
-                                                 value=float(gastos_var_pe),
-                                                 help="Insumos, empaques, comisiones, etc.")
+                gastos_var_pe = st.number_input("Gastos Variables ($):", min_value=0.0, step=100.0, value=float(gastos_var_pe))
         gastos_tot_pe = gastos_fijos_pe + gastos_var_pe
         ratio_var_pe  = (gastos_var_pe / ventas_pe) if ventas_pe > 0 else 0.0
         pe_val = 0.0
@@ -389,8 +402,6 @@ def show_dashboard_financiero():
         if gastos_fijos_pe > 0 and ventas_pe > 0 and ratio_var_pe < 1:
             pe_val = gastos_fijos_pe / (1 - ratio_var_pe)
             pe_calculable = True
-        elif gastos_fijos_pe > 0 and ventas_pe == 0:
-            pe_calculable = False
         st.divider()
         if pe_calculable:
             st.markdown(f"""
@@ -412,15 +423,13 @@ def show_dashboard_financiero():
             pp3.metric("Utilidad neta estimada", f"${utilidad_pe:,.2f}",
                         delta_color="normal" if utilidad_pe >= 0 else "inverse")
             try:
-                _gauge(cobertura_pe, 0, 150,
-                       f"Cobertura del PE — {calendar.month_name[mes_pe].capitalize()} {año_pe}",
-                       sufijo="%", umbral_verde=100, umbral_amarillo=80)
+                _gauge(cobertura_pe, 0, 150, f"Cobertura del PE — {calendar.month_name[mes_pe].capitalize()} {año_pe}", sufijo="%", umbral_verde=100, umbral_amarillo=80)
             except Exception:
                 st.metric("Cobertura PE", f"{cobertura_pe:.1f}%")
         elif gastos_fijos_pe > 0 and ratio_var_pe >= 1:
-            st.error("⚠️ Los gastos variables superan o igualan las ventas. El punto de equilibrio no es alcanzable con esta estructura de costos.")
+            st.error("⚠️ Los gastos variables superan o igualan las ventas. El punto de equilibrio no es alcanzable.")
         else:
-            st.info("Ingresa los gastos del período para calcular el punto de equilibrio. Si ya registraste gastos en el módulo de Gastos, selecciona el mes y año correspondientes.")
+            st.info("Ingresa los gastos del período para calcular el punto de equilibrio.")
         st.divider()
         st.subheader(f"📊 Cumplimiento anual vs presupuesto — {año_pe}")
         venta_anual_pe = df_vf[df_vf["Año"].apply(limpiar_valor) == año_pe]["Venta_Diaria"].sum()
@@ -485,7 +494,6 @@ def show_dashboard_financiero():
                 st.dataframe(df_acum, hide_index=True, use_container_width=True)
                 st.metric("Total General Canales Adicionales", f"${total_general:,.2f}")
                 try:
-                    import plotly.express as px
                     fig_can_adic = px.bar(df_acum, x="Canal", y="Total", title="Ventas por Canal Adicional", color="Total")
                     st.plotly_chart(fig_can_adic, use_container_width=True)
                 except Exception:
