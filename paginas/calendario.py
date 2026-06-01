@@ -40,7 +40,10 @@ def show_calendario():
         st.session_state.cal_mes = hoy.month
     if "cal_año" not in st.session_state:
         st.session_state.cal_año = hoy.year
+    if "dia_seleccionado" not in st.session_state:
+        st.session_state.dia_seleccionado = None
 
+    # Navegación de mes
     col_anio, col_mes, col_btn = st.columns([1,1,2])
     with col_anio:
         años_opts = list(range(2024, 2031))
@@ -55,6 +58,7 @@ def show_calendario():
         if st.button("Ir al mes seleccionado"):
             st.session_state.cal_mes = mes_sel
             st.session_state.cal_año = año_sel
+            st.session_state.dia_seleccionado = None
             st.rerun()
 
     col1, col2, col3, col4 = st.columns([1,2,2,1])
@@ -65,6 +69,7 @@ def show_calendario():
                 st.session_state.cal_año -= 1
             else:
                 st.session_state.cal_mes -= 1
+            st.session_state.dia_seleccionado = None
             st.rerun()
     with col2:
         st.subheader(f"{calendar.month_name[st.session_state.cal_mes]} {st.session_state.cal_año}")
@@ -75,15 +80,18 @@ def show_calendario():
                 st.session_state.cal_año += 1
             else:
                 st.session_state.cal_mes += 1
+            st.session_state.dia_seleccionado = None
             st.rerun()
     with col4:
         if st.button("Hoy"):
             st.session_state.cal_mes = hoy.month
             st.session_state.cal_año = hoy.year
+            st.session_state.dia_seleccionado = hoy.date() if hoy.month == st.session_state.cal_mes else None
             st.rerun()
 
     eventos = cargar_eventos_mes(st.session_state.cal_mes, st.session_state.cal_año)
 
+    # ----- Cuadrícula del calendario -----
     cal = calendar.Calendar()
     dias_mes = cal.monthdatescalendar(st.session_state.cal_año, st.session_state.cal_mes)
 
@@ -99,60 +107,78 @@ def show_calendario():
                 cols[i].markdown("")
                 continue
 
-            cols[i].markdown(f"**{dia.day}**")
+            # Cada número de día es un botón
+            dia_key = f"dia_{dia.day}_{dia.month}_{dia.year}"
+            if cols[i].button(str(dia.day), key=dia_key, use_container_width=True):
+                st.session_state.dia_seleccionado = dia
+                st.rerun()
+
+            # Pequeño indicador visual si hay eventos (sin deformar)
             eventos_dia = [e for e in eventos if e["fecha"].date() == dia]
-            ventas_noble = [e for e in eventos_dia if e["tipo_evento"] == "Venta Noble"]
-            otros = [e for e in eventos_dia if e["tipo_evento"] != "Venta Noble"]
-            total_noble = sum(e["total_cotizado"] for e in ventas_noble)
-            hay_info = total_noble > 0 or len(otros) > 0
+            if eventos_dia:
+                num_eventos = len(eventos_dia)
+                cols[i].markdown(
+                    f"<div style='font-size:9px; color:#666; text-align:center;'>{num_eventos} evento(s)</div>",
+                    unsafe_allow_html=True
+                )
 
-            if hay_info:
-                # Botón pequeño que abre el popover flotante
-                with cols[i].popover("📋", use_container_width=False):
-                    if total_noble > 0:
-                        st.subheader("💵 Venta Noble")
-                        # Termómetro de color
-                        meta = ventas_noble[0].get("meta_diaria", 145000/26) if ventas_noble else 145000/26
-                        pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
-                        if pct >= 100:
-                            color_bar = "#48B065"
-                        elif pct >= 50:
-                            color_bar = "#EF9F27"
-                        else:
-                            color_bar = "#E24B4A"
-                        barra_html = (
-                            f"<div style='background:#ddd; border-radius:4px; height:8px; width:100%; margin:4px 0;'>"
-                            f"<div style='width:{pct}%; height:8px; border-radius:4px; background:{color_bar};'></div></div>"
-                        )
-                        st.markdown(barra_html, unsafe_allow_html=True)
-                        st.write(f"Total: ${total_noble:,.2f} ({pct:.0f}% de meta diaria)")
-                        ev = ventas_noble[0]
-                        st.write(f"Efectivo: ${ev['efectivo']:,.2f} | Transferencias: ${ev['transferencias']:,.2f} | Tarjeta: ${ev['tarjeta']:,.2f}")
-                        st.write(f"Uber Eats: ${ev['uber_eats']:,.2f} | Rappi: ${ev['rappi']:,.2f}")
-                        st.write(f"Tickets POS: {ev['tickets_pos']} | Uber: {ev['tickets_uber']} | Rappi: {ev['tickets_rappi']}")
-                        if ev.get("notas_venta"):
-                            st.caption(f"Notas: {ev['notas_venta']}")
-                        st.write(f"Responsable: {ev.get('responsable','')}")
-                    if otros:
-                        if total_noble > 0:
-                            st.divider()
-                        st.subheader("📌 Eventos")
-                        for ev in otros:
-                            st.write(f"**{ev['tipo_evento']}**")
-                            st.write(f"Título: {ev['titulo']}")
-                            if ev.get("cliente"): st.write(f"Cliente: {ev['cliente']}")
-                            if ev.get("contacto"): st.write(f"Contacto: {ev['contacto']}")
-                            if ev.get("ubicacion"): st.write(f"Ubicación: {ev['ubicacion']}")
-                            if ev.get("descripcion"): st.write(f"Descripción: {ev['descripcion']}")
-                            st.write(f"Total: ${ev['total_cotizado']:,.2f} | Adeudo: ${ev['adeudo']:,.2f} | Anticipo: ${ev['anticipo']:,.2f}")
-                            if ev.get("metodo_pago"): st.write(f"Método: {ev['metodo_pago']}")
-                            if ev.get("fecha_entrega"): st.write(f"Entrega: {ev['fecha_entrega']}")
-                            if ev.get("fecha_fin"): st.write(f"Hasta: {ev['fecha_fin']}")
-                            if ev.get("abonos"): st.write(f"Abonos: {ev['abonos']}")
-                            if ev.get("notas"): st.write(f"Notas: {ev['notas']}")
-                            st.write(f"Responsable: {ev.get('responsable','')}")
-                            st.divider()
+    # ----- Panel de detalles del día seleccionado -----
+    if st.session_state.dia_seleccionado is not None:
+        dia = st.session_state.dia_seleccionado
+        st.divider()
+        st.subheader(f"📌 Detalles del {dia.strftime('%d/%m/%Y')}")
 
+        eventos_dia = [e for e in eventos if e["fecha"].date() == dia.date()]
+        ventas_noble = [e for e in eventos_dia if e["tipo_evento"] == "Venta Noble"]
+        otros = [e for e in eventos_dia if e["tipo_evento"] != "Venta Noble"]
+
+        if ventas_noble:
+            ev = ventas_noble[0]
+            total_noble = ev["total_cotizado"]
+            meta = ev.get("meta_diaria", 145000/26)
+            pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
+            if pct >= 100:
+                color_bar = "#48B065"
+            elif pct >= 50:
+                color_bar = "#EF9F27"
+            else:
+                color_bar = "#E24B4A"
+            barra_html = (
+                f"<div style='background:#ddd; border-radius:4px; height:10px; width:100%; margin:8px 0;'>"
+                f"<div style='width:{pct}%; height:10px; border-radius:4px; background:{color_bar};'></div></div>"
+            )
+            st.markdown(barra_html, unsafe_allow_html=True)
+            st.write(f"**Venta Noble: ${total_noble:,.2f}** ({pct:.0f}% de meta diaria)")
+            st.write(f"Efectivo: ${ev['efectivo']:,.2f} | Transferencias: ${ev['transferencias']:,.2f} | Tarjeta: ${ev['tarjeta']:,.2f}")
+            st.write(f"Uber Eats: ${ev['uber_eats']:,.2f} | Rappi: ${ev['rappi']:,.2f}")
+            st.write(f"Tickets POS: {ev['tickets_pos']} | Uber: {ev['tickets_uber']} | Rappi: {ev['tickets_rappi']}")
+            if ev.get("notas_venta"):
+                st.caption(f"Notas: {ev['notas_venta']}")
+            st.write(f"Responsable: {ev.get('responsable','')}")
+
+        if otros:
+            if ventas_noble:
+                st.divider()
+            for ev in otros:
+                st.write(f"**{ev['tipo_evento']}**")
+                st.write(f"Título: {ev['titulo']}")
+                if ev.get("cliente"): st.write(f"Cliente: {ev['cliente']}")
+                if ev.get("contacto"): st.write(f"Contacto: {ev['contacto']}")
+                if ev.get("ubicacion"): st.write(f"Ubicación: {ev['ubicacion']}")
+                if ev.get("descripcion"): st.write(f"Descripción: {ev['descripcion']}")
+                st.write(f"Total: ${ev['total_cotizado']:,.2f} | Adeudo: ${ev['adeudo']:,.2f} | Anticipo: ${ev['anticipo']:,.2f}")
+                if ev.get("metodo_pago"): st.write(f"Método: {ev['metodo_pago']}")
+                if ev.get("fecha_entrega"): st.write(f"Entrega: {ev['fecha_entrega']}")
+                if ev.get("fecha_fin"): st.write(f"Hasta: {ev['fecha_fin']}")
+                if ev.get("abonos"): st.write(f"Abonos: {ev['abonos']}")
+                if ev.get("notas"): st.write(f"Notas: {ev['notas']}")
+                st.write(f"Responsable: {ev.get('responsable','')}")
+                st.divider()
+
+        if not ventas_noble and not otros:
+            st.info("No hay información para este día.")
+
+    # ----- Tabla de eventos del mes (fuera del panel de detalles) -----
     st.divider()
     st.subheader("📋 Eventos del mes")
     if eventos:
@@ -176,6 +202,7 @@ def show_calendario():
     else:
         st.info("No hay eventos este mes.")
 
+    # ----- Nuevo evento manual -----
     st.divider()
     with st.expander("➕ Nuevo evento manual (no ventas)", expanded=False):
         with st.form("f_evento", clear_on_submit=True):
@@ -232,7 +259,7 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # Edición de evento pendiente
+    # ----- Edición de evento pendiente -----
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
         st.subheader(f"Editando: {ev['titulo']}")
@@ -295,7 +322,7 @@ def show_calendario():
                     del st.session_state["editando_evento"]
                     st.rerun()
 
-    # Registrar abono
+    # ----- Registrar abono -----
     st.subheader("💵 Registrar abono")
     with st.expander("Añadir abono a un evento con adeudo"):
         eventos_con_adeudo = [e for e in eventos if e.get("adeudo", 0) > 0 and e["origen"] == "calendario"]
