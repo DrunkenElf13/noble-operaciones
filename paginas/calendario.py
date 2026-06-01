@@ -23,13 +23,12 @@ def show_calendario():
     st.title("📅 Calendario Noble")
 
     hoy = datetime.now()
-    # Inicializar estado
     if "cal_mes" not in st.session_state:
         st.session_state.cal_mes = hoy.month
     if "cal_año" not in st.session_state:
         st.session_state.cal_año = hoy.year
 
-    # ---- Navegación rápida con selectores ----
+    # ---- Navegación con selectores ----
     col_anio, col_mes, col_btn = st.columns([1,1,2])
     with col_anio:
         años_opts = list(range(2024, 2031))
@@ -39,14 +38,13 @@ def show_calendario():
         mes_sel = st.selectbox("Mes", range(1,13), index=st.session_state.cal_mes-1,
                                format_func=lambda m: calendar.month_name[m])
     with col_btn:
-        st.write("")  # espacio
+        st.write("")
         st.write("")
         if st.button("Ir al mes seleccionado"):
             st.session_state.cal_mes = mes_sel
             st.session_state.cal_año = año_sel
             st.rerun()
 
-    # También mantener botones rápido
     col1, col2, col3, col4 = st.columns([1,2,2,1])
     with col1:
         if st.button("◀"):
@@ -72,10 +70,8 @@ def show_calendario():
             st.session_state.cal_año = hoy.year
             st.rerun()
 
-    # Cargar eventos
     eventos = cargar_eventos_mes(st.session_state.cal_mes, st.session_state.cal_año)
 
-    # Calendario
     cal = calendar.Calendar()
     dias_mes = cal.monthdatescalendar(st.session_state.cal_año, st.session_state.cal_mes)
 
@@ -90,26 +86,21 @@ def show_calendario():
             if dia.month != st.session_state.cal_mes:
                 cols[i].markdown("")
                 continue
-            # Día
             cols[i].markdown(f"**{dia.day}**")
-            # Filtrar eventos del día
             eventos_dia = [e for e in eventos if e["fecha"].date() == dia]
-            # Separar ventas Noble
             ventas_noble = [e for e in eventos_dia if e["tipo_evento"] == "Venta Noble"]
             otros = [e for e in eventos_dia if e["tipo_evento"] != "Venta Noble"]
-            # Mostrar total ventas Noble
             total_noble = sum(e["total_cotizado"] for e in ventas_noble)
             if total_noble > 0:
                 cols[i].markdown(
-                    f"<div style='background-color:#E8F5E9; padding:2px 4px; border-radius:4px; font-size:11px;'>💰 ${total_noble:,.0f}</div>",
+                    f"<div style='background-color:rgba(72,176,101,0.2); padding:2px 4px; border-radius:4px; font-size:11px; color:#111;'>💰 ${total_noble:,.0f}</div>",
                     unsafe_allow_html=True
                 )
-            # Mostrar otros eventos (máximo 2)
             for ev in otros[:2]:
                 color = ev.get("color", "#AAAAAA")
                 titulo = ev["titulo"][:20]
                 cols[i].markdown(
-                    f"<div style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px;'>{titulo}</div>",
+                    f"<div style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px; color:#111;'>{titulo}</div>",
                     unsafe_allow_html=True
                 )
             if len(otros) > 2:
@@ -126,7 +117,7 @@ def show_calendario():
     else:
         st.info("No hay eventos este mes.")
 
-    # ---- Formulario para nuevo evento (si se desea agregar manual) ----
+    # Formulario nuevo evento (solo eventos manuales, no ventas)
     st.divider()
     with st.expander("➕ Nuevo evento manual (no ventas)", expanded=False):
         with st.form("f_evento", clear_on_submit=True):
@@ -177,7 +168,7 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # ---- Editar / Eliminar eventos existentes ----
+    # Editar / Eliminar eventos
     if eventos:
         st.subheader("✏️ Editar o eliminar eventos")
         eventos_cal = [e for e in eventos if e["origen"] == "calendario"]
@@ -255,7 +246,7 @@ def show_calendario():
                         del st.session_state["editando_evento"]
                         st.rerun()
 
-        # ---- Registrar abono ----
+        # Registrar abono
         st.subheader("💵 Registrar abono")
         with st.expander("Añadir abono a un evento con adeudo"):
             eventos_con_adeudo = [e for e in eventos if e.get("adeudo", 0) > 0 and e["origen"] == "calendario"]
