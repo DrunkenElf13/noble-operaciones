@@ -32,12 +32,17 @@ def show_presupuesto():
                     "Meta_POS":   limpiar_valor(r.get("Meta_POS",   0)),
                     "Meta_Uber":  limpiar_valor(r.get("Meta_Uber",  0)),
                     "Meta_Rappi": limpiar_valor(r.get("Meta_Rappi", 0)),
+                    "Meta_CoffeeStation": limpiar_valor(r.get("Meta_CoffeeStation", 0)),
+                    "Meta_ToGo": limpiar_valor(r.get("Meta_ToGo", 0)),
                     "Notas":      str(r.get("Notas", "")),
                 }
-    desglose_p = st.toggle("🔀 Desglosar por canal (POS / Uber Eats / Rappi)", value=False)
+
+    # Toggle para mostrar todas las metas (incluyendo las nuevas)
+    desglose_p = st.toggle("🔀 Mostrar metas por canal (POS / Uber / Rappi / Coffee Station / To Go)", value=False)
     st.subheader(f"Metas mensuales — {año_sel}")
     meses_nombres_p = [calendar.month_name[m].capitalize() for m in range(1, 13)]
     entradas_p = {}
+
     for row_i in range(4):
         cols_p = st.columns(3)
         for col_i in range(3):
@@ -53,18 +58,24 @@ def show_presupuesto():
                     value=float(prev_p.get("Meta_Total", 0)),
                     key=f"ppto_{año_sel}_{mes_num_p}_total"
                 )
-                meta_pos_p = meta_uber_p = meta_rappi_p = 0.0
+                meta_pos_p = meta_uber_p = meta_rappi_p = meta_cs_p = meta_tg_p = 0.0
                 if desglose_p:
                     meta_pos_p   = st.number_input(f"POS:",   min_value=0.0, step=500.0, value=float(prev_p.get("Meta_POS",   0)), key=f"ppto_{año_sel}_{mes_num_p}_pos")
                     meta_uber_p  = st.number_input(f"Uber:",  min_value=0.0, step=500.0, value=float(prev_p.get("Meta_Uber",  0)), key=f"ppto_{año_sel}_{mes_num_p}_uber")
                     meta_rappi_p = st.number_input(f"Rappi:", min_value=0.0, step=500.0, value=float(prev_p.get("Meta_Rappi", 0)), key=f"ppto_{año_sel}_{mes_num_p}_rappi")
+                    meta_cs_p    = st.number_input(f"Coffee Station:", min_value=0.0, step=500.0, value=float(prev_p.get("Meta_CoffeeStation", 0)), key=f"ppto_{año_sel}_{mes_num_p}_cs")
+                    meta_tg_p    = st.number_input(f"To Go:", min_value=0.0, step=500.0, value=float(prev_p.get("Meta_ToGo", 0)), key=f"ppto_{año_sel}_{mes_num_p}_tg")
                 entradas_p[mes_num_p] = {
                     "Meta_Total": meta_total_p, "Meta_POS": meta_pos_p,
-                    "Meta_Uber": meta_uber_p, "Meta_Rappi": meta_rappi_p, "Notas": "",
+                    "Meta_Uber": meta_uber_p, "Meta_Rappi": meta_rappi_p,
+                    "Meta_CoffeeStation": meta_cs_p, "Meta_ToGo": meta_tg_p,
+                    "Notas": "",
                 }
+
     total_anual_p = sum(v["Meta_Total"] for v in entradas_p.values())
     st.divider()
     st.metric("💰 Presupuesto Anual Total", f"${total_anual_p:,.2f}")
+
     if st.button("💾 GUARDAR PRESUPUESTO", type="primary", use_container_width=True):
         ws_ppto, err_ppto = _asegurar_hoja_presupuesto()
         if err_ppto:
@@ -83,7 +94,8 @@ def show_presupuesto():
                     ws_ppto.clear()
                     ws_ppto.append_row(COLS_PRESUPUESTO)
                 nuevas_filas_p = [
-                    [año_sel, mes_n, v["Meta_Total"], v["Meta_POS"], v["Meta_Uber"], v["Meta_Rappi"], v["Notas"]]
+                    [año_sel, mes_n, v["Meta_Total"], v["Meta_POS"], v["Meta_Uber"],
+                     v["Meta_Rappi"], v["Meta_CoffeeStation"], v["Meta_ToGo"], v["Notas"]]
                     for mes_n, v in entradas_p.items()
                 ]
                 ws_ppto.append_rows(nuevas_filas_p, value_input_option="USER_ENTERED")
