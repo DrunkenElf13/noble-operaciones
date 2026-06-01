@@ -15,8 +15,10 @@ COLORES_TIPO = {
     "Fecha importante": "#3357FF",
     "Otro": "#AAAAAA",
     "Venta Noble": "#48B065",
-    "Venta Coffee Station": "#4A90D9",
-    "Venta Noble To Go": "#9B59B6",
+    "💰 Venta Coffee Station": "#4A90D9",
+    "💰 Venta Noble To Go": "#9B59B6",
+    "📦 Entrega Coffee Station": "#4A90D9",
+    "📦 Entrega Noble To Go": "#9B59B6",
 }
 
 PALETA_COLORES = {
