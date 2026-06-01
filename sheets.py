@@ -153,7 +153,6 @@ def _asegurar_hoja_calendario():
     except Exception as e:
         return None, f"Error accediendo a Calendario: {e}"
 
-# NUEVA: asegurar hojas de canales de venta con las columnas de Calendario
 def _asegurar_hoja_canal_ventas(nombre_canal: str):
     """Crea o actualiza la hoja del canal para que tenga las columnas de Calendario."""
     ws, err = safe_worksheet(sh, nombre_canal)
@@ -169,7 +168,6 @@ def _asegurar_hoja_canal_ventas(nombre_canal: str):
     try:
         encabezados = ws.row_values(1)
         if len(encabezados) < len(COLS_CALENDARIO):
-            # Agregar las columnas faltantes
             faltantes = COLS_CALENDARIO[len(encabezados):]
             for col in faltantes:
                 idx = len(encabezados) + 1
