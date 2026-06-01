@@ -69,7 +69,7 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Hojas de CoffeeStation y NobleToGo (formato Calendario)
+    # 2. Hojas de CoffeeStation y NobleToGo
     for hoja in ["CoffeeStation", "NobleToGo"]:
         ws, _ = safe_worksheet(sh, hoja)
         if ws:
@@ -79,7 +79,6 @@ def cargar_eventos_mes(mes, año):
                     df = pd.DataFrame(datos[1:], columns=datos[0])
                     for _, row in df.iterrows():
                         id_base = row.get("ID", str(uuid.uuid4())[:8])
-                        # Fecha de venta
                         fecha_venta = _parse_fecha(row.get("Fecha", ""))
                         if fecha_venta and fecha_venta.month == mes and fecha_venta.year == año:
                             ev = {
@@ -107,7 +106,6 @@ def cargar_eventos_mes(mes, año):
                             if ev["id"] not in ids_vistos:
                                 eventos.append(ev)
                                 ids_vistos.add(ev["id"])
-                        # Fecha de entrega (si es distinta)
                         fecha_entrega = _parse_fecha(row.get("Fecha_Entrega", ""))
                         if fecha_entrega and fecha_entrega != fecha_venta and fecha_entrega.month == mes and fecha_entrega.year == año:
                             cliente = row.get("Cliente", "")
@@ -139,10 +137,32 @@ def cargar_eventos_mes(mes, año):
             except Exception as e:
                 st.warning(f"Error al leer {hoja}: {e}")
 
-    # 3. Ventas diarias de todos los canales (solo Noble POS)
+    # 3. Ventas diarias de todos los canales (para acumulado POS con meta)
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
+            # Obtener meta mensual de Noble (suponemos 145000 y 26 días hábiles)
+            # Podríamos obtenerla de la hoja Presupuesto o de los datos de ventas del mes actual
+            # Para simplificar, usamos el promedio de Meta_Mensual del mes actual si existe, sino 145000
+            now = datetime.now()
+            if now.month == mes and now.year == año:
+                df_mes_actual = df_ventas[
+                    (df_ventas["Mes"].apply(limpiar_valor) == mes) &
+                    (df_ventas["Año"].apply(limpiar_valor) == año)
+                ]
+                if not df_mes_actual.empty and "Meta_Mensual" in df_mes_actual.columns:
+                    meta_mensual = limpiar_valor(df_mes_actual["Meta_Mensual"].iloc[-1]) or 145000.0
+                else:
+                    meta_mensual = 145000.0
+                # Días hábiles: suponer 26 o tomar el valor más reciente
+                dias_habiles = 26
+                if "Dias_Habiles" in df_mes_actual.columns and not df_mes_actual.empty:
+                    dias_habiles = int(limpiar_valor(df_mes_actual["Dias_Habiles"].iloc[-1]) or 26)
+            else:
+                meta_mensual = 145000.0
+                dias_habiles = 26
+            meta_diaria = meta_mensual / dias_habiles if dias_habiles > 0 else 0
+
             for _, row in df_ventas.iterrows():
                 fecha = _parse_fecha(row.get("Fecha"))
                 if fecha and fecha.month == mes and fecha.year == año:
@@ -169,7 +189,18 @@ def cargar_eventos_mes(mes, año):
                             "responsable": row.get("Responsable", ""),
                             "origen": "venta",
                             "anticipo": 0,
-                            "fecha_fin": ""
+                            "fecha_fin": "",
+                            "meta_diaria": meta_diaria,
+                            # Datos adicionales para el desglose
+                            "efectivo": limpiar_valor(row.get("Efectivo", 0)),
+                            "transferencias": limpiar_valor(row.get("Transferencias", 0)),
+                            "tarjeta": limpiar_valor(row.get("Tarjeta", 0)),
+                            "uber_eats": limpiar_valor(row.get("Uber_Eats", 0)),
+                            "rappi": limpiar_valor(row.get("Rappi", 0)),
+                            "tickets_pos": int(limpiar_valor(row.get("Tickets_POS", 0))),
+                            "tickets_uber": int(limpiar_valor(row.get("Tickets_Uber", 0))),
+                            "tickets_rappi": int(limpiar_valor(row.get("Tickets_Rappi", 0))),
+                            "notas_venta": row.get("Notas", ""),
                         }
                         if ev["id"] not in ids_vistos:
                             eventos.append(ev)
