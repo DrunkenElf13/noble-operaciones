@@ -6,6 +6,7 @@ from utils import limpiar_valor, ahora_hermosillo
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 from config import CANALES_VENTA
+from components.calendario_utils import agregar_evento
 
 # ------------------------------------------------------------
 # Función auxiliar para construir fila de venta (POS)
@@ -21,14 +22,14 @@ def _construir_fila_venta(
     tix_prom     = round(venta_diaria / total_tix, 2) if total_tix > 0 else 0.0
     meta_diaria  = round(meta_mensual / dias_habiles, 2) if dias_habiles > 0 else 0.0
     return [
-        canal,  # Unidad (usamos el nombre del canal)
+        canal,
         fecha.strftime("%Y-%m-%d"),
         fecha.day, fecha.month, fecha.year,
         efectivo, transferencias, tarjeta, total_pos,
         uber, rappi, venta_diaria,
         tickets_pos, tickets_uber, tickets_rappi, total_tix,
         tix_prom, meta_mensual, dias_habiles, meta_diaria,
-        responsable, notas, canal,  # columna Canal al final
+        responsable, notas, canal,
     ]
 
 # ------------------------------------------------------------
@@ -39,15 +40,14 @@ def _construir_fila_venta_canal(
 ):
     venta_diaria = monto
     return [
-        canal,                     # Unidad
+        canal,
         fecha.strftime("%Y-%m-%d"),
         fecha.day, fecha.month, fecha.year,
-        0.0, 0.0, 0.0, monto,     # Efectivo, Transferencias, Tarjeta, Total_POS
-        0.0, 0.0, venta_diaria,   # Uber, Rappi, Venta_Diaria
-        0, 0, 0, 0,               # Tickets
-        0.0,                       # Ticket_Promedio
-        0.0, 0, 0.0,              # Meta_Mensual, Dias_Habiles, Meta_Diaria
-        responsable, notas, canal, # columna Canal al final
+        0.0, 0.0, 0.0, monto,
+        0.0, 0.0, venta_diaria,
+        0, 0, 0, 0,
+        0.0, 0.0, 0, 0.0,
+        responsable, notas, canal,
     ]
 
 # ------------------------------------------------------------
@@ -63,7 +63,6 @@ def show_ventas():
         st.error("🔒 Autenticación requerida.")
         st.stop()
 
-    # ---------- Selector de canal ----------
     canal_sel = st.selectbox("🏢 Canal de venta:", CANALES_VENTA)
 
     df_ventas = cargar_ventas()
@@ -87,7 +86,7 @@ def show_ventas():
 
     st.divider()
 
-    # ---------- Formulario para POS (Noble) ----------
+    # ---------- POS (Noble) ----------
     if canal_sel == "Noble":
         meta_default = 145000.0
         dias_default = 26
@@ -146,7 +145,7 @@ def show_ventas():
         t1.metric("Total Tickets",   total_tix)
         t2.metric("Ticket Promedio", f"${tix_prom:,.2f}" if tix_prom > 0 else "—")
 
-        notas_v = st.text_input("📝 Notas del día (opcional):", placeholder="Ej: Día festivo, falla de sistema, etc.")
+        notas_v = st.text_input("📝 Notas del día (opcional):")
         dia_sin_venta = st.toggle(
             "📵 Día sin venta (cierre en cero)",
             value=False,
@@ -182,34 +181,73 @@ def show_ventas():
                     else:
                         st.error(msg)
 
-    # ---------- Formulario para canales secundarios ----------
+    # ---------- Coffee Station / Noble To Go ----------
     else:
-        st.subheader(f"💵 Venta del día — {canal_sel}")
-        monto_canal = st.number_input("Monto total ($):", min_value=0.0, step=10.0, value=0.0)
-        metodo_pago = st.text_input("Método de pago:", placeholder="Efectivo, transferencia, etc.")
-        notas_canal = st.text_area("📝 Notas:", placeholder="Detalles del evento o cliente")
+        st.subheader(f"📋 Datos del evento — {canal_sel}")
+        with st.form("f_evento_canal", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                cliente_ev = st.text_input("Cliente")
+                contacto_ev = st.text_input("Contacto")
+                ubicacion_ev = st.text_input("Ubicación")
+                descripcion_ev = st.text_area("Descripción")
+                metodo_pago = st.text_input("Método de pago")
+            with col2:
+                monto_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0)
+                adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0)
+                fecha_contr_ev = st.date_input("Fecha contratación", value=hoy)
+                fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy)
+                abonos_ev = st.text_area("Abonos (historial)")
+                notas_ev = st.text_area("Notas")
+                color_ev = st.color_picker("Color del evento", value="#4A90D9")
+            enviar = st.form_submit_button("💾 Guardar venta")
 
-        if st.button("💾 GUARDAR REGISTRO DE VENTA", type="primary", use_container_width=True):
-            if monto_canal <= 0:
-                st.warning("⚠️ Ingresa un monto mayor a cero.")
+        if enviar:
+            if monto_ev <= 0:
+                st.error("El monto debe ser mayor a cero.")
             else:
+                # 1. Guardar en Ventas
                 ws_v, err = _asegurar_hoja_ventas()
                 if err:
                     st.error(err)
                 else:
                     fila = _construir_fila_venta_canal(
                         fecha=fecha_venta,
-                        monto=monto_canal,
+                        monto=monto_ev,
                         metodo_pago=metodo_pago,
                         responsable=responsable_v,
-                        notas=notas_canal,
+                        notas=notas_ev,
                         canal=canal_sel,
                     )
                     ok, msg = append_rows_con_retry(ws_v, [fila])
-                    if ok:
-                        cargar_ventas.clear()
-                        st.success(f"✅ Venta registrada para {canal_sel}: ${monto_canal:,.2f}")
-                        time.sleep(0.5)
-                        st.rerun()
-                    else:
+                    if not ok:
                         st.error(msg)
+                        st.stop()
+                    cargar_ventas.clear()
+
+                # 2. Guardar evento en Calendario
+                datos_evento = {
+                    "fecha": fecha_venta.strftime("%Y-%m-%d"),
+                    "tipo": f"Venta {canal_sel}",
+                    "titulo": f"Venta {canal_sel} - {cliente_ev}" if cliente_ev else f"Venta {canal_sel}",
+                    "cliente": cliente_ev,
+                    "contacto": contacto_ev,
+                    "ubicacion": ubicacion_ev,
+                    "descripcion": descripcion_ev,
+                    "total_cotizado": monto_ev,
+                    "adeudo": adeudo_ev,
+                    "metodo_pago": metodo_pago,
+                    "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d"),
+                    "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d"),
+                    "abonos": abonos_ev,
+                    "notas": notas_ev,
+                    "color": color_ev,
+                    "responsable": st.session_state.current_user
+                }
+                ok_ev, msg_ev = agregar_evento(datos_evento)
+                if ok_ev:
+                    st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error(f"Error al crear evento: {msg_ev}")
