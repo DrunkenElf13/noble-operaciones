@@ -271,9 +271,6 @@ def cargar_avisos():
     except Exception:
         return pd.DataFrame()
 
-# ─────────────────────────────────────────────────────────────────
-# NUEVA FUNCIÓN: consolidar ventas de todos los canales
-# ─────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=30)
 def cargar_todas_ventas():
     """Lee las hojas Ventas, CoffeeStation y NobleToGo y las une."""
@@ -285,12 +282,24 @@ def cargar_todas_ventas():
             datos = ws.get_all_values()
             if len(datos) > 1:
                 df = pd.DataFrame(datos[1:], columns=datos[0])
-                # Asegurar que tenga la columna Canal
-                if "Canal" not in df.columns:
-                    df["Canal"] = "Noble" if hoja == "Ventas" else hoja
-                else:
-                    df["Canal"] = df["Canal"].fillna("Noble" if hoja == "Ventas" else hoja)
-                # Normalizar nombres de columnas
+                # Si la hoja es CoffeeStation o NobleToGo y tiene columnas de Calendario,
+                # convertir Total_Cotizado en Venta_Diaria
+                if hoja in ["CoffeeStation", "NobleToGo"]:
+                    if "Total_Cotizado" in df.columns:
+                        df["Venta_Diaria"] = df["Total_Cotizado"].apply(limpiar_valor)
+                    else:
+                        df["Venta_Diaria"] = 0.0
+                    # Agregar columnas necesarias para COLS_VENTAS
+                    for col in COLS_VENTAS:
+                        if col not in df.columns:
+                            df[col] = ""
+                    df["Canal"] = hoja
+                else:  # Ventas (POS)
+                    if "Canal" not in df.columns:
+                        df["Canal"] = "Noble"
+                    else:
+                        df["Canal"] = df["Canal"].fillna("Noble")
+                # Asegurar que todas las columnas de COLS_VENTAS existan
                 for col in COLS_VENTAS:
                     if col not in df.columns:
                         df[col] = "" if col not in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi","Venta_Diaria","Tickets_POS","Tickets_Uber","Tickets_Rappi","Total_Tickets","Ticket_Promedio","Meta_Mensual","Dias_Habiles","Meta_Diaria"] else 0.0
