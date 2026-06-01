@@ -10,10 +10,8 @@ from config import (
     COLS_ACCESOS, COLS_AVISOS, COLS_INSUMOS, COLS_CRITICAS_INSUMOS,
     UNIDADES, GRUPOS, UNIDADES_MED, COLS_PERMISOS
 )
-from inventario import obtener_ultimo_inventario
 
 def render_sidebar(cambiar_pagina):
-    """Renderiza el sidebar completo de la aplicación."""
     with st.sidebar:
         if not st.session_state.auth_status:
             st.subheader("🔒 Identificación")
@@ -47,7 +45,7 @@ def render_sidebar(cambiar_pagina):
         if st.button("📦 Inventario actual", use_container_width=True): cambiar_pagina("Consulta")
         st.divider()
         st.write("**💰 Ventas:**")
-        if st.button("📈 Registrar Venta Diaria", use_container_width=True): cambiar_pagina("Ventas")
+        if st.button("📈 Registrar Ventas", use_container_width=True): cambiar_pagina("Ventas")
         if st.button("📊 Dashboard de Ventas", use_container_width=True): cambiar_pagina("DashboardVentas")
         if st.button("📥 Importar Histórico", use_container_width=True): cambiar_pagina("ImportarVentas")
         st.divider()
@@ -58,6 +56,9 @@ def render_sidebar(cambiar_pagina):
         if st.button("📉 Registrar Merma", use_container_width=True): cambiar_pagina("RegistrarMerma")
         if st.button("📊 Dashboard Financiero", use_container_width=True): cambiar_pagina("DashboardFinanciero")
         if st.button("🛒 Canales de Venta", use_container_width=True): cambiar_pagina("CanalesVenta")
+        st.divider()
+        st.write("**📅 Calendario:**")
+        if st.button("📅 Calendario", use_container_width=True): cambiar_pagina("Calendario")
         st.divider()
         st.write("**🖨️ Tickets (58mm):**")
         if st.button("📋 Lista de Conteo", use_container_width=True): cambiar_pagina("Impresion")
@@ -139,7 +140,6 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                                 ws_acc.clear()
                                 ws_acc.append_row(COLS_ACCESOS)
                                 ws_acc.append_rows(nuevo_df[COLS_ACCESOS].values.tolist())
-                                # Limpiar caché de usuarios
                                 from auth import obtener_usuarios
                                 obtener_usuarios.clear()
                                 st.success(f"Permisos para '{n_nombre}' guardados.")
@@ -185,7 +185,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                     av_pagina = st.multiselect("Mostrar en páginas:", 
                         ["Todas","Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas",
                          "ImportarVentas","RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma",
-                         "DashboardFinanciero","CanalesVenta","Impresion","ListaCompra","ReporteStock","CorteMes"],
+                         "DashboardFinanciero","CanalesVenta","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"],
                         default=["Todas"])
                     if st.form_submit_button("📢 Publicar aviso", use_container_width=True):
                         if not av_titulo.strip() or not av_msg.strip():
@@ -243,7 +243,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                 st.write("Asigna qué páginas puede ver cada rol.")
                 all_pages = ["Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas","ImportarVentas",
                              "RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma","DashboardFinanciero",
-                             "CanalesVenta","Impresion","ListaCompra","ReporteStock","CorteMes"]
+                             "CanalesVenta","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"]
                 ws_perm, err_perm = safe_worksheet(sh, "Permisos")
                 if err_perm:
                     try:
@@ -272,7 +272,6 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                                 new_rows = [[rol_perm, p] for p in paginas_sel]
                                 if new_rows:
                                     ws_perm.append_rows(new_rows, value_input_option="USER_ENTERED")
-                                # Recargar permisos globales
                                 global PERMISOS
                                 PERMISOS = cargar_permisos()
                                 st.success("Permisos actualizados.")
