@@ -20,6 +20,7 @@ def _parse_fecha(fecha):
 
 def cargar_eventos_mes(mes, año):
     eventos = []
+    ids_vistos = set()
 
     # 1. Calendario
     ws_cal, err = _asegurar_hoja_calendario()
@@ -31,7 +32,7 @@ def cargar_eventos_mes(mes, año):
                 for _, row in df.iterrows():
                     fecha = _parse_fecha(row.get("Fecha", ""))
                     if fecha and fecha.month == mes and fecha.year == año:
-                        eventos.append({
+                        ev = {
                             "id": row.get("ID", ""),
                             "fecha": fecha,
                             "tipo_evento": row.get("Tipo", "Otro"),
@@ -50,11 +51,14 @@ def cargar_eventos_mes(mes, año):
                             "color": row.get("Color", "#4A90D9"),
                             "responsable": row.get("Responsable", ""),
                             "origen": "calendario"
-                        })
+                        }
+                        if ev["id"] not in ids_vistos:
+                            eventos.append(ev)
+                            ids_vistos.add(ev["id"])
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Hojas de CoffeeStation y NobleToGo (nuevo formato Calendario)
+    # 2. Hojas de CoffeeStation y NobleToGo
     for hoja in ["CoffeeStation", "NobleToGo"]:
         ws, _ = safe_worksheet(sh, hoja)
         if ws:
@@ -63,11 +67,12 @@ def cargar_eventos_mes(mes, año):
                 if len(datos) > 1:
                     df = pd.DataFrame(datos[1:], columns=datos[0])
                     for _, row in df.iterrows():
-                        fecha = _parse_fecha(row.get("Fecha", ""))
-                        if fecha and fecha.month == mes and fecha.year == año:
-                            eventos.append({
-                                "id": row.get("ID", ""),
-                                "fecha": fecha,
+                        fecha_venta = _parse_fecha(row.get("Fecha", ""))
+                        fecha_entrega = _parse_fecha(row.get("Fecha_Entrega", ""))
+                        if fecha_venta and fecha_venta.month == mes and fecha_venta.year == año:
+                            ev = {
+                                "id": row.get("ID", str(uuid.uuid4())[:8]),
+                                "fecha": fecha_venta,
                                 "tipo_evento": row.get("Tipo", f"Venta {hoja}"),
                                 "titulo": row.get("Título", ""),
                                 "cliente": row.get("Cliente", ""),
@@ -84,7 +89,34 @@ def cargar_eventos_mes(mes, año):
                                 "color": row.get("Color", "#4A90D9"),
                                 "responsable": row.get("Responsable", ""),
                                 "origen": "calendario"
-                            })
+                            }
+                            if ev["id"] not in ids_vistos:
+                                eventos.append(ev)
+                                ids_vistos.add(ev["id"])
+                        if fecha_entrega and fecha_entrega != fecha_venta and fecha_entrega.month == mes and fecha_entrega.year == año:
+                            ev2 = {
+                                "id": row.get("ID", str(uuid.uuid4())[:8]) + "_entrega",
+                                "fecha": fecha_entrega,
+                                "tipo_evento": f"Entrega {hoja}",
+                                "titulo": f"Entrega: {row.get('Título', '')}",
+                                "cliente": row.get("Cliente", ""),
+                                "contacto": row.get("Contacto", ""),
+                                "ubicacion": row.get("Ubicacion", ""),
+                                "descripcion": row.get("Descripcion", ""),
+                                "total_cotizado": limpiar_valor(row.get("Total_Cotizado", 0)),
+                                "adeudo": limpiar_valor(row.get("Adeudo", 0)),
+                                "metodo_pago": row.get("Metodo_Pago", ""),
+                                "fecha_contratacion": row.get("Fecha_Contratacion", ""),
+                                "fecha_entrega": row.get("Fecha_Entrega", ""),
+                                "abonos": row.get("Abonos", ""),
+                                "notas": row.get("Notas", ""),
+                                "color": row.get("Color", "#4A90D9"),
+                                "responsable": row.get("Responsable", ""),
+                                "origen": "calendario"
+                            }
+                            if ev2["id"] not in ids_vistos:
+                                eventos.append(ev2)
+                                ids_vistos.add(ev2["id"])
             except Exception as e:
                 st.warning(f"Error al leer {hoja}: {e}")
 
@@ -98,7 +130,7 @@ def cargar_eventos_mes(mes, año):
                     canal_venta = row.get("Canal", "Noble") or "Noble"
                     monto = limpiar_valor(row.get("Venta_Diaria", 0))
                     if canal_venta == "Noble":
-                        eventos.append({
+                        ev = {
                             "id": f"venta_{fecha.strftime('%Y-%m-%d')}_Noble",
                             "fecha": fecha,
                             "tipo_evento": "Venta Noble",
@@ -117,7 +149,10 @@ def cargar_eventos_mes(mes, año):
                             "color": "#48B065",
                             "responsable": row.get("Responsable", ""),
                             "origen": "venta"
-                        })
+                        }
+                        if ev["id"] not in ids_vistos:
+                            eventos.append(ev)
+                            ids_vistos.add(ev["id"])
     except Exception as e:
         st.warning(f"Error al leer ventas: {e}")
 
