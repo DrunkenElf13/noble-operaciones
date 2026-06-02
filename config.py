@@ -45,20 +45,13 @@ COLS_RECETAS = [
     "Receta", "Ingrediente", "Cantidad", "Unidad_Medida", "Costo_Ingrediente",
     "Precio_Venta", "Food_Cost_Pct", "Fecha_Captura", "Responsable"
 ]
-COLS_CANALES_CONFIG = ["Canal", "Tipo_Meta", "Meta_Valor", "Notas"]
-COLS_EVENTO_CANAL = [
-    "Canal", "Fecha", "Monto", "Descripcion", "Fecha_Servicio_Entrega",
-    "Metodo_Pago", "Responsable", "Adeudo_Saldo_Pendiente"
-]
-COLS_PERMISOS = ["Rol", "Pagina"]
-
-# NUEVA CONSTANTE PARA EL CALENDARIO (con Anticipo y Fecha_Fin)
 COLS_CALENDARIO = [
     "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
     "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
     "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
     "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin"
 ]
+COLS_PERMISOS = ["Rol", "Pagina"]
 
 COLS_CRITICAS_INSUMOS   = {"Nombre del Insumo", "Grupo", "Stock Mínimo"}
 COLS_CRITICAS_HISTORIAL = {"Nombre del Insumo", "Alm", "Barra", "Fecha de Inventario"}
