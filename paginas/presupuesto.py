@@ -1,3 +1,6 @@
+## 📄 Archivo 11 de 12: `paginas/presupuesto.py`
+
+```python
 import streamlit as st
 import time
 import calendar
@@ -5,22 +8,22 @@ import pandas as pd
 from data_loaders import cargar_presupuesto
 from sheets import _asegurar_hoja_presupuesto, append_rows_con_retry
 from utils import limpiar_valor, ahora_hermosillo
-from config import COLS_PRESUPUESTO
+from config import COLS_PRESUPUESTO, COLOR_TARJETA, COLOR_SUBTEXTO
 from auth import tiene_permiso
 
 def show_presupuesto():
     if not tiene_permiso("Presupuesto"):
         st.error("No tienes permiso para esta página.")
         st.stop()
-    st.title("📋 Presupuesto Anual")
+    st.title("Presupuesto Anual")
     if not st.session_state.auth_status:
-        st.error("🔒 Autenticación requerida.")
+        st.error("Autenticación requerida.")
         st.stop()
     df_ppto = cargar_presupuesto()
     año_actual_p = ahora_hermosillo().year
     años_opts    = list(range(2024, 2031))
     idx_año_def  = años_opts.index(año_actual_p) if año_actual_p in años_opts else 1
-    año_sel      = st.selectbox("📅 Año:", años_opts, index=idx_año_def)
+    año_sel      = st.selectbox("Año", años_opts, index=idx_año_def)
     ppto_año = {}
     if not df_ppto.empty:
         df_año_p = df_ppto[df_ppto["Año"].apply(limpiar_valor) == año_sel]
@@ -37,8 +40,7 @@ def show_presupuesto():
                     "Notas":      str(r.get("Notas", "")),
                 }
 
-    # Toggle para mostrar todas las metas (incluyendo las nuevas)
-    desglose_p = st.toggle("🔀 Mostrar metas por canal (POS / Uber / Rappi / Coffee Station / To Go)", value=False)
+    desglose_p = st.toggle("Mostrar metas por canal (POS / Uber / Rappi / Coffee Station / To Go)", value=False)
     st.subheader(f"Metas mensuales — {año_sel}")
     meses_nombres_p = [calendar.month_name[m].capitalize() for m in range(1, 13)]
     entradas_p = {}
@@ -74,9 +76,9 @@ def show_presupuesto():
 
     total_anual_p = sum(v["Meta_Total"] for v in entradas_p.values())
     st.divider()
-    st.metric("💰 Presupuesto Anual Total", f"${total_anual_p:,.2f}")
+    st.metric("Presupuesto Anual Total", f"${total_anual_p:,.2f}")
 
-    if st.button("💾 GUARDAR PRESUPUESTO", type="primary", width="stretch"):
+    if st.button("Guardar presupuesto", width="stretch", type="primary"):
         ws_ppto, err_ppto = _asegurar_hoja_presupuesto()
         if err_ppto:
             st.error(err_ppto)
@@ -100,8 +102,11 @@ def show_presupuesto():
                 ]
                 ws_ppto.append_rows(nuevas_filas_p, value_input_option="USER_ENTERED")
                 cargar_presupuesto.clear()
-                st.success(f"✅ Presupuesto {año_sel} guardado. Total anual: ${total_anual_p:,.2f}")
+                st.success(f"Presupuesto {año_sel} guardado. Total anual: ${total_anual_p:,.2f}")
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e_ppto:
                 st.error(f"Error al guardar presupuesto: {e_ppto}")
+```
+
+¿Continuamos con el último?
