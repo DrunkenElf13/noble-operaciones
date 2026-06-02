@@ -5,8 +5,8 @@ import calendar
 import plotly.graph_objects as go
 import plotly.express as px
 from data_loaders import (
-    cargar_ventas, cargar_gastos, cargar_presupuesto,
-    cargar_costos_insumos, cargar_merma, cargar_config_canales, cargar_recetas
+    cargar_todas_ventas, cargar_gastos, cargar_presupuesto,
+    cargar_costos_insumos, cargar_merma, cargar_recetas
 )
 from sheets import safe_worksheet, sh
 from utils import limpiar_valor, ahora_hermosillo, _proyectar_tendencia
@@ -44,23 +44,23 @@ def show_dashboard_financiero():
         st.error("No tienes permiso para esta página.")
         st.stop()
     st.title("📊 Dashboard Financiero")
-    df_vf     = cargar_ventas()
+    df_vf     = cargar_todas_ventas()
     df_gf     = cargar_gastos()
     df_pptof  = cargar_presupuesto()
     df_bcf    = cargar_costos_insumos()
     df_mermaf = cargar_merma()
-    df_cfg_canales = cargar_config_canales()
     if df_vf.empty:
         st.info("Sin datos de ventas. Comienza registrando ventas diarias.")
         st.stop()
-    tab_comp, tab_proy, tab_fc, tab_merma_d, tab_pe, tab_canales = st.tabs([
+
+    tab_comp, tab_proy, tab_fc, tab_merma_d, tab_pe = st.tabs([
         "📊 Comparativo",
         "🔮 Proyecciones",
         "🍽️ Food Cost & Margen",
         "📉 Merma",
         "⚖️ Punto de Equilibrio",
-        "🛒 Canales Adicionales"
     ])
+
     with tab_comp:
         st.subheader("📊 Ventas vs Gastos por Período")
         periodo_comp = st.radio("Agrupar por:", ["Mes","Trimestre","Cuatrimestre","Año"], horizontal=True)
@@ -76,7 +76,7 @@ def show_dashboard_financiero():
                  Rappi=("Rappi","sum"))
             .reset_index()
         )
-        # Añadir ventas por canal (puede no existir columna Canal en datos históricos)
+        # Ventas por canal principal
         if "Canal" in df_vm.columns:
             ventas_por_canal = (
                 df_vm.groupby(["Año_num","Mes_num","Canal"])["Venta_Diaria"]
@@ -84,16 +84,15 @@ def show_dashboard_financiero():
                 .pivot(index=["Año_num","Mes_num"], columns="Canal", values="Venta_Diaria")
                 .fillna(0).reset_index()
             )
-            # Asegurar columnas para todos los canales
             for c in CANALES_VENTA:
                 if c not in ventas_por_canal.columns:
                     ventas_por_canal[c] = 0.0
             ventas_mens = ventas_mens.merge(ventas_por_canal, on=["Año_num","Mes_num"], how="left").fillna(0)
         else:
-            # Sin columna Canal, solo Noble tiene datos
             for c in CANALES_VENTA:
                 ventas_mens[c] = 0.0
             ventas_mens["Noble"] = ventas_mens["Ventas"]
+
         if not df_gf.empty and "Fecha" in df_gf.columns:
             df_gm = df_gf.copy()
             df_gm["_fecha"] = pd.to_datetime(df_gm["Fecha"], errors="coerce")
@@ -106,10 +105,12 @@ def show_dashboard_financiero():
             gastos_mens = g_tot.merge(g_fijo, on=["Año_num","Mes_num"], how="left").merge(g_var, on=["Año_num","Mes_num"], how="left").fillna(0)
         else:
             gastos_mens = pd.DataFrame(columns=["Año_num","Mes_num","Gastos","Fijos","Variables"])
+
         df_comp = ventas_mens.merge(gastos_mens, on=["Año_num","Mes_num"], how="left").fillna(0)
         df_comp = df_comp.sort_values(["Año_num","Mes_num"])
         df_comp["Utilidad"] = df_comp["Ventas"] - df_comp["Gastos"]
         df_comp["_sort"]    = df_comp["Año_num"] * 100 + df_comp["Mes_num"]
+
         if periodo_comp == "Trimestre":
             df_comp["Grupo"] = df_comp.apply(lambda r: f"Q{((int(r['Mes_num'])-1)//3)+1} {int(r['Año_num'])}", axis=1)
         elif periodo_comp == "Cuatrimestre":
@@ -120,6 +121,7 @@ def show_dashboard_financiero():
             df_comp["Grupo"] = df_comp.apply(
                 lambda r: f"{calendar.month_abbr[int(r['Mes_num'])]} {int(r['Año_num'])}", axis=1
             )
+
         df_agrup = (
             df_comp.groupby("Grupo", sort=False)
             .agg(Ventas=("Ventas","sum"), Gastos=("Gastos","sum"), Utilidad=("Utilidad","sum"),
@@ -130,6 +132,7 @@ def show_dashboard_financiero():
             .sort_values("_sort")
             .drop(columns=["_sort"])
         )
+
         try:
             fig_comp = go.Figure()
             fig_comp.add_trace(go.Bar(name="Ventas",   x=df_agrup["Grupo"], y=df_agrup["Ventas"],   marker_color="#48B065"))
@@ -138,20 +141,23 @@ def show_dashboard_financiero():
             fig_comp.update_layout(barmode="group", title="Ventas vs Gastos vs Utilidad", height=400,
                                     legend=dict(orientation="h", yanchor="bottom", y=1.02))
             st.plotly_chart(fig_comp, use_container_width=True)
-            st.subheader("🥧 Canales de venta (Noble / Coffee Station / To Go)")
+
+            st.subheader("🥧 Canales principales (Noble / Coffee Station / To Go)")
             fig_can2 = go.Figure()
             colores_canal = {"Noble": "#48B065", "Coffee Station": "#9B59B6", "Noble To Go": "#E24B4A"}
             for canal in CANALES_VENTA:
                 if canal in df_agrup.columns:
                     fig_can2.add_trace(go.Bar(name=canal, x=df_agrup["Grupo"], y=df_agrup[canal],
                                               marker_color=colores_canal.get(canal, "#AAAAAA")))
-            fig_can2.update_layout(barmode="stack", title="Mix por canal", height=350,
+            fig_can2.update_layout(barmode="stack", title="Mix por canal principal", height=350,
                                    legend=dict(orientation="h", yanchor="bottom", y=1.02))
             st.plotly_chart(fig_can2, use_container_width=True)
         except Exception:
             st.bar_chart(df_agrup.set_index("Grupo")[["Ventas","Gastos","Utilidad"]])
+
         st.subheader("📋 Tabla de datos")
         st.dataframe(df_agrup, hide_index=True, use_container_width=True)
+
     with tab_proy:
         st.subheader("🔮 Proyecciones de Ventas por Canal")
         hoy_pr        = ahora_hermosillo().date()
@@ -165,7 +171,7 @@ def show_dashboard_financiero():
         dias_restantes_pr = dias_en_mes_pr - hoy_pr.day
         avg_diario_pr = venta_acum_pr / dias_con_v_pr if dias_con_v_pr > 0 else 0.0
         proyeccion_cierre = venta_acum_pr + (avg_diario_pr * dias_restantes_pr)
-        # Metas por canal desde presupuesto
+
         metas_canal = {"Noble": 145000.0, "Coffee Station": 0.0, "Noble To Go": 0.0}
         if not df_pptof.empty:
             ppto_mes_pr = df_pptof[
@@ -176,13 +182,14 @@ def show_dashboard_financiero():
                 metas_canal["Noble"] = limpiar_valor(ppto_mes_pr["Meta_Total"].iloc[-1]) or 145000.0
                 metas_canal["Coffee Station"] = limpiar_valor(ppto_mes_pr["Meta_CoffeeStation"].iloc[-1]) or 0.0
                 metas_canal["Noble To Go"] = limpiar_valor(ppto_mes_pr["Meta_ToGo"].iloc[-1]) or 0.0
-        # Acumulados por canal
+
         ventas_por_canal_mes = {}
         for canal in CANALES_VENTA:
             if "Canal" in df_vf_mes_pr.columns:
                 ventas_por_canal_mes[canal] = df_vf_mes_pr[df_vf_mes_pr["Canal"] == canal]["Venta_Diaria"].sum()
             else:
                 ventas_por_canal_mes[canal] = venta_acum_pr if canal == "Noble" else 0.0
+
         st.subheader(f"📅 {calendar.month_name[hoy_pr.month].capitalize()} {hoy_pr.year}")
         cols_meta = st.columns(len(CANALES_VENTA))
         for i, canal in enumerate(CANALES_VENTA):
@@ -190,6 +197,7 @@ def show_dashboard_financiero():
             meta = metas_canal.get(canal, 0.0)
             avance = (acum / meta * 100) if meta > 0 else 0.0
             cols_meta[i].metric(f"{canal}", f"${acum:,.2f}", f"Meta: ${meta:,.0f} ({avance:.0f}%)")
+
         st.divider()
         st.subheader("📈 Datos para tus propias gráficas")
         st.markdown("Descarga el archivo CSV con las ventas mensuales y crea tus propias visualizaciones en Excel.")
@@ -206,7 +214,7 @@ def show_dashboard_financiero():
         st.divider()
         st.subheader(f"📊 Cumplimiento anual vs presupuesto — {hoy_pr.year}")
         venta_anual_pr = df_vf[df_vf["Año"].apply(limpiar_valor) == hoy_pr.year]["Venta_Diaria"].sum()
-        ppto_anual_pr = 0.0
+        ppto_anual_pr  = 0.0
         if not df_pptof.empty:
             ppto_año_pr = df_pptof[df_pptof["Año"].apply(limpiar_valor) == hoy_pr.year]
             if not ppto_año_pr.empty:
@@ -222,6 +230,7 @@ def show_dashboard_financiero():
             ga2.metric("Presupuesto anual",     f"${ppto_anual_pr:,.2f}")
         else:
             st.info("Configura el presupuesto anual en '📋 Presupuesto Anual' para ver el velocímetro anual.")
+
     with tab_fc:
         st.subheader("🍽️ Food Cost & Margen por Producto")
         if df_bcf.empty:
@@ -301,6 +310,7 @@ def show_dashboard_financiero():
                 df_por_prod.style.apply(_color_fc_prod, axis=1),
                 hide_index=True, use_container_width=True
             )
+
     with tab_merma_d:
         st.subheader("📉 Análisis de Merma")
         if df_mermaf.empty:
@@ -363,6 +373,7 @@ def show_dashboard_financiero():
             cols_md_show = ["Fecha","Producto","Ingrediente","Cantidad","Unidad_Medida","Motivo","Costo_Unitario","Costo_Total","Comentarios"]
             cols_md_ok   = [c for c in cols_md_show if c in df_md_fil.columns]
             st.dataframe(df_md_fil[cols_md_ok].sort_values("Fecha", ascending=False), hide_index=True, use_container_width=True)
+
     with tab_pe:
         st.subheader("⚖️ Punto de Equilibrio Mensual")
         hoy_pe     = ahora_hermosillo().date()
@@ -464,47 +475,3 @@ def show_dashboard_financiero():
                 st.dataframe(df_gf2_fil[cols_gf2_ok].sort_values("Tipo"), hide_index=True, use_container_width=True)
             else:
                 st.info("Sin gastos registrados para este período en el módulo de Gastos.")
-    with tab_canales:
-        st.subheader("🛒 Canales de Venta Adicionales")
-        if df_cfg_canales.empty:
-            st.info("No hay canales configurados. Usa la página 'Canales de Venta' para crear tus canales adicionales.")
-        else:
-            canales_data = {}
-            for _, canal_row in df_cfg_canales.iterrows():
-                cn = canal_row["Canal"]
-                ws_cn, _ = safe_worksheet(sh, cn)
-                if ws_cn:
-                    data = ws_cn.get_all_values()
-                    if len(data) > 1:
-                        df_cn = pd.DataFrame(data[1:], columns=data[0])
-                        df_cn["Monto"] = df_cn["Monto"].apply(limpiar_valor)
-                        df_cn["Fecha"] = pd.to_datetime(df_cn["Fecha"], errors="coerce")
-                        canales_data[cn] = df_cn
-            if not canales_data:
-                st.info("Aún no hay eventos registrados en los canales.")
-            else:
-                acum_can = []
-                total_general = 0.0
-                for cn, df_cn in canales_data.items():
-                    total_cn = df_cn["Monto"].sum()
-                    acum_can.append({"Canal": cn, "Total": total_cn, "Eventos": len(df_cn)})
-                    total_general += total_cn
-                df_acum = pd.DataFrame(acum_can)
-                st.subheader("Totales por canal")
-                st.dataframe(df_acum, hide_index=True, use_container_width=True)
-                st.metric("Total General Canales Adicionales", f"${total_general:,.2f}")
-                try:
-                    fig_can_adic = px.bar(df_acum, x="Canal", y="Total", title="Ventas por Canal Adicional", color="Total")
-                    st.plotly_chart(fig_can_adic, use_container_width=True)
-                except Exception:
-                    st.bar_chart(df_acum.set_index("Canal")["Total"])
-                st.subheader("Ventas mensuales de canales adicionales")
-                df_all_ev = pd.concat(canales_data.values(), ignore_index=True)
-                df_all_ev["Mes"] = df_all_ev["Fecha"].dt.month
-                df_all_ev["Año"] = df_all_ev["Fecha"].dt.year
-                ventas_mens_can = df_all_ev.groupby(["Año","Mes"])["Monto"].sum().reset_index()
-                ventas_mens_can = ventas_mens_can.sort_values(["Año","Mes"])
-                ventas_mens_can["label"] = ventas_mens_can.apply(
-                    lambda r: f"{calendar.month_abbr[int(r['Mes'])]} {int(r['Año'])}", axis=1
-                )
-                st.bar_chart(ventas_mens_can.set_index("label")["Monto"])
