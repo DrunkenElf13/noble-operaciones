@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from sheets import safe_worksheet, sh, _asegurar_hoja_calendario, append_rows_con_retry
+from sheets import safe_worksheet, sh, _asegurar_hoja_calendario, _asegurar_hoja_canal_ventas, append_rows_con_retry
 from data_loaders import cargar_todas_ventas
 from utils import limpiar_valor
+from config import COLS_CALENDARIO
 import uuid
 
 def _parse_fecha(fecha):
@@ -18,7 +19,7 @@ def _parse_fecha(fecha):
     except Exception:
         return None
 
-@st.cache_data(ttl=120)  # ← Cache de 2 minutos para eventos del mes
+@st.cache_data(ttl=120)
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
@@ -26,9 +27,14 @@ def cargar_eventos_mes(mes, año):
     ws_cal, err = _asegurar_hoja_calendario()
     if ws_cal:
         try:
-            datos = ws_cal.get_all_values()  # Esta lectura ya está dentro de un try, si falla se maneja
+            datos = ws_cal.get_all_values()
             if len(datos) > 1:
-                df = pd.DataFrame(datos[1:], columns=datos[0])
+                # Asegurar que el DataFrame tenga todas las columnas de COLS_CALENDARIO
+                cols_hoja = datos[0]
+                df = pd.DataFrame(datos[1:], columns=cols_hoja)
+                for col in COLS_CALENDARIO:
+                    if col not in df.columns:
+                        df[col] = ""
                 for _, row in df.iterrows():
                     fecha_inicio = _parse_fecha(row.get("Fecha", ""))
                     fecha_fin_str = row.get("Fecha_Fin", "")
@@ -36,6 +42,9 @@ def cargar_eventos_mes(mes, año):
                     fecha_entrega_str = row.get("Fecha_Entrega", "")
                     fecha_entrega = _parse_fecha(fecha_entrega_str) if fecha_entrega_str else None
                     id_base = row.get("ID", "")
+                    origen = str(row.get("Origen", "manual")).strip().lower()
+                    if origen == "":
+                        origen = "manual"
                     if fecha_inicio:
                         if fecha_fin and fecha_fin > fecha_inicio:
                             fechas_rango = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
@@ -68,7 +77,7 @@ def cargar_eventos_mes(mes, año):
                                     "notas": row.get("Notas", ""),
                                     "color": row.get("Color", "#4A90D9"),
                                     "responsable": row.get("Responsable", ""),
-                                    "origen": "calendario",
+                                    "origen": origen,
                                     "anticipo": limpiar_valor(row.get("Anticipo", 0)),
                                     "fecha_fin": fecha_fin_str
                                 }
@@ -78,9 +87,9 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # Ventas diarias (solo Noble POS) – desde caché de cargar_todas_ventas
+    # Ventas diarias (solo Noble POS)
     try:
-        df_ventas = cargar_todas_ventas()  # ya está cacheada
+        df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
             now = datetime.now()
             if now.month == mes and now.year == año:
@@ -124,7 +133,7 @@ def cargar_eventos_mes(mes, año):
                             "notas": "",
                             "color": "#48B065",
                             "responsable": row.get("Responsable", ""),
-                            "origen": "venta",
+                            "origen": "Venta Noble",
                             "anticipo": 0,
                             "fecha_fin": "",
                             "meta_diaria": meta_diaria,
@@ -146,11 +155,66 @@ def cargar_eventos_mes(mes, año):
 
     return eventos
 
+def _sincronizar_canal(id_evento: str, datos: dict, accion: str = "actualizar"):
+    """Sincroniza la hoja del canal correspondiente al origen del evento."""
+    origen = datos.get("origen", "manual")
+    if origen in ["Coffee Station", "Noble To Go"]:
+        ws_canal, err_canal = _asegurar_hoja_canal_ventas(origen)
+        if not err_canal and ws_canal:
+            if accion == "eliminar":
+                # Buscar y eliminar fila por ID
+                try:
+                    todos = ws_canal.get_all_values()
+                    for i, fila in enumerate(todos[1:], start=2):
+                        if fila[0] == id_evento:
+                            ws_canal.delete_rows(i)
+                            break
+                except Exception:
+                    pass
+            else:
+                # Actualizar o agregar
+                nueva_fila = [
+                    id_evento,
+                    datos.get("fecha", ""),
+                    datos.get("tipo", "Otro"),
+                    datos.get("titulo", ""),
+                    datos.get("cliente", ""),
+                    datos.get("contacto", ""),
+                    datos.get("ubicacion", ""),
+                    datos.get("descripcion", ""),
+                    datos.get("total_cotizado", 0),
+                    datos.get("adeudo", 0),
+                    datos.get("metodo_pago", ""),
+                    datos.get("fecha_contratacion", ""),
+                    datos.get("fecha_entrega", ""),
+                    datos.get("abonos", ""),
+                    datos.get("notas", ""),
+                    datos.get("color", "#4A90D9"),
+                    datos.get("responsable", ""),
+                    datos.get("anticipo", 0),
+                    datos.get("fecha_fin", ""),
+                    origen,
+                ]
+                try:
+                    todos = ws_canal.get_all_values()
+                    encontrado = False
+                    for i, fila in enumerate(todos[1:], start=2):
+                        if fila[0] == id_evento:
+                            ws_canal.update(range_name=f"A{i}:T{i}", values=[nueva_fila])
+                            encontrado = True
+                            break
+                    if not encontrado:
+                        append_rows_con_retry(ws_canal, [nueva_fila])
+                except Exception:
+                    pass
+
 def agregar_evento(datos: dict, id_externo: str = None):
+    """Agrega un evento a Calendario y, si es de canal, a su hoja respectiva."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
     id_final = id_externo if id_externo else str(uuid.uuid4())[:8]
+    origen = datos.get("origen", "manual")
     try:
         nueva_fila = [
             id_final,
@@ -169,16 +233,20 @@ def agregar_evento(datos: dict, id_externo: str = None):
             datos.get("abonos", ""),
             datos.get("notas", ""),
             datos.get("color", "#4A90D9"),
-            datos.get("responsable", st.session_state.current_user),
+            datos.get("responsable", st.session_state.get("current_user", "")),
             datos.get("anticipo", 0),
             datos.get("fecha_fin", ""),
+            origen,
         ]
         ok, msg = append_rows_con_retry(ws, [nueva_fila])
+        if ok and origen in ["Coffee Station", "Noble To Go"]:
+            _sincronizar_canal(id_final, datos, "agregar")
         return ok, msg
     except Exception as e:
         return False, str(e)
 
 def actualizar_evento(id_evento: str, datos: dict):
+    """Actualiza evento en Calendario y replica en hoja de canal si corresponde."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
@@ -186,6 +254,7 @@ def actualizar_evento(id_evento: str, datos: dict):
         todos = ws.get_all_values()
         if len(todos) <= 1:
             return False, "Calendario vacío"
+        origen = datos.get("origen", "manual")
         for i, fila in enumerate(todos[1:], start=2):
             if fila[0] == id_evento:
                 nueva_fila = [
@@ -208,14 +277,18 @@ def actualizar_evento(id_evento: str, datos: dict):
                     datos.get("responsable", fila[16]),
                     datos.get("anticipo", fila[17] if len(fila) > 17 else 0),
                     datos.get("fecha_fin", fila[18] if len(fila) > 18 else ""),
+                    origen,
                 ]
-                ws.update(range_name=f"A{i}:S{i}", values=[nueva_fila])
+                ws.update(range_name=f"A{i}:T{i}", values=[nueva_fila])
+                if origen in ["Coffee Station", "Noble To Go"]:
+                    _sincronizar_canal(id_evento, datos, "actualizar")
                 return True, "Evento actualizado"
         return False, "Evento no encontrado"
     except Exception as e:
         return False, str(e)
 
 def eliminar_evento(id_evento: str):
+    """Elimina evento de Calendario, hoja de canal y eventos de entrega asociados."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
@@ -223,15 +296,40 @@ def eliminar_evento(id_evento: str):
         todos = ws.get_all_values()
         if len(todos) <= 1:
             return False, "Calendario vacío"
+        # Encontrar el evento para saber su origen y eliminar entregas
+        origen = "manual"
+        ids_a_eliminar = [id_evento]
         for i, fila in enumerate(todos[1:], start=2):
             if fila[0] == id_evento:
-                ws.delete_rows(i)
-                return True, "Evento eliminado"
-        return False, "Evento no encontrado"
+                # Extraer origen de la fila (columna 20, índice 19)
+                if len(fila) > 19:
+                    origen = str(fila[19]).strip()
+                else:
+                    origen = "manual"
+                # Buscar entregas asociadas (ID + "_entrega")
+                id_base = id_evento.split("_entrega")[0]
+                for j, f2 in enumerate(todos[1:], start=2):
+                    if f2[0] == f"{id_base}_entrega" or f2[0].startswith(f"{id_base}_entrega"):
+                        ids_a_eliminar.append(f2[0])
+                break
+        # Eliminar en orden inverso para no alterar índices
+        filas_a_eliminar = []
+        for id_e in ids_a_eliminar:
+            for i, fila in enumerate(todos[1:], start=2):
+                if fila[0] == id_e:
+                    filas_a_eliminar.append(i)
+                    break
+        for i in sorted(filas_a_eliminar, reverse=True):
+            ws.delete_rows(i)
+        # Sincronizar eliminación en hoja de canal si aplica
+        if origen in ["Coffee Station", "Noble To Go"]:
+            _sincronizar_canal(id_evento, {"origen": origen}, "eliminar")
+        return True, f"Evento(s) eliminado(s): {len(ids_a_eliminar)}"
     except Exception as e:
         return False, str(e)
 
 def registrar_abono(id_evento: str, monto: float):
+    """Registra abono en Calendario y réplica en hoja de canal."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
@@ -248,6 +346,22 @@ def registrar_abono(id_evento: str, monto: float):
                 fecha_hoy = datetime.now().strftime("%Y-%m-%d")
                 nuevo_abono = f"{abonos_previos}; {fecha_hoy}: ${monto:,.2f}" if abonos_previos else f"{fecha_hoy}: ${monto:,.2f}"
                 ws.update(range_name=f"N{i}", values=[[nuevo_abono]])
+                # Sincronizar con hoja de canal
+                origen = "manual"
+                if len(fila) > 19:
+                    origen = str(fila[19]).strip()
+                if origen in ["Coffee Station", "Noble To Go"]:
+                    try:
+                        ws_canal, _ = _asegurar_hoja_canal_ventas(origen)
+                        if ws_canal:
+                            todos_canal = ws_canal.get_all_values()
+                            for j, f_canal in enumerate(todos_canal[1:], start=2):
+                                if f_canal[0] == id_evento:
+                                    ws_canal.update(range_name=f"J{j}", values=[[nuevo_adeudo]])
+                                    ws_canal.update(range_name=f"N{j}", values=[[nuevo_abono]])
+                                    break
+                    except Exception:
+                        pass
                 return True, f"Abono de ${monto:,.2f} registrado. Nuevo adeudo: ${nuevo_adeudo:,.2f}"
         return False, "Evento no encontrado"
     except Exception as e:
