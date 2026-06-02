@@ -1,6 +1,3 @@
-## 📄 Archivo 11 de 12: `paginas/presupuesto.py`
-
-```python
 import streamlit as st
 import time
 import calendar
@@ -8,7 +5,7 @@ import pandas as pd
 from data_loaders import cargar_presupuesto
 from sheets import _asegurar_hoja_presupuesto, append_rows_con_retry
 from utils import limpiar_valor, ahora_hermosillo
-from config import COLS_PRESUPUESTO, COLOR_TARJETA, COLOR_SUBTEXTO
+from config import COLS_PRESUPUESTO
 from auth import tiene_permiso
 
 def show_presupuesto():
@@ -107,6 +104,3 @@ def show_presupuesto():
                 st.rerun()
             except Exception as e_ppto:
                 st.error(f"Error al guardar presupuesto: {e_ppto}")
-```
-
-¿Continuamos con el último?
