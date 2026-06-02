@@ -9,22 +9,22 @@ from components.calendario_utils import (
 from config import CANALES_VENTA
 
 COLORES_TIPO = {
-    "Evento Coffee Station": "#FF5733",
+    "💰 Venta": "#4A90D9",
+    "📦 Entrega": "#9B59B6",
+    "Venta Noble": "#48B065",
     "Vacaciones": "#33FF57",
     "Adeudo": "#FF3333",
     "Fecha importante": "#3357FF",
     "Otro": "#AAAAAA",
-    "Venta Noble": "#48B065",
-    "💰 Venta Coffee Station": "#4A90D9",
-    "💰 Venta Noble To Go": "#9B59B6",
-    "📦 Entrega Coffee Station": "#4A90D9",
-    "📦 Entrega Noble To Go": "#9B59B6",
 }
 
 ICONOS_TIPO = {
     "Vacaciones": "🏖️",
     "Fecha importante": "📌",
     "Adeudo": "⚠️",
+    "💰 Venta": "💰",
+    "📦 Entrega": "📦",
+    "Venta Noble": "💵",
 }
 
 PALETA_COLORES = {
@@ -36,6 +36,13 @@ PALETA_COLORES = {
     "🟡 Amarillo": "#F1C40F",
     "🩵 Turquesa": "#1ABC9C",
     "⚫ Gris": "#34495E",
+}
+
+CAMPOS_POR_TIPO = {
+    "Vacaciones": ["titulo", "fecha_inicio", "fecha_fin", "color", "notas"],
+    "Fecha importante": ["titulo", "descripcion", "fecha_inicio", "fecha_fin", "color", "notas"],
+    "Adeudo": ["titulo", "cliente", "total_cotizado", "adeudo", "metodo_pago", "fecha_inicio", "fecha_entrega", "color", "notas"],
+    "Otro": ["titulo", "cliente", "contacto", "ubicacion", "descripcion", "total_cotizado", "adeudo", "anticipo", "metodo_pago", "fecha_contratacion", "fecha_inicio", "fecha_entrega", "fecha_fin", "abonos", "notas", "color"],
 }
 
 def show_calendario():
@@ -111,13 +118,6 @@ def show_calendario():
                 cols[i].markdown("")
                 continue
 
-            # Destacar día seleccionado con borde
-            if dia == st.session_state.dia_seleccionado:
-                estilo_dia = "border: 2px solid #4A90D9; border-radius: 4px; padding: 2px;"
-            else:
-                estilo_dia = ""
-
-            # Número del día clickeable para seleccionar
             if cols[i].button(str(dia.day), key=f"dia_{dia.day}_{dia.month}", help="Ver detalles"):
                 st.session_state.dia_seleccionado = dia
                 st.rerun()
@@ -130,55 +130,45 @@ def show_calendario():
             if total_noble > 0:
                 meta = ventas_noble[0].get("meta_diaria", 145000/26) if ventas_noble else 145000/26
                 pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
-                if pct >= 100:
-                    color_bar = "#48B065"
-                elif pct >= 50:
-                    color_bar = "#EF9F27"
-                else:
-                    color_bar = "#E24B4A"
+                color_bar = "#48B065" if pct >= 100 else ("#EF9F27" if pct >= 50 else "#E24B4A")
                 barra = (
                     f"<div style='background:#ddd; border-radius:4px; height:6px; width:100%; margin-top:2px;'>"
                     f"<div style='width:{pct}%; height:6px; border-radius:4px; background:{color_bar};'></div></div>"
                 )
                 cols[i].markdown(
-                    f"<div style='background-color:rgba(72,176,101,0.15); padding:2px 4px; border-radius:4px; font-size:11px; color:#111;'>"
+                    f"<div style='background-color:rgba(72,176,101,0.15); padding:2px 4px; border-radius:4px; font-size:11px;'>"
                     f"💰 ${total_noble:,.0f}{barra}</div>",
                     unsafe_allow_html=True
                 )
 
-            # Mostrar hasta 2 eventos con íconos y colores
-            for idx, ev in enumerate(otros[:2]):
+            for ev in otros[:2]:
                 color = ev.get("color", "#AAAAAA")
-                tipo = ev["tipo_evento"]
-                icono = ICONOS_TIPO.get(tipo, "")
+                icono = ICONOS_TIPO.get(ev["tipo_evento"], "")
                 titulo = ev.get("titulo_grid", ev["titulo"])[:22]
                 texto = f"{icono} {titulo}" if icono else titulo
-                # Tooltip con más info
-                tooltip = f"{tipo}: {ev['titulo']}\nCliente: {ev.get('cliente','')}\n${ev['total_cotizado']:,.2f}"
+                tooltip = f"{ev['tipo_evento']}: {ev['titulo']}\nCliente: {ev.get('cliente','')}\n${ev['total_cotizado']:,.2f}"
                 cols[i].markdown(
-                    f"<div title='{tooltip}' style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px; color:#111;'>{texto}</div>",
+                    f"<div title='{tooltip}' style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px;'>{texto}</div>",
                     unsafe_allow_html=True
                 )
             if len(otros) > 2:
                 cols[i].markdown(f"<small>+{len(otros)-2} más</small>", unsafe_allow_html=True)
 
-    # ────── Panel de día seleccionado ──────
     st.divider()
-    st.subheader(f"📌 Detalle del {st.session_state.dia_seleccionado.strftime('%d/%m/%Y')}")
+    st.subheader(f"📌 {st.session_state.dia_seleccionado.strftime('%d/%m/%Y')}")
     eventos_dia_sel = [e for e in eventos if e["fecha"].date() == st.session_state.dia_seleccionado]
     if eventos_dia_sel:
         for ev in eventos_dia_sel:
             with st.container():
-                col1, col2 = st.columns([1, 4])
+                col1, col2 = st.columns([1,4])
                 with col1:
-                    st.markdown(
-                        f"<div style='width:20px;height:20px;background-color:{ev.get('color', '#AAAAAA')};border-radius:4px;'></div>",
-                        unsafe_allow_html=True
-                    )
+                    st.markdown(f"<div style='width:20px;height:20px;background-color:{ev.get('color','#AAAAAA')};border-radius:4px;'></div>", unsafe_allow_html=True)
                 with col2:
                     st.write(f"**{ev['tipo_evento']}**: {ev['titulo']}")
-                    st.caption(f"Cliente: {ev.get('cliente','')} | ${ev['total_cotizado']:,.2f}")
-                    if ev.get("adeudo", 0) > 0:
+                    if ev.get("cliente"):
+                        st.caption(f"Cliente: {ev['cliente']}")
+                    st.caption(f"Total: ${ev['total_cotizado']:,.2f}")
+                    if ev.get("adeudo",0) > 0:
                         st.caption(f"Adeudo: ${ev['adeudo']:,.2f}")
                     if ev.get("notas"):
                         st.caption(f"Notas: {ev['notas']}")
@@ -195,58 +185,101 @@ def show_calendario():
                 id_base = ev["id"].split("_dia_")[0].split("_entrega")[0]
                 if id_base not in eventos_unicos:
                     eventos_unicos[id_base] = ev
-
             df_lista = []
             for ev in eventos_unicos.values():
                 fecha_str = ev["fecha"].strftime("%d/%m/%Y")
-                fecha_entrega = ev.get("fecha_entrega", "")
                 fecha_entrega_dt = ev.get("fecha_entrega_dt")
                 if fecha_entrega_dt and fecha_entrega_dt.date() != ev["fecha"].date():
-                    fecha_entrega_mostrar = fecha_entrega_dt.strftime("%d/%m/%Y")
+                    entrega_mostrar = fecha_entrega_dt.strftime("%d/%m/%Y")
                 else:
-                    fecha_entrega_mostrar = ""
+                    entrega_mostrar = ""
                 df_lista.append({
-                    "fecha_str": fecha_str,
-                    "tipo_evento": ev["tipo_evento"],
-                    "titulo": ev["titulo"],
-                    "cliente": ev.get("cliente", ""),
-                    "total_cotizado": ev["total_cotizado"],
-                    "adeudo": ev.get("adeudo", 0),
-                    "anticipo": ev.get("anticipo", 0),
-                    "fecha_entrega": fecha_entrega_mostrar,
-                    "ubicacion": ev.get("ubicacion", ""),
+                    "Fecha": fecha_str,
+                    "Tipo": ev["tipo_evento"],
+                    "Título": ev["titulo"],
+                    "Cliente": ev.get("cliente", ""),
+                    "Total": ev["total_cotizado"],
+                    "Adeudo": ev.get("adeudo", 0),
+                    "Anticipo": ev.get("anticipo", 0),
+                    "Entrega": entrega_mostrar,
                 })
-            df_display = pd.DataFrame(df_lista).sort_values("fecha_str")
+            df_display = pd.DataFrame(df_lista).sort_values("Fecha")
             st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
-            st.info("No hay eventos este mes (solo ventas regulares).")
+            st.info("Solo ventas regulares este mes.")
     else:
         st.info("No hay eventos este mes.")
 
-    # ────── Formulario nuevo evento manual ──────
+    # ────── FORMULARIO MANUAL ──────
     st.divider()
-    with st.expander("➕ Nuevo evento manual (no ventas)", expanded=False):
-        with st.form("f_evento", clear_on_submit=True):
+    with st.expander("➕ Nuevo evento manual", expanded=False):
+        with st.form("f_evento_manual", clear_on_submit=True):
+            tipo_ev = st.selectbox("Tipo de evento", list(COLORES_TIPO.keys()), key="tipo_manual")
+            campos = CAMPOS_POR_TIPO.get(tipo_ev, [])
             col1, col2 = st.columns(2)
             with col1:
-                fecha_ev = st.date_input("Fecha", value=hoy.date())
-                tipo_ev = st.selectbox("Tipo", list(COLORES_TIPO.keys()))
-                titulo_ev = st.text_input("Título")
-                cliente_ev = st.text_input("Cliente")
-                contacto_ev = st.text_input("Contacto")
-                ubicacion_ev = st.text_input("Ubicación")
-                descripcion_ev = st.text_area("Descripción")
+                fecha_ev = st.date_input("Fecha inicio", value=hoy.date(), key="fecha_manual")
+                # Toggle para evento de varios días (solo si el tipo lo permite)
+                permite_rango = "fecha_fin" in campos
+                if permite_rango:
+                    es_rango = st.toggle("Evento de varios días", value=False, key="rango_manual")
+                    if es_rango:
+                        fecha_fin_ev = st.date_input("Fecha fin", value=fecha_ev, min_value=fecha_ev, key="fecha_fin_manual")
+                    else:
+                        fecha_fin_ev = fecha_ev
+                else:
+                    fecha_fin_ev = fecha_ev
+                titulo_ev = st.text_input("Título", key="titulo_manual")
+                if "cliente" in campos:
+                    cliente_ev = st.text_input("Cliente", key="cliente_manual")
+                else:
+                    cliente_ev = ""
+                if "contacto" in campos:
+                    contacto_ev = st.text_input("Contacto", key="contacto_manual")
+                else:
+                    contacto_ev = ""
+                if "ubicacion" in campos:
+                    ubicacion_ev = st.text_input("Ubicación", key="ubicacion_manual")
+                else:
+                    ubicacion_ev = ""
+                if "descripcion" in campos:
+                    descripcion_ev = st.text_area("Descripción", key="descripcion_manual")
+                else:
+                    descripcion_ev = ""
             with col2:
-                total_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0)
-                adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0)
-                anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0)
-                metodo_ev = st.text_input("Método de pago")
-                fecha_contr_ev = st.date_input("Fecha contratación", value=hoy.date())
-                fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy.date())
-                fecha_fin_ev = st.date_input("Fecha fin (rango)", value=hoy.date(), help="Si el evento dura varios días")
-                abonos_ev = st.text_area("Abonos (historial)")
-                notas_ev = st.text_area("Notas")
-                color_nombre = st.selectbox("Color del evento", list(PALETA_COLORES.keys()))
+                if "total_cotizado" in campos:
+                    total_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0, key="total_manual")
+                else:
+                    total_ev = 0.0
+                if "adeudo" in campos:
+                    adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0, key="adeudo_manual")
+                else:
+                    adeudo_ev = 0.0
+                if "anticipo" in campos:
+                    anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0, key="anticipo_manual")
+                else:
+                    anticipo_ev = 0.0
+                if "metodo_pago" in campos:
+                    metodo_ev = st.text_input("Método de pago", key="metodo_manual")
+                else:
+                    metodo_ev = ""
+                if "fecha_contratacion" in campos:
+                    fecha_contr_ev = st.date_input("Fecha contratación", value=hoy.date(), key="fecha_contr_manual")
+                else:
+                    fecha_contr_ev = hoy.date()
+                if "fecha_entrega" in campos:
+                    fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy.date(), key="fecha_entr_manual")
+                else:
+                    fecha_entr_ev = hoy.date()
+                if "abonos" in campos:
+                    abonos_ev = st.text_area("Abonos", key="abonos_manual")
+                else:
+                    abonos_ev = ""
+                if "notas" in campos:
+                    notas_ev = st.text_area("Notas", key="notas_manual")
+                else:
+                    notas_ev = ""
+                color_nombre = st.selectbox("Color", list(PALETA_COLORES.keys()), key="color_manual")
                 color_ev = PALETA_COLORES[color_nombre]
                 st.markdown(f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>", unsafe_allow_html=True)
             if st.form_submit_button("💾 Guardar evento"):
@@ -257,21 +290,21 @@ def show_calendario():
                         "fecha": fecha_ev.strftime("%Y-%m-%d"),
                         "tipo": tipo_ev,
                         "titulo": titulo_ev.strip(),
-                        "cliente": cliente_ev.strip(),
-                        "contacto": contacto_ev.strip(),
-                        "ubicacion": ubicacion_ev.strip(),
-                        "descripcion": descripcion_ev.strip(),
+                        "cliente": cliente_ev.strip() if isinstance(cliente_ev, str) else "",
+                        "contacto": contacto_ev.strip() if isinstance(contacto_ev, str) else "",
+                        "ubicacion": ubicacion_ev.strip() if isinstance(ubicacion_ev, str) else "",
+                        "descripcion": descripcion_ev.strip() if isinstance(descripcion_ev, str) else "",
                         "total_cotizado": total_ev,
                         "adeudo": adeudo_ev,
-                        "metodo_pago": metodo_ev.strip(),
-                        "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d"),
-                        "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d"),
-                        "abonos": abonos_ev.strip(),
-                        "notas": notas_ev.strip(),
+                        "metodo_pago": metodo_ev.strip() if isinstance(metodo_ev, str) else "",
+                        "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d") if hasattr(fecha_contr_ev, 'strftime') else "",
+                        "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d") if hasattr(fecha_entr_ev, 'strftime') else "",
+                        "abonos": abonos_ev.strip() if isinstance(abonos_ev, str) else "",
+                        "notas": notas_ev.strip() if isinstance(notas_ev, str) else "",
                         "color": color_ev,
                         "responsable": st.session_state.current_user,
                         "anticipo": anticipo_ev,
-                        "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_ev else "",
+                        "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if permite_rango and es_rango and fecha_fin_ev != fecha_ev else "",
                         "origen": "manual",
                     }
                     ok, msg = agregar_evento(datos)
@@ -282,33 +315,41 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # ────── Edición de evento (si hay uno en edición) ──────
+    # ────── EDICIÓN (si existe) ──────
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
         st.subheader(f"Editando: {ev['titulo']}")
         with st.form("f_edit_evento", clear_on_submit=False):
+            tipo_ev = st.selectbox("Tipo", list(COLORES_TIPO.keys()),
+                                   index=list(COLORES_TIPO.keys()).index(ev["tipo_evento"]) if ev["tipo_evento"] in COLORES_TIPO else 0,
+                                   key="tipo_editar")
+            # Simplificamos mostrando todos los campos para edición
             col1, col2 = st.columns(2)
             with col1:
-                fecha_ev = st.date_input("Fecha", value=ev["fecha"].date() if hasattr(ev["fecha"], 'date') else ev["fecha"])
-                tipo_ev = st.selectbox("Tipo", list(COLORES_TIPO.keys()), index=list(COLORES_TIPO.keys()).index(ev["tipo_evento"]) if ev["tipo_evento"] in COLORES_TIPO else 0)
-                titulo_ev = st.text_input("Título", value=ev["titulo"])
-                cliente_ev = st.text_input("Cliente", value=ev.get("cliente", ""))
-                contacto_ev = st.text_input("Contacto", value=ev.get("contacto", ""))
-                ubicacion_ev = st.text_input("Ubicación", value=ev.get("ubicacion", ""))
-                descripcion_ev = st.text_area("Descripción", value=ev.get("descripcion", ""))
+                fecha_ev = st.date_input("Fecha inicio", value=ev["fecha"].date() if hasattr(ev["fecha"], 'date') else ev["fecha"], key="fecha_editar")
+                fecha_fin_val = ev.get("fecha_fin", "")
+                if fecha_fin_val:
+                    fecha_fin_ev = st.date_input("Fecha fin", value=pd.to_datetime(fecha_fin_val).date(), key="fecha_fin_editar")
+                else:
+                    fecha_fin_ev = fecha_ev
+                titulo_ev = st.text_input("Título", value=ev["titulo"], key="titulo_editar")
+                cliente_ev = st.text_input("Cliente", value=ev.get("cliente", ""), key="cliente_editar")
+                contacto_ev = st.text_input("Contacto", value=ev.get("contacto", ""), key="contacto_editar")
+                ubicacion_ev = st.text_input("Ubicación", value=ev.get("ubicacion", ""), key="ubicacion_editar")
+                descripcion_ev = st.text_area("Descripción", value=ev.get("descripcion", ""), key="descripcion_editar")
             with col2:
-                total_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=ev.get("total_cotizado", 0.0))
-                adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=ev.get("adeudo", 0.0))
-                anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=ev.get("anticipo", 0.0))
-                metodo_ev = st.text_input("Método de pago", value=ev.get("metodo_pago", ""))
-                fecha_contr_ev = st.date_input("Fecha contratación", value=pd.to_datetime(ev.get("fecha_contratacion")).date() if ev.get("fecha_contratacion") else hoy.date())
-                fecha_entr_ev = st.date_input("Fecha entrega/evento", value=pd.to_datetime(ev.get("fecha_entrega")).date() if ev.get("fecha_entrega") else hoy.date())
-                fecha_fin_ev = st.date_input("Fecha fin (rango)", value=pd.to_datetime(ev.get("fecha_fin")).date() if ev.get("fecha_fin") else hoy.date())
-                abonos_ev = st.text_area("Abonos", value=ev.get("abonos", ""))
-                notas_ev = st.text_area("Notas", value=ev.get("notas", ""))
+                total_ev = st.number_input("Total cotizado", min_value=0.0, step=10.0, value=ev.get("total_cotizado",0.0), key="total_editar")
+                adeudo_ev = st.number_input("Adeudo", min_value=0.0, step=10.0, value=ev.get("adeudo",0.0), key="adeudo_editar")
+                anticipo_ev = st.number_input("Anticipo", min_value=0.0, step=10.0, value=ev.get("anticipo",0.0), key="anticipo_editar")
+                metodo_ev = st.text_input("Método de pago", value=ev.get("metodo_pago", ""), key="metodo_editar")
+                fecha_contr_ev = st.date_input("Fecha contratación", value=pd.to_datetime(ev.get("fecha_contratacion")).date() if ev.get("fecha_contratacion") else hoy.date(), key="fecha_contr_editar")
+                fecha_entr_ev = st.date_input("Fecha entrega", value=pd.to_datetime(ev.get("fecha_entrega")).date() if ev.get("fecha_entrega") else hoy.date(), key="fecha_entr_editar")
+                abonos_ev = st.text_area("Abonos", value=ev.get("abonos", ""), key="abonos_editar")
+                notas_ev = st.text_area("Notas", value=ev.get("notas", ""), key="notas_editar")
                 color_nombre_actual = [k for k, v in PALETA_COLORES.items() if v == ev.get("color", "#4A90D9")]
                 color_nombre = st.selectbox("Color", list(PALETA_COLORES.keys()),
-                                           index=list(PALETA_COLORES.keys()).index(color_nombre_actual[0]) if color_nombre_actual else 0)
+                                           index=list(PALETA_COLORES.keys()).index(color_nombre_actual[0]) if color_nombre_actual else 0,
+                                           key="color_editar")
                 color_ev = PALETA_COLORES[color_nombre]
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
@@ -347,21 +388,21 @@ def show_calendario():
                     del st.session_state["editando_evento"]
                     st.rerun()
 
-    # ────── Registrar abono ──────
+    # ────── ABONOS ──────
     st.subheader("💵 Registrar abono")
-    with st.expander("Añadir abono a un evento con adeudo"):
-        eventos_con_adeudo = [e for e in eventos if e.get("adeudo", 0) > 0 and e["origen"] != "Venta Noble"]
+    with st.expander("Añadir abono a evento con adeudo"):
+        eventos_con_adeudo = [e for e in eventos if e.get("adeudo",0) > 0 and e["origen"] != "Venta Noble"]
         if eventos_con_adeudo:
-            opciones_abono = {f"{e['fecha'].strftime('%d/%m/%Y')} - {e['titulo']} (Adeudo: ${e['adeudo']:,.2f})": e for e in eventos_con_adeudo}
-            sel_abono = st.selectbox("Evento", list(opciones_abono.keys()))
-            if sel_abono:
-                ev_abono = opciones_abono[sel_abono]
-                monto_abono = st.number_input("Monto del abono ($)", min_value=0.0, step=10.0, value=0.0)
+            opciones = {f"{e['fecha'].strftime('%d/%m/%Y')} - {e['titulo']} (${e['adeudo']:,.2f})": e for e in eventos_con_adeudo}
+            sel = st.selectbox("Evento", list(opciones.keys()))
+            if sel:
+                ev_abono = opciones[sel]
+                monto = st.number_input("Monto del abono ($)", min_value=0.0, step=10.0, value=0.0)
                 if st.button("Registrar abono"):
-                    if monto_abono <= 0:
+                    if monto <= 0:
                         st.error("El monto debe ser mayor a cero.")
                     else:
-                        ok, msg = registrar_abono(ev_abono["id"], monto_abono)
+                        ok, msg = registrar_abono(ev_abono["id"], monto)
                         if ok:
                             st.cache_data.clear()
                             st.success(msg)
