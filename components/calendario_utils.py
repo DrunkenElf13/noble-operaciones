@@ -42,11 +42,22 @@ def cargar_eventos_mes(mes, año):
                     id_base = row.get("ID", "")
                     origen = str(row.get("Origen", "manual")).strip().lower() or "manual"
                     if fecha_inicio:
-                        # Determinar rango de días
-                        if fecha_fin and fecha_fin > fecha_inicio and (fecha_fin - fecha_inicio).days < 365:
+                        # Determinar si es un evento de varios días válido
+                        es_rango_valido = False
+                        if fecha_fin and fecha_fin > fecha_inicio:
+                            # Descartar si fecha_fin es igual a fecha_entrega (error común)
+                            if fecha_entrega and fecha_fin.date() == fecha_entrega.date():
+                                es_rango_valido = False
+                            else:
+                                # Solo permitir rangos de hasta 31 días, a menos que sea tipo Vacaciones
+                                dif_dias = (fecha_fin - fecha_inicio).days
+                                if dif_dias <= 31 or row.get("Tipo", "") == "Vacaciones":
+                                    es_rango_valido = True
+                        if es_rango_valido:
                             fechas_rango = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
                         else:
                             fechas_rango = [fecha_inicio]
+
                         for f in fechas_rango:
                             if f.month == mes and f.year == año:
                                 titulo_base = row.get("Título", "")
@@ -294,7 +305,6 @@ def registrar_abono(id_evento: str, monto: float):
                 fecha_hoy = datetime.now().strftime("%Y-%m-%d")
                 nuevo_abono = f"{abonos_previos}; {fecha_hoy}: ${monto:,.2f}" if abonos_previos else f"{fecha_hoy}: ${monto:,.2f}"
                 ws.update(range_name=f"N{i}", values=[[nuevo_abono]])
-                # sincronizar con hoja de canal
                 if len(fila) > 19:
                     origen = str(fila[19]).strip()
                     if origen in ["Coffee Station", "Noble To Go"]:
