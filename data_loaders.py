@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import time as _time
 from datetime import datetime
 from sheets import safe_worksheet, sh
 from utils import normalizar_dataframe, limpiar_valor, normalizar_nombre
@@ -9,7 +10,19 @@ from config import (COLS_INSUMOS, COLS_HISTORIAL, COLS_VENTAS, COLS_GASTOS,
                     COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_AVISOS,
                     COLS_CRITICAS_INSUMOS, COLS_CRITICAS_HISTORIAL)
 
-@st.cache_data(ttl=30)
+def _safe_get_all_values(ws, retries=3, delay=2):
+    """Obtiene todos los valores de una worksheet con reintentos ante error 429."""
+    for intento in range(retries):
+        try:
+            return ws.get_all_values()
+        except Exception as e:
+            if "429" in str(e) and intento < retries - 1:
+                _time.sleep(delay * (2 ** intento))
+                continue
+            raise
+    return []
+
+@st.cache_data(ttl=120)  # ← Aumentado a 2 minutos
 def cargar_datos_integrales():
     if sh is None:
         return pd.DataFrame(), pd.DataFrame()
@@ -18,10 +31,10 @@ def cargar_datos_integrales():
         if err_ins: return pd.DataFrame(), pd.DataFrame()
         ws_his, err_his = safe_worksheet(sh, "Historial")
         if err_his: return pd.DataFrame(), pd.DataFrame()
-        val_ins = ws_ins.get_all_values()
-        val_his = ws_his.get_all_values()
+        val_ins = _safe_get_all_values(ws_ins)
+        val_his = _safe_get_all_values(ws_his)
         ws_cie, _ = safe_worksheet(sh, "Cierres")
-        val_cie   = ws_cie.get_all_values() if ws_cie else []
+        val_cie   = _safe_get_all_values(ws_cie) if ws_cie else []
         def _to_df(vals):
             if len(vals) > 1:
                 return pd.DataFrame(vals[1:], columns=vals[0])
@@ -73,7 +86,7 @@ def cargar_datos_integrales():
         st.error(f"Falla en extracción de datos: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def cargar_ventas():
     if sh is None:
         return pd.DataFrame()
@@ -81,7 +94,7 @@ def cargar_ventas():
     if err:
         return pd.DataFrame()
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_VENTAS)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -99,7 +112,7 @@ def cargar_ventas():
         st.warning(f"Error cargando ventas: {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def cargar_gastos():
     if sh is None:
         return pd.DataFrame(columns=COLS_GASTOS)
@@ -107,7 +120,7 @@ def cargar_gastos():
     if err:
         return pd.DataFrame(columns=COLS_GASTOS)
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_GASTOS)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -120,7 +133,7 @@ def cargar_gastos():
         st.warning(f"Error cargando gastos: {e}")
         return pd.DataFrame(columns=COLS_GASTOS)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def cargar_presupuesto():
     if sh is None:
         return pd.DataFrame(columns=COLS_PRESUPUESTO)
@@ -128,7 +141,7 @@ def cargar_presupuesto():
     if err:
         return pd.DataFrame(columns=COLS_PRESUPUESTO)
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_PRESUPUESTO)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -143,7 +156,7 @@ def cargar_presupuesto():
         st.warning(f"Error cargando presupuesto: {e}")
         return pd.DataFrame(columns=COLS_PRESUPUESTO)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def cargar_base_costos():
     if sh is None:
         return pd.DataFrame(columns=COLS_BASE_COSTOS)
@@ -151,7 +164,7 @@ def cargar_base_costos():
     if err:
         return pd.DataFrame(columns=COLS_BASE_COSTOS)
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_BASE_COSTOS)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -166,7 +179,7 @@ def cargar_base_costos():
         st.warning(f"Error cargando base de costos: {e}")
         return pd.DataFrame(columns=COLS_BASE_COSTOS)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def cargar_costos_insumos():
     if sh is None:
         return pd.DataFrame(columns=COLS_COSTOS_INSUMOS)
@@ -174,7 +187,7 @@ def cargar_costos_insumos():
     if err:
         return pd.DataFrame(columns=COLS_COSTOS_INSUMOS)
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_COSTOS_INSUMOS)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -189,7 +202,7 @@ def cargar_costos_insumos():
         st.warning(f"Error cargando costos insumos: {e}")
         return pd.DataFrame(columns=COLS_COSTOS_INSUMOS)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def cargar_recetas():
     if sh is None:
         return pd.DataFrame(columns=COLS_RECETAS)
@@ -197,7 +210,7 @@ def cargar_recetas():
     if err:
         return pd.DataFrame(columns=COLS_RECETAS)
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_RECETAS)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -212,7 +225,7 @@ def cargar_recetas():
         st.warning(f"Error cargando recetas: {e}")
         return pd.DataFrame(columns=COLS_RECETAS)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def cargar_merma():
     if sh is None:
         return pd.DataFrame(columns=COLS_MERMA)
@@ -220,7 +233,7 @@ def cargar_merma():
     if err:
         return pd.DataFrame(columns=COLS_MERMA)
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_MERMA)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -235,7 +248,7 @@ def cargar_merma():
         st.warning(f"Error cargando merma: {e}")
         return pd.DataFrame(columns=COLS_MERMA)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def cargar_avisos():
     if sh is None:
         return pd.DataFrame()
@@ -243,7 +256,7 @@ def cargar_avisos():
     if err:
         return pd.DataFrame()
     try:
-        data = ws.get_all_values()
+        data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_AVISOS)
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -254,7 +267,7 @@ def cargar_avisos():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def cargar_todas_ventas():
     """Lee las hojas Ventas, Coffee Station y Noble To Go y las une."""
     hojas = ["Ventas", "Coffee Station", "Noble To Go"]
@@ -263,26 +276,21 @@ def cargar_todas_ventas():
         ws, err = safe_worksheet(sh, hoja)
         if ws is None:
             continue
-        datos = ws.get_all_values()
+        datos = _safe_get_all_values(ws)
         if len(datos) <= 1:
             continue
         df = pd.DataFrame(datos[1:], columns=datos[0])
         if hoja in ["Coffee Station", "Noble To Go"]:
-            # Total cotizado original
             total_cotizado = df["Total_Cotizado"].apply(limpiar_valor) if "Total_Cotizado" in df.columns else 0.0
-            # Adeudo
             adeudo = df["Adeudo"].apply(limpiar_valor) if "Adeudo" in df.columns else 0.0
-            # Venta cobrada = Total - Adeudo (mínimo 0)
             df["Venta_Diaria"] = (total_cotizado - adeudo).clip(lower=0.0)
             df["Venta_Total"] = total_cotizado
-            # Anticipo se mantiene
             if "Anticipo" in df.columns:
                 df["Anticipo"] = df["Anticipo"].apply(limpiar_valor)
             else:
                 df["Anticipo"] = 0.0
             df["Adeudo"] = adeudo
 
-            # Extracción de Mes y Año
             if "Fecha" in df.columns:
                 fechas_raw = df["Fecha"].astype(str).str.strip()
                 fechas_dt = pd.to_datetime(fechas_raw, errors="coerce")
@@ -301,7 +309,6 @@ def cargar_todas_ventas():
                 df["Mes"] = "0"
                 df["Año"] = "0"
 
-            # Rellenar columnas faltantes de COLS_VENTAS
             for col in COLS_VENTAS:
                 if col not in df.columns:
                     if col in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi",
@@ -311,13 +318,12 @@ def cargar_todas_ventas():
                         df[col] = 0.0
                     else:
                         df[col] = ""
-            df["Canal"] = hoja  # "Coffee Station" o "Noble To Go"
+            df["Canal"] = hoja
         else:  # Ventas POS
             if "Canal" not in df.columns:
                 df["Canal"] = "Noble"
             else:
                 df["Canal"] = df["Canal"].fillna("Noble")
-            # Para POS, Venta_Total = Venta_Diaria
             if "Venta_Diaria" in df.columns:
                 df["Venta_Total"] = df["Venta_Diaria"].apply(limpiar_valor)
             else:
