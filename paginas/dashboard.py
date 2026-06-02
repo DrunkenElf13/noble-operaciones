@@ -65,7 +65,6 @@ def show_dashboard():
             with c3: _tarjeta("Ticket promedio", f"${ticket_prom:,.0f}")
             with c4: _tarjeta("Días con venta", str(dias_con_v))
 
-            # Canales
             st.caption("Por canal")
             ventas_canal = df_mes.groupby("Canal")["Venta_Diaria"].sum()
             cols_c = st.columns(len(CANALES_VENTA))
