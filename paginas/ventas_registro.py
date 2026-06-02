@@ -68,7 +68,7 @@ def _construir_fila_venta_canal(datos_evento: dict, id_evento: str):
         datos_evento.get("responsable", ""),
         datos_evento.get("anticipo", 0),
         datos_evento.get("fecha_fin", ""),
-        datos_evento.get("origen", "manual"),  # columna origen
+        datos_evento.get("origen", "manual"),
     ]
 
 def _parsear_linea_masiva(linea: str) -> dict | None:
@@ -267,10 +267,11 @@ def show_ventas():
                 st.error("El monto debe ser mayor a cero.")
             else:
                 id_unico = str(uuid.uuid4())[:8]
+                # Textos no redundantes
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
-                    "tipo": f"💰 Venta {canal_sel}",
-                    "titulo": f"Venta {canal_sel} - {cliente_ev}" if cliente_ev else f"Venta {canal_sel}",
+                    "tipo": "💰 Venta",
+                    "titulo": f"{canal_sel} - {cliente_ev}" if cliente_ev else canal_sel,
                     "cliente": cliente_ev,
                     "contacto": contacto_ev,
                     "ubicacion": ubicacion_ev,
@@ -286,10 +287,9 @@ def show_ventas():
                     "responsable": st.session_state.current_user,
                     "anticipo": anticipo_ev,
                     "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_venta else "",
-                    "origen": canal_sel,  # "Coffee Station" o "Noble To Go"
+                    "origen": canal_sel,
                 }
 
-                # Guardar en Calendario y hoja de canal (ahora lo hace agregar_evento)
                 ok_cal, msg_cal = agregar_evento(datos_evento, id_unico)
                 if not ok_cal:
                     st.error(f"Error al guardar en Calendario: {msg_cal}")
@@ -298,12 +298,11 @@ def show_ventas():
                 from data_loaders import cargar_todas_ventas
                 cargar_todas_ventas.clear()
 
-                # Si hay fecha de entrega distinta, crear evento de entrega
                 if fecha_entr_ev != fecha_venta:
                     datos_entrega = datos_evento.copy()
                     datos_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
-                    datos_entrega["tipo"] = f"📦 Entrega {canal_sel}"
-                    datos_entrega["titulo"] = f"Entrega {canal_sel}: {cliente_ev}" if cliente_ev else f"Entrega {canal_sel}"
+                    datos_entrega["tipo"] = "📦 Entrega"
+                    datos_entrega["titulo"] = f"{canal_sel}: {cliente_ev}" if cliente_ev else f"{canal_sel} entrega"
                     datos_entrega["origen"] = canal_sel
                     ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
                     if not ok_ent:
@@ -339,12 +338,10 @@ def show_ventas():
                             mensajes_fallo.append(f"Línea ignorada (formato incorrecto): {linea[:60]}...")
                             continue
                         id_unico = str(uuid.uuid4())[:8]
-                        titulo = f"Venta {canal_masivo}"
-                        if datos_parseados["cliente"]:
-                            titulo += f" - {datos_parseados['cliente']}"
+                        titulo = f"{canal_masivo} - {datos_parseados['cliente']}" if datos_parseados["cliente"] else canal_masivo
                         datos_evento = {
                             "fecha": datos_parseados["fecha"],
-                            "tipo": f"💰 Venta {canal_masivo}",
+                            "tipo": "💰 Venta",
                             "titulo": titulo,
                             "cliente": datos_parseados["cliente"],
                             "contacto": "",
@@ -368,14 +365,13 @@ def show_ventas():
                             fallas += 1
                             mensajes_fallo.append(f"Error al guardar en Calendario (ID {id_unico}): {msg_cal}")
                             continue
-                        # Entregas si fecha distinta
                         fecha_ev = datetime.strptime(datos_parseados["fecha"], "%Y-%m-%d").date()
                         fecha_ent = datetime.strptime(datos_parseados["fecha_entrega"], "%Y-%m-%d").date()
                         if fecha_ent != fecha_ev:
                             datos_entrega = datos_evento.copy()
                             datos_entrega["fecha"] = datos_parseados["fecha_entrega"]
-                            datos_entrega["tipo"] = f"📦 Entrega {canal_masivo}"
-                            datos_entrega["titulo"] = f"Entrega {canal_masivo}: {datos_parseados['cliente']}" if datos_parseados["cliente"] else f"Entrega {canal_masivo}"
+                            datos_entrega["tipo"] = "📦 Entrega"
+                            datos_entrega["titulo"] = f"{canal_masivo}: {datos_parseados['cliente']}" if datos_parseados["cliente"] else f"{canal_masivo} entrega"
                             ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
                             if not ok_ent:
                                 mensajes_fallo.append(f"Error al guardar entrega (ID {id_unico}_entrega): {msg_ent}")
