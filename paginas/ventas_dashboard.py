@@ -1,124 +1,160 @@
 import streamlit as st
 import pandas as pd
 import calendar
-from data_loaders import cargar_ventas
-from utils import limpiar_valor
+from data_loaders import cargar_todas_ventas
+from utils import limpiar_valor, ahora_hermosillo
 from auth import tiene_permiso
+from config import CANALES_VENTA
 
 def show_dashboard_ventas():
     if not tiene_permiso("DashboardVentas"):
         st.error("No tienes permiso para esta página.")
         st.stop()
-    st.title("📊 Dashboard de Ventas — Noble")
-    df_v = cargar_ventas()
-    if df_v.empty:
-        st.info("Sin registros de venta. Comienza capturando el primer día.")
+    st.title("📊 Dashboard de Ventas — Todos los canales")
+    
+    df = cargar_todas_ventas()
+    if df.empty:
+        st.info("Sin registros de venta en ningún canal.")
         st.stop()
-
+    
+    # Selector de canal
+    canal_opciones = ["Todos"] + CANALES_VENTA
+    canal_sel = st.radio("Mostrar canal:", canal_opciones, horizontal=True)
+    
+    if canal_sel != "Todos":
+        df = df[df["Canal"] == canal_sel].copy()
+    # Si "Todos", df queda con los tres canales
+    
+    # Si después del filtro está vacío
+    if df.empty:
+        st.warning(f"No hay datos para {canal_sel}.")
+        st.stop()
+    
+    # Selección de mes
+    df["Mes_num"] = df["Mes"].apply(limpiar_valor).astype(int)
+    df["Año_num"] = df["Año"].apply(limpiar_valor).astype(int)
     meses_disp = sorted(
-        df_v[["Mes","Año"]].drop_duplicates().apply(
-            lambda r: (int(limpiar_valor(r["Mes"])), int(limpiar_valor(r["Año"]))), axis=1
+        df[["Mes_num","Año_num"]].drop_duplicates().apply(
+            lambda r: (int(r["Mes_num"]), int(r["Año_num"])), axis=1
         ).tolist(), reverse=True
     )
     meses_disp = [(m,a) for m,a in meses_disp if m > 0 and a > 0]
-    opciones_mes = [f"{calendar.month_name[m].capitalize()} {a}" for m,a in meses_disp]
-    mes_sel_str = st.selectbox("📅 Mes:", opciones_mes) if opciones_mes else None
-    if not mes_sel_str:
-        st.info("Sin datos de mes disponibles.")
+    if not meses_disp:
+        st.info("No hay meses completos disponibles.")
         st.stop()
-
+    opciones_mes = [f"{calendar.month_name[m].capitalize()} {a}" for m,a in meses_disp]
+    mes_sel_str = st.selectbox("📅 Mes:", opciones_mes)
     mes_idx = opciones_mes.index(mes_sel_str)
     mes_num, año_num = meses_disp[mes_idx]
-    df_mes = df_v[
-        (df_v["Mes"].apply(limpiar_valor) == mes_num) &
-        (df_v["Año"].apply(limpiar_valor) == año_num)
-    ].copy().sort_values("Fecha")
-
+    
+    df_mes = df[
+        (df["Mes_num"] == mes_num) & (df["Año_num"] == año_num)
+    ].copy()
     if df_mes.empty:
-        st.warning("Sin registros para ese mes.")
+        st.warning(f"Sin registros para {mes_sel_str}.")
         st.stop()
+    
+    # ──── RESUMEN GLOBAL (solo si se eligió "Todos") ────
+    if canal_sel == "Todos":
+        st.subheader("💰 Venta total por canal")
+        cols_canal = st.columns(3)
+        for i, canal in enumerate(CANALES_VENTA):
+            df_canal = df_mes[df_mes["Canal"] == canal]
+            total = df_canal["Venta_Diaria"].sum() if not df_canal.empty else 0.0
+            cols_canal[i].metric(f"🏢 {canal}", f"${total:,.2f}")
+        st.divider()
+    
+    # ──── DETALLE POR CANAL ────
+    if canal_sel == "Noble" or (canal_sel == "Todos" and "Noble" in df_mes["Canal"].unique()):
+        st.subheader("📈 Noble — Detalle diario")
+        df_noble = df_mes[df_mes["Canal"] == "Noble"].sort_values("Fecha")
+        if not df_noble.empty:
+            meta_m     = limpiar_valor(df_noble["Meta_Mensual"].iloc[-1]) or 145000.0
+            dias_hab   = int(limpiar_valor(df_noble["Dias_Habiles"].iloc[-1]) or 26)
+            venta_acum = df_noble["Venta_Diaria"].sum()
+            tix_total  = int(df_noble["Total_Tickets"].sum())
+            tix_prom_g = round(venta_acum / tix_total, 2) if tix_total > 0 else 0
+            faltante   = meta_m - venta_acum
+            avance_pct = (venta_acum / meta_m * 100) if meta_m > 0 else 0
 
-    meta_m     = limpiar_valor(df_mes["Meta_Mensual"].iloc[-1])
-    dias_hab   = int(limpiar_valor(df_mes["Dias_Habiles"].iloc[-1])) or 1
-    venta_acum = df_mes["Venta_Diaria"].sum()
-    tix_total  = int(df_mes["Total_Tickets"].sum())
-    tix_prom_g = round(venta_acum / tix_total, 2) if tix_total > 0 else 0
-    faltante   = meta_m - venta_acum
-    avance_pct = (venta_acum / meta_m * 100) if meta_m > 0 else 0
+            k1,k2,k3,k4 = st.columns(4)
+            k1.metric("Venta Acumulada", f"${venta_acum:,.2f}")
+            k2.metric("Meta Mensual",    f"${meta_m:,.2f}")
+            k3.metric("Faltante",        f"${faltante:,.2f}", delta=f"{avance_pct:.1f}% avance",
+                      delta_color="normal" if faltante <= 0 else "inverse")
+            k4.metric("Ticket Promedio", f"${tix_prom_g:,.2f}")
 
-    dias_con_venta_cnt  = int((df_mes["Venta_Diaria"] > 0).sum())
-    dias_sin_venta_cnt  = int((df_mes["Venta_Diaria"] == 0).sum())
-    df_con_tix          = df_mes[df_mes["Total_Tickets"] > 0]
-    tix_acum_con_venta  = int(df_con_tix["Total_Tickets"].sum())
-    venta_acum_con_tix  = df_con_tix["Venta_Diaria"].sum()
-    tix_prom_real       = round(venta_acum_con_tix / tix_acum_con_venta, 2) if tix_acum_con_venta > 0 else 0
+            st.divider()
+            st.subheader("🎫 Métricas de Tickets")
+            tk1, tk2, tk3, tk4 = st.columns(4)
+            tk1.metric("Tickets Acumulados", f"{tix_total:,}")
+            dias_con_v = int((df_noble["Venta_Diaria"] > 0).sum())
+            dias_sin_v = len(df_noble) - dias_con_v
+            tk2.metric("Días con Venta", f"{dias_con_v}", delta=f"de {len(df_noble)} registrados", delta_color="off")
+            tk3.metric("Días sin Venta", f"{dias_sin_v}", delta_color="inverse" if dias_sin_v > 0 else "off")
+            tk4.metric("Ticket Promedio Real", f"${tix_prom_g:,.2f}" if tix_prom_g > 0 else "—")
 
-    st.subheader(f"Resumen — {mes_sel_str}")
-    k1,k2,k3,k4 = st.columns(4)
-    k1.metric("Venta Acumulada", f"${venta_acum:,.2f}")
-    k2.metric("Meta Mensual",    f"${meta_m:,.2f}")
-    k3.metric("Faltante",        f"${faltante:,.2f}", delta=f"{avance_pct:.1f}% avance",
-              delta_color="normal" if faltante <= 0 else "inverse")
-    k4.metric("Ticket Promedio", f"${tix_prom_g:,.2f}")
-
+            st.divider()
+            # Detalle diario Noble
+            df_disp = df_noble[["Día","Fecha","Efectivo","Transferencias","Tarjeta","Total_POS",
+                                "Uber_Eats","Rappi","Venta_Diaria","Total_Tickets",
+                                "Ticket_Promedio","Meta_Diaria","Responsable","Notas"]].copy()
+            df_disp["Fecha"] = df_disp["Fecha"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
+            df_disp["vs Meta"] = df_disp.apply(
+                lambda r: f"{(r['Venta_Diaria']/r['Meta_Diaria']*100):.0f}%" if r['Meta_Diaria'] > 0 else "—", axis=1
+            )
+            st.dataframe(df_disp.style.apply(
+                lambda row: ["background-color: rgba(80,200,120,0.15)" if limpiar_valor(row.get("Venta_Diaria",0)) >= limpiar_valor(row.get("Meta_Diaria",0))
+                             else "background-color: rgba(239,159,39,0.15)" if limpiar_valor(row.get("Venta_Diaria",0)) >= limpiar_valor(row.get("Meta_Diaria",0))*0.7
+                             else "background-color: rgba(226,75,74,0.12)"] * len(row), axis=1
+            ), hide_index=True, use_container_width=True)
+        else:
+            st.info("Sin registros de Noble para este mes.")
+    
+    # ──── Coffee Station ────
+    if canal_sel in ["Coffee Station", "Todos"]:
+        st.subheader("☕ Coffee Station")
+        df_cs = df_mes[df_mes["Canal"] == "Coffee Station"].copy()
+        if not df_cs.empty:
+            total_cs = df_cs["Venta_Diaria"].sum()
+            adeudo_cs = df_cs["Adeudo"].sum() if "Adeudo" in df_cs.columns else 0.0
+            anticipo_cs = df_cs["Anticipo"].sum() if "Anticipo" in df_cs.columns else 0.0
+            num_eventos = len(df_cs)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Venta total", f"${total_cs:,.2f}")
+            c2.metric("Adeudo total", f"${adeudo_cs:,.2f}")
+            c3.metric("Anticipo total", f"${anticipo_cs:,.2f}")
+            c4.metric("Eventos registrados", num_eventos)
+            # Lista de eventos
+            cols_mostrar = ["Fecha", "Cliente", "Total_Cotizado", "Adeudo", "Anticipo", "Metodo_Pago", "Notas"]
+            cols_ok = [c for c in cols_mostrar if c in df_cs.columns]
+            st.dataframe(df_cs[cols_ok].sort_values("Fecha"), hide_index=True, use_container_width=True)
+        else:
+            st.info("Sin registros de Coffee Station para este mes.")
+    
+    # ──── Noble To Go ────
+    if canal_sel in ["Noble To Go", "Todos"]:
+        st.subheader("🥤 Noble To Go")
+        df_ntg = df_mes[df_mes["Canal"] == "Noble To Go"].copy()
+        if not df_ntg.empty:
+            total_ntg = df_ntg["Venta_Diaria"].sum()
+            adeudo_ntg = df_ntg["Adeudo"].sum() if "Adeudo" in df_ntg.columns else 0.0
+            anticipo_ntg = df_ntg["Anticipo"].sum() if "Anticipo" in df_ntg.columns else 0.0
+            num_eventos = len(df_ntg)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Venta total", f"${total_ntg:,.2f}")
+            c2.metric("Adeudo total", f"${adeudo_ntg:,.2f}")
+            c3.metric("Anticipo total", f"${anticipo_ntg:,.2f}")
+            c4.metric("Eventos registrados", num_eventos)
+            cols_mostrar = ["Fecha", "Cliente", "Total_Cotizado", "Adeudo", "Anticipo", "Metodo_Pago", "Notas"]
+            cols_ok = [c for c in cols_mostrar if c in df_ntg.columns]
+            st.dataframe(df_ntg[cols_ok].sort_values("Fecha"), hide_index=True, use_container_width=True)
+        else:
+            st.info("Sin registros de Noble To Go para este mes.")
+    
+    # Botón de descarga CSV (opcional, del mes seleccionado)
     st.divider()
-    st.subheader("🎫 Métricas de Tickets")
-    tk1, tk2, tk3, tk4 = st.columns(4)
-    tk1.metric("Tickets Acumulados", f"{tix_total:,}")
-    tk2.metric("Ticket Promedio Real", f"${tix_prom_real:,.2f}" if tix_prom_real > 0 else "—")
-    tk3.metric("Días con Venta", f"{dias_con_venta_cnt}", delta=f"de {len(df_mes)} registrados", delta_color="off")
-    tk4.metric("Días sin Venta", f"{dias_sin_venta_cnt}", delta_color="inverse" if dias_sin_venta_cnt > 0 else "off")
-
-    st.divider()
-    if not df_mes.empty:
-        mejor = df_mes.loc[df_mes["Venta_Diaria"].idxmax()]
-        df_con_venta = df_mes[df_mes["Venta_Diaria"] > 0]
-        peor = df_con_venta.loc[df_con_venta["Venta_Diaria"].idxmin()] if not df_con_venta.empty else None
-        b1,b2,b3 = st.columns(3)
-        b1.metric("📈 Mejor día", f"${limpiar_valor(mejor['Venta_Diaria']):,.0f}", f"Día {int(limpiar_valor(mejor['Día']))}")
-        if peor is not None:
-            b2.metric("📉 Día más bajo (con venta)", f"${limpiar_valor(peor['Venta_Diaria']):,.0f}", f"Día {int(limpiar_valor(peor['Día']))}")
-        b3.metric("📅 Días registrados", len(df_mes))
-
-    st.divider()
-    st.subheader("📋 Detalle diario")
-    df_disp = df_mes[["Día","Fecha","Efectivo","Transferencias","Tarjeta","Total_POS",
-                       "Uber_Eats","Rappi","Venta_Diaria","Total_Tickets",
-                       "Ticket_Promedio","Meta_Diaria","Responsable","Notas"]].copy()
-    df_disp["Fecha"] = df_disp["Fecha"].apply(lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "")
-    df_disp["vs Meta"] = df_disp.apply(
-        lambda r: f"{(r['Venta_Diaria']/r['Meta_Diaria']*100):.0f}%" if r['Meta_Diaria'] > 0 else "—", axis=1
-    )
-    df_disp["Ticket_Promedio"] = df_disp["Ticket_Promedio"].apply(lambda x: f"${x:,.2f}" if x > 0 else "—")
-
-    def color_meta_row(row):
-        try:
-            vd = limpiar_valor(row.get("Venta_Diaria",0))
-            md = limpiar_valor(row.get("Meta_Diaria",0))
-            if md == 0: return [""] * len(row)
-            ratio = vd / md
-            c = ("background-color: rgba(80,200,120,0.15)" if ratio >= 1.0
-                 else "background-color: rgba(239,159,39,0.15)" if ratio >= 0.7
-                 else "background-color: rgba(226,75,74,0.12)")
-            return [c] * len(row)
-        except Exception:
-            return [""] * len(row)
-
-    st.dataframe(df_disp.style.apply(color_meta_row, axis=1), hide_index=True, use_container_width=True)
-
-    st.divider()
-    st.subheader("🥧 Mix de canales")
-    tot_pos  = df_mes["Total_POS"].sum()
-    tot_uber = df_mes["Uber_Eats"].sum()
-    tot_rapp = df_mes["Rappi"].sum()
-    tot_all  = tot_pos + tot_uber + tot_rapp or 1
-    c_pos, c_uber, c_rapp = st.columns(3)
-    c_pos.metric( "POS",       f"${tot_pos:,.2f}",  f"{tot_pos/tot_all*100:.1f}%")
-    c_uber.metric("Uber Eats", f"${tot_uber:,.2f}", f"{tot_uber/tot_all*100:.1f}%")
-    c_rapp.metric("Rappi",     f"${tot_rapp:,.2f}", f"{tot_rapp/tot_all*100:.1f}%")
-
-    st.divider()
-    csv_v = df_disp.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Descargar CSV del mes", data=csv_v,
-                       file_name=f"Ventas_Noble_{mes_sel_str.replace(' ','_')}.csv",
+    csv = df_mes.to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Descargar CSV del mes", data=csv,
+                       file_name=f"ventas_{mes_sel_str.replace(' ','_')}.csv",
                        mime="text/csv", use_container_width=True)
