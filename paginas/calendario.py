@@ -151,7 +151,7 @@ def show_calendario():
                 color = ev.get("color", "#AAAAAA")
                 tipo = ev["tipo_evento"]
                 icono = ICONOS_TIPO.get(tipo, "")
-                titulo = ev["titulo"][:22]
+                titulo = ev.get("titulo_grid", ev["titulo"])[:22]
                 texto = f"{icono} {titulo}" if icono else titulo
                 # Tooltip con más info
                 tooltip = f"{tipo}: {ev['titulo']}\nCliente: {ev.get('cliente','')}\n${ev['total_cotizado']:,.2f}"
