@@ -275,14 +275,32 @@ def cargar_todas_ventas():
                             df[col] = df[col].apply(limpiar_valor)
                         else:
                             df[col] = 0.0
-                    # Agregar Mes y Año desde la columna Fecha
+                    # Extraer Mes y Año directamente del string de fecha (formato YYYY-MM-DD)
                     if "Fecha" in df.columns:
-                        fechas_dt = pd.to_datetime(df["Fecha"], errors="coerce")
-                        df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
-                        df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
+                        df["Fecha_str"] = df["Fecha"].astype(str).str.strip()
+                        # Extraer año y mes mediante split
+                        def _extraer_mes(fecha_str):
+                            try:
+                                partes = fecha_str.split("-")
+                                if len(partes) >= 2:
+                                    return int(partes[1])
+                                return 0
+                            except:
+                                return 0
+                        def _extraer_año(fecha_str):
+                            try:
+                                partes = fecha_str.split("-")
+                                if len(partes) >= 1:
+                                    return int(partes[0])
+                                return 0
+                            except:
+                                return 0
+                        df["Mes"] = df["Fecha_str"].apply(_extraer_mes).astype(str)
+                        df["Año"] = df["Fecha_str"].apply(_extraer_año).astype(str)
+                        df.drop(columns=["Fecha_str"], inplace=True)
                     else:
-                        df["Mes"] = ""
-                        df["Año"] = ""
+                        df["Mes"] = "0"
+                        df["Año"] = "0"
                     # Agregar columnas necesarias para COLS_VENTAS
                     for col in COLS_VENTAS:
                         if col not in df.columns:
