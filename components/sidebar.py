@@ -279,6 +279,14 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                             except Exception as e:
                                 st.error(f"Error: {e}")
 
+            # 🧹 BOTÓN DE LIMPIEZA DE CACHÉ
+            st.divider()
+            if st.button("🧹 Limpiar caché", use_container_width=True, help="Refresca todos los datos desde Google Sheets."):
+                st.cache_data.clear()
+                st.success("✅ Caché limpiada. Los datos se recargarán al navegar.")
+                time.sleep(0.5)
+                st.rerun()
+
         # CATÁLOGO (cacheado)
         if st.session_state.auth_status:
             @st.cache_data(ttl=60)
