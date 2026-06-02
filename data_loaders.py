@@ -257,32 +257,32 @@ def cargar_avisos():
 @st.cache_data(ttl=30)
 def cargar_todas_ventas():
     """Lee las hojas Ventas, Coffee Station y Noble To Go y las une."""
-    # ¡CORREGIDO! Nombres reales de las hojas con espacio
     hojas = ["Ventas", "Coffee Station", "Noble To Go"]
     dfs = []
-    debug_info = []
     for hoja in hojas:
         ws, err = safe_worksheet(sh, hoja)
         if ws is None:
-            debug_info.append(f"{hoja}: no se pudo conectar")
             continue
         datos = ws.get_all_values()
         if len(datos) <= 1:
-            debug_info.append(f"{hoja}: sin datos")
             continue
         df = pd.DataFrame(datos[1:], columns=datos[0])
-        total_filas = len(df)
         if hoja in ["Coffee Station", "Noble To Go"]:
-            if "Total_Cotizado" in df.columns:
-                df["Venta_Diaria"] = df["Total_Cotizado"].apply(limpiar_valor)
+            # Total cotizado original
+            total_cotizado = df["Total_Cotizado"].apply(limpiar_valor) if "Total_Cotizado" in df.columns else 0.0
+            # Adeudo
+            adeudo = df["Adeudo"].apply(limpiar_valor) if "Adeudo" in df.columns else 0.0
+            # Venta cobrada = Total - Adeudo (mínimo 0)
+            df["Venta_Diaria"] = (total_cotizado - adeudo).clip(lower=0.0)
+            df["Venta_Total"] = total_cotizado
+            # Anticipo se mantiene
+            if "Anticipo" in df.columns:
+                df["Anticipo"] = df["Anticipo"].apply(limpiar_valor)
             else:
-                df["Venta_Diaria"] = 0.0
-            for col in ["Adeudo","Anticipo"]:
-                if col in df.columns:
-                    df[col] = df[col].apply(limpiar_valor)
-                else:
-                    df[col] = 0.0
-            # Extracción robusta de Mes y Año
+                df["Anticipo"] = 0.0
+            df["Adeudo"] = adeudo
+
+            # Extracción de Mes y Año
             if "Fecha" in df.columns:
                 fechas_raw = df["Fecha"].astype(str).str.strip()
                 fechas_dt = pd.to_datetime(fechas_raw, errors="coerce")
@@ -297,35 +297,44 @@ def cargar_todas_ventas():
                             pass
                 df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
                 df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
-                if total_filas > 0:
-                    ejemplo_fecha = fechas_raw.iloc[0]
-                    debug_info.append(f"{hoja}: {total_filas} filas. Fecha='{ejemplo_fecha}' → Mes={df['Mes'].iloc[0]}, Año={df['Año'].iloc[0]}")
             else:
                 df["Mes"] = "0"
                 df["Año"] = "0"
-                debug_info.append(f"{hoja}: columna 'Fecha' no encontrada")
+
+            # Rellenar columnas faltantes de COLS_VENTAS
             for col in COLS_VENTAS:
                 if col not in df.columns:
-                    df[col] = "" if col not in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi","Venta_Diaria","Tickets_POS","Tickets_Uber","Tickets_Rappi","Total_Tickets","Ticket_Promedio","Meta_Mensual","Dias_Habiles","Meta_Diaria","Adeudo","Anticipo"] else 0.0
+                    if col in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi",
+                               "Venta_Diaria","Venta_Total","Tickets_POS","Tickets_Uber","Tickets_Rappi",
+                               "Total_Tickets","Ticket_Promedio","Meta_Mensual","Dias_Habiles","Meta_Diaria",
+                               "Adeudo","Anticipo"]:
+                        df[col] = 0.0
+                    else:
+                        df[col] = ""
             df["Canal"] = hoja  # "Coffee Station" o "Noble To Go"
         else:  # Ventas POS
             if "Canal" not in df.columns:
                 df["Canal"] = "Noble"
             else:
                 df["Canal"] = df["Canal"].fillna("Noble")
+            # Para POS, Venta_Total = Venta_Diaria
+            if "Venta_Diaria" in df.columns:
+                df["Venta_Total"] = df["Venta_Diaria"].apply(limpiar_valor)
+            else:
+                df["Venta_Total"] = 0.0
             for col in ["Adeudo","Anticipo"]:
                 if col not in df.columns:
                     df[col] = 0.0
-            debug_info.append(f"Ventas: {total_filas} filas")
+            for col in COLS_VENTAS:
+                if col not in df.columns:
+                    df[col] = "" if col not in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi","Venta_Diaria","Tickets_POS","Tickets_Uber","Tickets_Rappi","Total_Tickets","Ticket_Promedio","Meta_Mensual","Dias_Habiles","Meta_Diaria","Adeudo","Anticipo","Venta_Total"] else 0.0
         dfs.append(df[COLS_VENTAS])
-
-    st.session_state["debug_carga_ventas"] = debug_info
 
     if dfs:
         df_total = pd.concat(dfs, ignore_index=True)
         df_total["Fecha"] = pd.to_datetime(df_total["Fecha"], errors="coerce")
         for col in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi",
-                    "Venta_Diaria","Tickets_POS","Tickets_Uber","Tickets_Rappi","Total_Tickets",
+                    "Venta_Diaria","Venta_Total","Tickets_POS","Tickets_Uber","Tickets_Rappi","Total_Tickets",
                     "Ticket_Promedio","Meta_Mensual","Dias_Habiles","Meta_Diaria",
                     "Adeudo","Anticipo"]:
             if col in df_total.columns:
