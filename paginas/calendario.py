@@ -8,7 +8,6 @@ from components.calendario_utils import (
 )
 from config import CANALES_VENTA
 from sheets import safe_worksheet, sh
-from data_loaders import cargar_todas_ventas
 from utils import limpiar_valor
 
 PALETA_COLORES = {
@@ -58,6 +57,7 @@ def show_calendario():
     if "dia_seleccionado" not in st.session_state:
         st.session_state.dia_seleccionado = hoy.date()
 
+    # Controles de mes
     col_anio, col_mes, col_btn = st.columns([1,1,2])
     with col_anio:
         años_opts = list(range(2024, 2031))
@@ -105,6 +105,15 @@ def show_calendario():
 
     eventos = cargar_eventos_mes(st.session_state.cal_mes, st.session_state.cal_año)
 
+    # Alerta de eventos con rango sospechoso
+    anomalos = st.session_state.get("eventos_anomalos", [])
+    if anomalos:
+        with st.expander("⚠️ Eventos con posible error de rango (Fecha_Fin inesperada)", expanded=True):
+            for a in anomalos:
+                st.write(f"- {a}")
+            st.info("Estos eventos aparecerán en cada día del rango. Si no deberían ser multi‑día, edítalos y deja 'Fecha fin' vacía.")
+
+    # Calendario
     cal = calendar.Calendar()
     dias_mes = cal.monthdatescalendar(st.session_state.cal_año, st.session_state.cal_mes)
 
@@ -148,7 +157,6 @@ def show_calendario():
                 icono = ICONOS_TIPO.get(ev["tipo_evento"], "")
                 titulo = ev["titulo"][:22]
                 texto = f"{icono} {titulo}" if icono else titulo
-                # Tooltip con información clave
                 tooltip = (
                     f"{ev['tipo_evento']}: {ev['titulo']}\n"
                     f"Cliente: {ev.get('cliente','')}\n"
@@ -213,7 +221,7 @@ def show_calendario():
     else:
         st.info("No hay eventos este mes.")
 
-    # ────── FORMULARIO MANUAL (con toggle de varios días) ──────
+    # Formulario manual (con toggle de varios días solo para tipos que lo permitan)
     st.divider()
     with st.expander("➕ Nuevo evento manual", expanded=False):
         with st.form("f_evento_manual", clear_on_submit=True):
@@ -317,7 +325,7 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # ────── EDICIÓN (si existe) ──────
+    # Edición (idéntico a antes, se mantiene)
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
         st.subheader(f"Editando: {ev['titulo']}")
@@ -389,7 +397,7 @@ def show_calendario():
                     del st.session_state["editando_evento"]
                     st.rerun()
 
-    # ────── ABONOS ──────
+    # Abonos (idéntico)
     st.subheader("💵 Registrar abono")
     with st.expander("Añadir abono a evento con adeudo"):
         eventos_con_adeudo = [e for e in eventos if e.get("adeudo",0) > 0 and e["origen"] != "Venta Noble"]
@@ -413,9 +421,7 @@ def show_calendario():
         else:
             st.info("No hay eventos con adeudo pendiente.")
 
-    # ──────────────────────────────────────────────
-    # NUEVO: Panel de detalle de Coffee Station y Noble To Go
-    # ──────────────────────────────────────────────
+    # NUEVO: Panel de detalle de Coffee Station y Noble To Go (mejorado)
     st.divider()
     with st.expander("📋 Detalle de Coffee Station y Noble To Go", expanded=False):
         st.markdown("Consulta todos los registros de estos canales, sin importar la fecha.")
@@ -428,8 +434,12 @@ def show_calendario():
                 datos = ws.get_all_values()
                 if len(datos) > 1:
                     df = pd.DataFrame(datos[1:], columns=datos[0])
-                    # Asegurar que tenga al menos las columnas básicas
-                    columnas_deseadas = ["ID","Fecha","Título","Cliente","Total_Cotizado","Adeudo","Anticipo","Metodo_Pago","Fecha_Contratacion","Fecha_Entrega","Notas"]
+                    # Seleccionar columnas relevantes
+                    columnas_deseadas = [
+                        "ID", "Fecha", "Título", "Cliente", "Total_Cotizado",
+                        "Adeudo", "Anticipo", "Metodo_Pago", "Fecha_Contratacion",
+                        "Fecha_Entrega", "Notas"
+                    ]
                     for col in columnas_deseadas:
                         if col not in df.columns:
                             df[col] = ""
@@ -449,3 +459,8 @@ def show_calendario():
                 st.dataframe(df_ntg, hide_index=True, use_container_width=True)
             else:
                 st.info("No hay registros en Noble To Go.")
+
+        # Botón para limpiar caché y forzar recarga
+        if st.button("🔄 Refrescar datos", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
