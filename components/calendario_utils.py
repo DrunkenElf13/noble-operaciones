@@ -29,7 +29,6 @@ def cargar_eventos_mes(mes, año):
         try:
             datos = ws_cal.get_all_values()
             if len(datos) > 1:
-                # Asegurar que el DataFrame tenga todas las columnas de COLS_CALENDARIO
                 cols_hoja = datos[0]
                 df = pd.DataFrame(datos[1:], columns=cols_hoja)
                 for col in COLS_CALENDARIO:
@@ -52,17 +51,21 @@ def cargar_eventos_mes(mes, año):
                             fechas_rango = [fecha_inicio]
                         for f in fechas_rango:
                             if f.month == mes and f.year == año:
-                                nota_entrega = ""
-                                if fecha_entrega and fecha_entrega.date() != fecha_inicio.date():
-                                    nota_entrega = f" 📅 entrega: {fecha_entrega.strftime('%d/%m/%y')}"
+                                # Para las tarjetas del calendario, podemos agregar la nota de entrega solo en el título mostrado en la cuadrícula,
+                                # pero para la tabla de eventos del mes usaremos el título limpio sin la nota.
+                                # Construimos dos versiones: titulo (limpio) y titulo_grid (con nota de entrega)
                                 titulo_base = row.get("Título", "")
-                                titulo_mostrar = (titulo_base + nota_entrega) if nota_entrega else titulo_base
+                                titulo_grid = titulo_base
+                                if fecha_entrega and fecha_entrega.date() != fecha_inicio.date():
+                                    nota = f" 📅 entrega: {fecha_entrega.strftime('%d/%m/%y')}"
+                                    titulo_grid = titulo_base + nota
 
                                 ev = {
                                     "id": id_base if f == fecha_inicio else f"{id_base}_dia_{f.day}",
                                     "fecha": f,
                                     "tipo_evento": row.get("Tipo", "Otro"),
-                                    "titulo": titulo_mostrar,
+                                    "titulo": titulo_base,          # limpio para la tabla
+                                    "titulo_grid": titulo_grid,    # con nota para la cuadrícula
                                     "cliente": row.get("Cliente", ""),
                                     "contacto": row.get("Contacto", ""),
                                     "ubicacion": row.get("Ubicacion", ""),
@@ -87,7 +90,6 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # Ventas diarias (solo Noble POS)
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
@@ -119,6 +121,7 @@ def cargar_eventos_mes(mes, año):
                             "fecha": fecha,
                             "tipo_evento": "Venta Noble",
                             "titulo": "Venta Noble",
+                            "titulo_grid": "Venta Noble",
                             "cliente": "",
                             "contacto": "",
                             "ubicacion": "",
@@ -156,13 +159,11 @@ def cargar_eventos_mes(mes, año):
     return eventos
 
 def _sincronizar_canal(id_evento: str, datos: dict, accion: str = "actualizar"):
-    """Sincroniza la hoja del canal correspondiente al origen del evento."""
     origen = datos.get("origen", "manual")
     if origen in ["Coffee Station", "Noble To Go"]:
         ws_canal, err_canal = _asegurar_hoja_canal_ventas(origen)
         if not err_canal and ws_canal:
             if accion == "eliminar":
-                # Buscar y eliminar fila por ID
                 try:
                     todos = ws_canal.get_all_values()
                     for i, fila in enumerate(todos[1:], start=2):
@@ -172,7 +173,6 @@ def _sincronizar_canal(id_evento: str, datos: dict, accion: str = "actualizar"):
                 except Exception:
                     pass
             else:
-                # Actualizar o agregar
                 nueva_fila = [
                     id_evento,
                     datos.get("fecha", ""),
@@ -209,7 +209,6 @@ def _sincronizar_canal(id_evento: str, datos: dict, accion: str = "actualizar"):
                     pass
 
 def agregar_evento(datos: dict, id_externo: str = None):
-    """Agrega un evento a Calendario y, si es de canal, a su hoja respectiva."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
@@ -246,7 +245,6 @@ def agregar_evento(datos: dict, id_externo: str = None):
         return False, str(e)
 
 def actualizar_evento(id_evento: str, datos: dict):
-    """Actualiza evento en Calendario y replica en hoja de canal si corresponde."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
@@ -288,7 +286,6 @@ def actualizar_evento(id_evento: str, datos: dict):
         return False, str(e)
 
 def eliminar_evento(id_evento: str):
-    """Elimina evento de Calendario, hoja de canal y eventos de entrega asociados."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
@@ -296,23 +293,19 @@ def eliminar_evento(id_evento: str):
         todos = ws.get_all_values()
         if len(todos) <= 1:
             return False, "Calendario vacío"
-        # Encontrar el evento para saber su origen y eliminar entregas
         origen = "manual"
         ids_a_eliminar = [id_evento]
         for i, fila in enumerate(todos[1:], start=2):
             if fila[0] == id_evento:
-                # Extraer origen de la fila (columna 20, índice 19)
                 if len(fila) > 19:
                     origen = str(fila[19]).strip()
                 else:
                     origen = "manual"
-                # Buscar entregas asociadas (ID + "_entrega")
                 id_base = id_evento.split("_entrega")[0]
                 for j, f2 in enumerate(todos[1:], start=2):
                     if f2[0] == f"{id_base}_entrega" or f2[0].startswith(f"{id_base}_entrega"):
                         ids_a_eliminar.append(f2[0])
                 break
-        # Eliminar en orden inverso para no alterar índices
         filas_a_eliminar = []
         for id_e in ids_a_eliminar:
             for i, fila in enumerate(todos[1:], start=2):
@@ -321,7 +314,6 @@ def eliminar_evento(id_evento: str):
                     break
         for i in sorted(filas_a_eliminar, reverse=True):
             ws.delete_rows(i)
-        # Sincronizar eliminación en hoja de canal si aplica
         if origen in ["Coffee Station", "Noble To Go"]:
             _sincronizar_canal(id_evento, {"origen": origen}, "eliminar")
         return True, f"Evento(s) eliminado(s): {len(ids_a_eliminar)}"
@@ -329,7 +321,6 @@ def eliminar_evento(id_evento: str):
         return False, str(e)
 
 def registrar_abono(id_evento: str, monto: float):
-    """Registra abono en Calendario y réplica en hoja de canal."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
@@ -346,7 +337,6 @@ def registrar_abono(id_evento: str, monto: float):
                 fecha_hoy = datetime.now().strftime("%Y-%m-%d")
                 nuevo_abono = f"{abonos_previos}; {fecha_hoy}: ${monto:,.2f}" if abonos_previos else f"{fecha_hoy}: ${monto:,.2f}"
                 ws.update(range_name=f"N{i}", values=[[nuevo_abono]])
-                # Sincronizar con hoja de canal
                 origen = "manual"
                 if len(fila) > 19:
                     origen = str(fila[19]).strip()
