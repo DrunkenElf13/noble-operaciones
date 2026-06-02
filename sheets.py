@@ -4,8 +4,7 @@ import time
 from google.oauth2.service_account import Credentials
 from config import (
     SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO,
-    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_CANALES_CONFIG,
-    COLS_EVENTO_CANAL, COLS_MERMA, COLS_CALENDARIO
+    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_MERMA, COLS_CALENDARIO
 )
 
 @st.cache_resource
@@ -106,28 +105,6 @@ def _asegurar_hoja_recetas():
             return None, f"No se pudo crear hoja Recetas: {e}"
     except Exception as e:
         return None, f"Error accediendo a Recetas: {e}"
-
-def _asegurar_hoja_config_canales():
-    ws, err = safe_worksheet(sh, "Config_Canales")
-    if err:
-        try:
-            ws = sh.add_worksheet(title="Config_Canales", rows="50", cols=str(len(COLS_CANALES_CONFIG)))
-            ws.append_row(COLS_CANALES_CONFIG)
-            return ws, None
-        except Exception as e:
-            return None, f"No se pudo crear hoja Config_Canales: {e}"
-    return ws, None
-
-def _asegurar_hoja_canal(nombre_canal: str):
-    ws, err = safe_worksheet(sh, nombre_canal)
-    if err:
-        try:
-            ws = sh.add_worksheet(title=nombre_canal, rows="1000", cols=str(len(COLS_EVENTO_CANAL)))
-            ws.append_row(COLS_EVENTO_CANAL)
-            return ws, None
-        except Exception as e:
-            return None, f"No se pudo crear hoja {nombre_canal}: {e}"
-    return ws, None
 
 def _asegurar_hoja_merma():
     ws, err = safe_worksheet(sh, "Merma")
