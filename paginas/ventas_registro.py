@@ -9,6 +9,7 @@ from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 from config import CANALES_VENTA, COLS_VENTAS, COLS_CALENDARIO
 from components.calendario_utils import agregar_evento
+import uuid
 
 PALETA_COLORES = {
     "🔵 Azul": "#4A90D9",
@@ -42,11 +43,10 @@ def _construir_fila_venta(
         responsable, notas, canal,
     ]
 
-def _construir_fila_venta_canal(datos_evento: dict, canal: str):
+def _construir_fila_venta_canal(datos_evento: dict, id_evento: str):
     """Construye una fila para la hoja del canal con las columnas de Calendario."""
-    import uuid
     return [
-        str(uuid.uuid4())[:8],
+        id_evento,  # ID unificado
         datos_evento.get("fecha", ""),
         datos_evento.get("tipo", ""),
         datos_evento.get("titulo", ""),
@@ -215,7 +215,7 @@ def show_ventas():
                 anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0)
                 fecha_contr_ev = st.date_input("Fecha contratación", value=hoy)
                 fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy)
-                fecha_fin_ev = st.date_input("Fecha fin (rango)", value=hoy, help="Si el evento dura varios días, elige la fecha final")
+                fecha_fin_ev = st.date_input("Fecha fin (rango)", value=hoy, help="Si el evento dura varios días")
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
             enviar = st.form_submit_button("💾 Guardar venta")
@@ -224,10 +224,11 @@ def show_ventas():
             if monto_ev <= 0:
                 st.error("El monto debe ser mayor a cero.")
             else:
-                import uuid
+                # Generar un ID único para todo el flujo
+                id_unico = str(uuid.uuid4())[:8]
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
-                    "tipo": f"💰 Venta {canal_sel}",      # tipo diferenciado para venta
+                    "tipo": f"💰 Venta {canal_sel}",
                     "titulo": f"Venta {canal_sel} - {cliente_ev}" if cliente_ev else f"Venta {canal_sel}",
                     "cliente": cliente_ev,
                     "contacto": contacto_ev,
@@ -245,12 +246,12 @@ def show_ventas():
                     "anticipo": anticipo_ev,
                     "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_venta else "",
                 }
-                # 1. Guardar en la hoja del canal
+                # 1. Guardar en la hoja del canal con el ID unificado
                 ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
                 if err_canal:
                     st.error(err_canal)
                 else:
-                    fila = _construir_fila_venta_canal(datos_evento, canal_sel)
+                    fila = _construir_fila_venta_canal(datos_evento, id_unico)
                     ok, msg = append_rows_con_retry(ws_canal, [fila])
                     if not ok:
                         st.error(msg)
@@ -258,14 +259,18 @@ def show_ventas():
                     from data_loaders import cargar_todas_ventas
                     cargar_todas_ventas.clear()
 
-                # 2. Guardar en Calendario (con ambas fechas si son distintas)
-                ok1, _ = agregar_evento(datos_evento)
+                # 2. Guardar en Calendario con el MISMO ID
+                datos_evento_cal = datos_evento.copy()
+                datos_evento_cal["id"] = id_unico
+                ok1, _ = agregar_evento(datos_evento_cal, id_unico)  # pasar ID a la función
+
+                # Si hay fecha de entrega distinta, también se guarda en Calendario
                 if fecha_entr_ev != fecha_venta:
                     datos_evento_entrega = datos_evento.copy()
                     datos_evento_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
                     datos_evento_entrega["tipo"] = f"📦 Entrega {canal_sel}"
                     datos_evento_entrega["titulo"] = f"Entrega {canal_sel}: {cliente_ev}" if cliente_ev else f"Entrega {canal_sel}"
-                    agregar_evento(datos_evento_entrega)
+                    agregar_evento(datos_evento_entrega, id_unico + "_entrega")
 
                 if ok1:
                     st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
