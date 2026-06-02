@@ -42,12 +42,11 @@ def _construir_fila_venta(
         tickets_pos, tickets_uber, tickets_rappi, total_tix,
         tix_prom, meta_mensual, dias_habiles, meta_diaria,
         responsable, notas, canal,
-        0.0,  # Adeudo
-        0.0,  # Anticipo
+        0.0,
+        0.0,
     ]
 
 def _construir_fila_venta_canal(datos_evento: dict, id_evento: str):
-    """Construye una fila para la hoja del canal con las columnas de Calendario."""
     return [
         id_evento,
         datos_evento.get("fecha", ""),
@@ -77,7 +76,7 @@ def _parsear_linea_masiva(linea: str) -> dict | None:
         return None
     fecha_str = partes[0]
     try:
-        fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        fecha_venta = datetime.strptime(fecha_str, "%Y-%m-%d").date()
     except ValueError:
         return None
     monto_str = partes[1].replace(",", "").replace(" ", "")
@@ -89,22 +88,19 @@ def _parsear_linea_masiva(linea: str) -> dict | None:
         return None
 
     cliente = partes[2] if len(partes) > 2 else ""
-    fecha_entrega_str = partes[3] if len(partes) > 3 else ""
+    fecha_evento_str = partes[3] if len(partes) > 3 else fecha_str
     metodo_pago = partes[4] if len(partes) > 4 else ""
 
-    if fecha_entrega_str:
-        try:
-            fecha_entrega = datetime.strptime(fecha_entrega_str, "%Y-%m-%d").date()
-        except ValueError:
-            fecha_entrega = fecha
-    else:
-        fecha_entrega = fecha
+    try:
+        fecha_evento = datetime.strptime(fecha_evento_str, "%Y-%m-%d").date()
+    except ValueError:
+        fecha_evento = fecha_venta
 
     return {
-        "fecha": fecha.strftime("%Y-%m-%d"),
+        "fecha_venta": fecha_venta.strftime("%Y-%m-%d"),
         "total_cotizado": monto,
         "cliente": cliente,
-        "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
+        "fecha_evento": fecha_evento.strftime("%Y-%m-%d"),
         "metodo_pago": metodo_pago,
     }
 
@@ -141,7 +137,6 @@ def show_ventas():
 
     st.divider()
 
-    # ──── Noble POS ────
     if canal_sel == "Noble":
         meta_default = 145000.0
         dias_default = 26
@@ -230,10 +225,10 @@ def show_ventas():
                         st.error(msg)
                 else:
                     st.error(err)
-
-    # ──── Coffee Station / Noble To Go ────
     else:
-        st.subheader(f"📋 Datos del evento — {canal_sel}")
+        # Canal Coffee Station o Noble To Go
+        prefijo = "☕ Evento" if canal_sel == "Coffee Station" else "🥤 Entrega"
+        st.subheader(f"📋 Datos del {prefijo} — {canal_sel}")
         with st.form("f_evento_canal", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
@@ -249,10 +244,9 @@ def show_ventas():
                 monto_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0)
                 adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0)
                 anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0)
-                fecha_contr_ev = st.date_input("Fecha contratación", value=hoy)
-                # La fecha del evento/entrega es la que se usará para el calendario
-                fecha_entr_ev = st.date_input("Fecha del evento/entrega", value=hoy,
-                                              help="Esta fecha se mostrará en el calendario")
+                fecha_contr_ev = st.date_input("Fecha de contratación", value=hoy)
+                fecha_evento_ev = st.date_input(f"Fecha del {prefijo.lower()}", value=hoy,
+                                                help="Esta fecha se usará en el calendario")
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
             enviar = st.form_submit_button("💾 Guardar venta")
@@ -262,14 +256,12 @@ def show_ventas():
                 st.error("El monto debe ser mayor a cero.")
             else:
                 id_unico = str(uuid.uuid4())[:8]
-                titulo = cliente_ev.strip() if cliente_ev.strip() else "Evento sin cliente"
-                # Prefijo según canal
-                prefijo = "☕ Evento" if canal_sel == "Coffee Station" else "🥤 Entrega"
-                tipo_evento = "☕ Evento" if canal_sel == "Coffee Station" else "🥤 Entrega"
+                cliente_final = cliente_ev.strip() if cliente_ev.strip() else "Evento sin cliente"
+                titulo = f"{prefijo} - {cliente_final}"
                 datos_evento = {
-                    "fecha": fecha_entr_ev.strftime("%Y-%m-%d"),  # <-- fecha del evento/entrega
-                    "tipo": tipo_evento,
-                    "titulo": f"{prefijo} - {titulo}",
+                    "fecha": fecha_evento_ev.strftime("%Y-%m-%d"),
+                    "tipo": prefijo,
+                    "titulo": titulo,
                     "cliente": cliente_ev,
                     "contacto": contacto_ev,
                     "ubicacion": ubicacion_ev,
@@ -278,16 +270,15 @@ def show_ventas():
                     "adeudo": adeudo_ev,
                     "metodo_pago": metodo_pago,
                     "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d"),
-                    "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d"),  # redundante pero útil
+                    "fecha_entrega": fecha_evento_ev.strftime("%Y-%m-%d"),
                     "abonos": abonos_ev,
                     "notas": notas_ev,
                     "color": color_ev,
                     "responsable": st.session_state.current_user,
                     "anticipo": anticipo_ev,
-                    "fecha_fin": "",  # no se usa para canales
+                    "fecha_fin": "",
                     "origen": canal_sel,
                 }
-
                 ok_cal, msg_cal = agregar_evento(datos_evento, id_unico)
                 if not ok_cal:
                     st.error(f"Error al guardar en Calendario: {msg_cal}")
@@ -300,30 +291,35 @@ def show_ventas():
                 time.sleep(0.5)
                 st.rerun()
 
-        # ──── CARGA MASIVA ────
+        # Carga masiva
         with st.expander("📥 Carga masiva histórica", expanded=False):
-            st.markdown("Formato: `Fecha_venta  Total_Cotizado  Cliente  Fecha_Evento  Método_Pago` (separado por tabulaciones)")
+            st.markdown(
+                "Formato: `Fecha_venta  Total  Cliente  Fecha_evento  Método` (separado por tabulaciones)\n\n"
+                "- **Fecha_venta**: fecha en que se contrató\n"
+                "- **Fecha_evento**: fecha en que ocurre el evento/entrega (aparecerá en el calendario)\n"
+            )
             texto_masivo = st.text_area("Pega aquí:", height=200, key="texto_masivo")
             canal_masivo = st.selectbox("Canal:", ["Coffee Station", "Noble To Go"], key="canal_masivo")
-            if st.button("📤 Procesar todo", type="primary", use_container_width=True, key="btn_masivo"):
+            if st.button("📤 Procesar todo", type="primary", use_container_width=True):
                 if not texto_masivo.strip():
                     st.error("Pega al menos una línea.")
                 else:
                     lineas = [l for l in texto_masivo.splitlines() if l.strip()]
                     procesadas = 0
                     fallas = []
+                    prefijo = "☕ Evento" if canal_masivo == "Coffee Station" else "🥤 Entrega"
                     for linea in lineas:
                         parsed = _parsear_linea_masiva(linea)
                         if parsed is None:
                             fallas.append(f"Formato inválido: {linea[:50]}...")
                             continue
                         id_unico = str(uuid.uuid4())[:8]
-                        titulo = parsed["cliente"].strip() if parsed["cliente"].strip() else "Evento sin cliente"
-                        prefijo = "☕ Evento" if canal_masivo == "Coffee Station" else "🥤 Entrega"
+                        cliente_final = parsed["cliente"].strip() if parsed["cliente"].strip() else "Evento sin cliente"
+                        titulo = f"{prefijo} - {cliente_final}"
                         datos_evento = {
-                            "fecha": parsed["fecha_entrega"],   # fecha del evento/entrega
+                            "fecha": parsed["fecha_evento"],
                             "tipo": prefijo,
-                            "titulo": f"{prefijo} - {titulo}",
+                            "titulo": titulo,
                             "cliente": parsed["cliente"],
                             "contacto": "",
                             "ubicacion": "",
@@ -331,8 +327,8 @@ def show_ventas():
                             "total_cotizado": parsed["total_cotizado"],
                             "adeudo": 0.0,
                             "metodo_pago": parsed["metodo_pago"],
-                            "fecha_contratacion": parsed["fecha"],  # fecha de venta original
-                            "fecha_entrega": parsed["fecha_entrega"],
+                            "fecha_contratacion": parsed["fecha_venta"],
+                            "fecha_entrega": parsed["fecha_evento"],
                             "abonos": "",
                             "notas": "",
                             "color": "#4A90D9",
