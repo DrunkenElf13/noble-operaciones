@@ -421,10 +421,13 @@ def show_calendario():
         else:
             st.info("No hay eventos con adeudo pendiente.")
 
-    # NUEVO: Panel de detalle de Coffee Station y Noble To Go (mejorado)
+      # ─────────────────────────────────────────────
+    # Panel de detalle de Coffee Station y Noble To Go
+    # ─────────────────────────────────────────────
     st.divider()
     with st.expander("📋 Detalle de Coffee Station y Noble To Go", expanded=False):
-        st.markdown("Consulta todos los registros de estos canales, sin importar la fecha.")
+        st.markdown("Filtra y consulta todos los registros de estos canales.")
+
         tab_cs, tab_ntg = st.tabs(["☕ Coffee Station", "🥤 Noble To Go"])
 
         @st.cache_data(ttl=120)
@@ -434,33 +437,146 @@ def show_calendario():
                 datos = ws.get_all_values()
                 if len(datos) > 1:
                     df = pd.DataFrame(datos[1:], columns=datos[0])
-                    # Seleccionar columnas relevantes
-                    columnas_deseadas = [
-                        "ID", "Fecha", "Título", "Cliente", "Total_Cotizado",
-                        "Adeudo", "Anticipo", "Metodo_Pago", "Fecha_Contratacion",
-                        "Fecha_Entrega", "Notas"
-                    ]
-                    for col in columnas_deseadas:
+                    # Asegurar que todas las columnas de COLS_CALENDARIO estén presentes
+                    for col in COLS_CALENDARIO:
                         if col not in df.columns:
                             df[col] = ""
-                    return df[columnas_deseadas]
+                    # Convertir fechas para filtros
+                    if "Fecha" in df.columns:
+                        df["_fecha_dt"] = pd.to_datetime(df["Fecha"], errors="coerce")
+                    if "Fecha_Entrega" in df.columns:
+                        df["_fecha_entr_dt"] = pd.to_datetime(df["Fecha_Entrega"], errors="coerce")
+                    return df
             return pd.DataFrame()
 
-        with tab_cs:
-            df_cs = cargar_detalle_canal("Coffee Station")
-            if not df_cs.empty:
-                st.dataframe(df_cs, hide_index=True, use_container_width=True)
-            else:
-                st.info("No hay registros en Coffee Station.")
+        COLS_CALENDARIO = [
+            "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
+            "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
+            "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
+            "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin",
+            "Origen"
+        ]
 
-        with tab_ntg:
-            df_ntg = cargar_detalle_canal("Noble To Go")
-            if not df_ntg.empty:
-                st.dataframe(df_ntg, hide_index=True, use_container_width=True)
-            else:
-                st.info("No hay registros en Noble To Go.")
+        for nombre_hoja, tab, prefijo in [
+            ("Coffee Station", tab_cs, "☕ Evento"),
+            ("Noble To Go", tab_ntg, "🥤 Entrega"),
+        ]:
+            with tab:
+                df = cargar_detalle_canal(nombre_hoja)
+                if df.empty:
+                    st.info(f"No hay registros en {nombre_hoja}.")
+                    continue
 
-        # Botón para limpiar caché y forzar recarga
+                # ── Filtros ──
+                with st.container():
+                    st.caption(f"**{len(df)} registros encontrados**")
+                    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+                    with col_f1:
+                        # Filtro por mes/año (basado en Fecha)
+                        meses_unicos = sorted(
+                            df["_fecha_dt"].dropna().apply(lambda x: x.strftime("%Y-%m")).unique(),
+                            reverse=True
+                        )
+                        mes_filtro = st.selectbox(
+                            "Mes", ["Todos"] + meses_unicos,
+                            key=f"mes_{nombre_hoja}"
+                        )
+                    with col_f2:
+                        cliente_filtro = st.text_input(
+                            "Buscar cliente", key=f"cliente_{nombre_hoja}"
+                        )
+                    with col_f3:
+                        adeudo_filtro = st.selectbox(
+                            "Adeudo", ["Todos", "Con adeudo", "Sin adeudo"],
+                            key=f"adeudo_{nombre_hoja}"
+                        )
+                    with col_f4:
+                        monto_min = st.number_input(
+                            "Monto mínimo", min_value=0.0, step=100.0, value=0.0,
+                            key=f"monto_{nombre_hoja}"
+                        )
+
+                # Aplicar filtros
+                if mes_filtro != "Todos":
+                    df = df[df["_fecha_dt"].dt.strftime("%Y-%m") == mes_filtro]
+                if cliente_filtro.strip():
+                    df = df[df["Cliente"].astype(str).str.contains(cliente_filtro.strip(), case=False, na=False)]
+                if adeudo_filtro == "Con adeudo":
+                    df = df[df["Adeudo"].apply(limpiar_valor) > 0]
+                elif adeudo_filtro == "Sin adeudo":
+                    df = df[df["Adeudo"].apply(limpiar_valor) == 0]
+                if monto_min > 0:
+                    df = df[df["Total_Cotizado"].apply(limpiar_valor) >= monto_min]
+
+                st.caption(f"**{len(df)} resultados**")
+
+                # Toggle para vista de tabla
+                ver_tabla = st.toggle("Ver como tabla", key=f"tabla_{nombre_hoja}")
+
+                if ver_tabla:
+                    # Vista compacta de tabla
+                    columnas_mostrar = [
+                        "Fecha", "Título", "Cliente", "Total_Cotizado",
+                        "Adeudo", "Anticipo", "Metodo_Pago", "Notas"
+                    ]
+                    st.dataframe(
+                        df[columnas_mostrar].sort_values("Fecha", ascending=False),
+                        hide_index=True, use_container_width=True
+                    )
+                else:
+                    # Vista de tarjetas
+                    if df.empty:
+                        st.info("Ningún registro coincide con los filtros.")
+                    else:
+                        # Ordenar por fecha descendente
+                        df = df.sort_values("Fecha", ascending=False)
+                        # Mostrar en columnas (2 por fila)
+                        for i in range(0, len(df), 2):
+                            cols = st.columns(2)
+                            for j in range(2):
+                                idx = i + j
+                                if idx >= len(df):
+                                    break
+                                row = df.iloc[idx]
+                                with cols[j]:
+                                    color = row.get("Color", "#4A90D9")
+                                    if not color or pd.isna(color):
+                                        color = "#4A90D9"
+                                    # Tarjeta
+                                    with st.container():
+                                        st.markdown(
+                                            f"""
+                                            <div style="
+                                                border-left: 5px solid {color};
+                                                border-radius: 8px;
+                                                padding: 12px;
+                                                margin-bottom: 12px;
+                                                background-color: rgba(255,255,255,0.05);
+                                            ">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <span style="font-weight: bold; font-size: 1rem;">{prefijo} - {row.get('Cliente', 'Sin cliente')}</span>
+                                                    <span style="color: #888; font-size: 0.8rem;">{row.get('Fecha', '')}</span>
+                                                </div>
+                                                <hr style="margin: 6px 0;">
+                                                <p style="margin: 2px 0;"><strong>Título:</strong> {row.get('Título', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Total cotizado:</strong> ${limpiar_valor(row.get('Total_Cotizado', 0)):,.2f}</p>
+                                                <p style="margin: 2px 0;"><strong>Adeudo:</strong> ${limpiar_valor(row.get('Adeudo', 0)):,.2f}</p>
+                                                <p style="margin: 2px 0;"><strong>Anticipo:</strong> ${limpiar_valor(row.get('Anticipo', 0)):,.2f}</p>
+                                                <p style="margin: 2px 0;"><strong>Método de pago:</strong> {row.get('Metodo_Pago', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Contacto:</strong> {row.get('Contacto', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Ubicación:</strong> {row.get('Ubicacion', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Descripción:</strong> {row.get('Descripcion', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Fecha contratación:</strong> {row.get('Fecha_Contratacion', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Fecha entrega:</strong> {row.get('Fecha_Entrega', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Notas:</strong> {row.get('Notas', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Responsable:</strong> {row.get('Responsable', '')}</p>
+                                                <p style="margin: 2px 0; color: #888; font-size: 0.75rem;">ID: {row.get('ID', '')}</p>
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True
+                                        )
+
+        # Botón para refrescar datos
         if st.button("🔄 Refrescar datos", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
