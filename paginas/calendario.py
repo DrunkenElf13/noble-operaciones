@@ -226,7 +226,7 @@ def show_calendario():
                     "Anticipo": ev.get("anticipo", 0),
                 })
             df_display = pd.DataFrame(df_lista).sort_values("Fecha")
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            st.dataframe(df_display, width="stretch", hide_index=True)
         else:
             st.info("Solo ventas regulares este mes.")
     else:
@@ -554,7 +554,7 @@ def show_calendario():
                         "Adeudo", "Anticipo", "Metodo_Pago", "Notas"
                     ]
                     st.dataframe(df[columnas_mostrar].sort_values("Fecha", ascending=False),
-                                 hide_index=True, use_container_width=True)
+                                 hide_index=True, width="stretch")
                 else:
                     if df.empty:
                         st.info("Ningún registro coincide con los filtros.")
@@ -604,6 +604,6 @@ def show_calendario():
                                             unsafe_allow_html=True
                                         )
 
-        if st.button("🔄 Refrescar datos", use_container_width=True):
+        if st.button("🔄 Refrescar datos", width="stretch"):
             st.cache_data.clear()
             st.rerun()

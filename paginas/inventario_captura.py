@@ -27,7 +27,7 @@ def show_inventario():
 
     if st.session_state.get("inventario_guardado", False):
         st.success("✅ Inventario registrado correctamente.")
-        if st.button("➕ Nueva captura", use_container_width=True):
+        if st.button("➕ Nueva captura", width="stretch"):
             for key in list(st.session_state.keys()):
                 if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_", "inv_bulk_data")):
                     del st.session_state[key]
@@ -112,7 +112,7 @@ def show_inventario():
                 "Observaciones": st.column_config.TextColumn()
             },
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             disabled=["Insumo"],
             key="inv_bulk_editor"
         )
@@ -138,7 +138,7 @@ def show_inventario():
         else:
             confirmar_bulk = True
 
-        if st.button("📥 PROCESAR INVENTARIO BULK", type="primary", use_container_width=True, disabled=(not confirmar_bulk)):
+        if st.button("📥 PROCESAR INVENTARIO BULK", type="primary", width="stretch", disabled=(not confirmar_bulk)):
             ws_his, err = safe_worksheet(sh, "Historial")
             if err:
                 st.error(err)
@@ -260,7 +260,7 @@ def show_inventario():
             else:
                 confirmar = True
 
-            btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", use_container_width=True, type="primary", disabled=(not confirmar))
+            btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", width="stretch", type="primary", disabled=(not confirmar))
 
         if btn_inv:
             ws_his, err = safe_worksheet(sh, "Historial")

@@ -56,7 +56,7 @@ def show_merma():
         resp_idx_m = responsables_m.index(st.session_state.current_user) if st.session_state.current_user in responsables_m else 0
         resp_m = st.selectbox("👤 Responsable:", responsables_m, index=resp_idx_m,
                                disabled=(st.session_state.user_role != "admin"))
-        if st.form_submit_button("📉 REGISTRAR MERMA", type="primary", use_container_width=True):
+        if st.form_submit_button("📉 REGISTRAR MERMA", type="primary", width="stretch"):
             if not ingr_m_final.strip():
                 st.error("El ingrediente es obligatorio.")
             elif cantidad_m <= 0:
@@ -91,7 +91,7 @@ def show_merma():
         cols_mr_ok   = [c for c in cols_mr_show if c in df_merma_reg.columns]
         df_mr_disp   = df_merma_reg[cols_mr_ok].copy()
         df_mr_disp["Fecha"] = pd.to_datetime(df_mr_disp["Fecha"], errors="coerce")
-        st.dataframe(df_mr_disp.sort_values("Fecha", ascending=False).head(30), hide_index=True, use_container_width=True)
+        st.dataframe(df_mr_disp.sort_values("Fecha", ascending=False).head(30), hide_index=True, width="stretch")
         hoy_mr = ahora_hermosillo().date()
         df_mr_disp["_fecha_dt"] = df_mr_disp["Fecha"]
         df_mr_mes = df_mr_disp[

@@ -114,7 +114,7 @@ def show_dashboard():
     if adeudos:
         df_adeudos = pd.DataFrame(adeudos)
         st.warning(f"Hay {len(adeudos)} eventos con adeudos vencidos:")
-        st.dataframe(df_adeudos, use_container_width=True, hide_index=True)
+        st.dataframe(df_adeudos, width="stretch", hide_index=True)
     else:
         st.success("✅ No hay adeudos vencidos.")
 
@@ -130,7 +130,7 @@ def show_dashboard():
                            "Stock Mínimo","Necesita Compra","Responsable","Fecha de Inventario","Observaciones"]
             cols_compra_ok = [c for c in cols_compra if c in com_global.columns]
             st.dataframe(com_global[cols_compra_ok].sort_values(["Unidad de Negocio","Grupo"]),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
         else:
             st.success("✅ No hay insumos que necesiten compra.")
 
@@ -144,7 +144,7 @@ def show_dashboard():
             df_log.dropna(subset=["Fecha de Inventario"])
                   .sort_values("Fecha de Inventario", ascending=False)[cols_log_ok]
                   .head(15),
-            use_container_width=True
+            width="stretch"
         )
     else:
         st.info("Sin datos históricos. Ejecuta el primer conteo de inventario.")

@@ -33,7 +33,7 @@ def show_gastos():
         responsable_g = st.selectbox("👤 Responsable:", responsables_g, index=resp_idx_g,
                                       disabled=(st.session_state.user_role != "admin"))
         notas_g = st.text_input("📋 Notas (opcional):")
-        if st.form_submit_button("💾 REGISTRAR GASTO", type="primary", use_container_width=True):
+        if st.form_submit_button("💾 REGISTRAR GASTO", type="primary", width="stretch"):
             if not categoria_g.strip():
                 st.error("La categoría es obligatoria.")
             elif not concepto_g.strip():
@@ -66,7 +66,7 @@ def show_gastos():
         cols_g_ok   = [c for c in cols_g_show if c in df_gastos.columns]
         df_g_disp   = df_gastos[cols_g_ok].copy()
         df_g_disp["Fecha"] = pd.to_datetime(df_g_disp["Fecha"], errors="coerce")
-        st.dataframe(df_g_disp.sort_values("Fecha", ascending=False).head(30), hide_index=True, use_container_width=True)
+        st.dataframe(df_g_disp.sort_values("Fecha", ascending=False).head(30), hide_index=True, width="stretch")
         hoy_g = ahora_hermosillo().date()
         df_gastos["_fecha_dt"] = pd.to_datetime(df_gastos["Fecha"], errors="coerce")
         df_g_mes = df_gastos[

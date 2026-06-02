@@ -38,7 +38,7 @@ def _gauge(valor, minimo, maximo, titulo, sufijo="%", umbral_verde=80, umbral_am
         }
     ))
     fig.update_layout(height=230, margin=dict(l=20, r=20, t=50, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 def show_dashboard_financiero():
     if not tiene_permiso("DashboardFinanciero"):
@@ -144,7 +144,7 @@ def show_dashboard_financiero():
             fig_comp.add_trace(go.Bar(name="Utilidad", x=df_agrup["Grupo"], y=df_agrup["Utilidad"], marker_color="#4A90D9"))
             fig_comp.update_layout(barmode="group", title="Ventas vs Gastos vs Utilidad", height=400,
                                     legend=dict(orientation="h", yanchor="bottom", y=1.02))
-            st.plotly_chart(fig_comp, use_container_width=True)
+            st.plotly_chart(fig_comp, width="stretch")
 
             st.subheader("🥧 Canales principales (Noble / Coffee Station / To Go)")
             fig_can2 = go.Figure()
@@ -155,12 +155,12 @@ def show_dashboard_financiero():
                                               marker_color=colores_canal.get(canal, "#AAAAAA")))
             fig_can2.update_layout(barmode="stack", title="Mix por canal principal", height=350,
                                    legend=dict(orientation="h", yanchor="bottom", y=1.02))
-            st.plotly_chart(fig_can2, use_container_width=True)
+            st.plotly_chart(fig_can2, width="stretch")
         except Exception:
             st.bar_chart(df_agrup.set_index("Grupo")[["Ventas","Gastos","Utilidad"]])
 
         st.subheader("📋 Tabla de datos")
-        st.dataframe(df_agrup, hide_index=True, use_container_width=True)
+        st.dataframe(df_agrup, hide_index=True, width="stretch")
 
     # ==================== TAB PROYECCIONES (selectores separados) ====================
     with tab_proy:
@@ -218,7 +218,7 @@ def show_dashboard_financiero():
                 data=csv_proy,
                 file_name="ventas_mensuales.csv",
                 mime="text/csv",
-                use_container_width=True
+                width="stretch"
             )
         st.divider()
         st.subheader(f"📊 Cumplimiento anual vs presupuesto — {año_pr}")
@@ -307,7 +307,7 @@ def show_dashboard_financiero():
                 fig_fc_tab.add_hline(y=35, line_dash="dash", line_color="#E24B4A", annotation_text="Límite alto 35%")
                 fig_fc_tab.add_hline(y=25, line_dash="dash", line_color="#EF9F27", annotation_text="Óptimo 25%")
                 fig_fc_tab.update_layout(title="Food Cost % por Producto", height=380, yaxis_ticksuffix="%")
-                st.plotly_chart(fig_fc_tab, use_container_width=True)
+                st.plotly_chart(fig_fc_tab, width="stretch")
             except Exception:
                 st.bar_chart(df_por_prod.set_index("Producto")["Food_Cost_Pct"])
             st.subheader("📋 Detalle por producto")
@@ -318,7 +318,7 @@ def show_dashboard_financiero():
                 return ["background-color: rgba(80,200,120,0.15)"] * len(row)
             st.dataframe(
                 df_por_prod.style.apply(_color_fc_prod, axis=1),
-                hide_index=True, use_container_width=True
+                hide_index=True, width="stretch"
             )
 
     # ==================== TAB MERMA (selectores separados) ====================
@@ -367,7 +367,7 @@ def show_dashboard_financiero():
                                                title="Top 10 ingredientes con más merma ($)",
                                                color_discrete_sequence=["#E24B4A"])
                             fig_ingr.update_layout(height=380)
-                            st.plotly_chart(fig_ingr, use_container_width=True)
+                            st.plotly_chart(fig_ingr, width="stretch")
                     with cc_md2:
                         df_by_mot = (
                             df_md_fil.groupby("Motivo")["Costo_Total"].sum()
@@ -377,13 +377,13 @@ def show_dashboard_financiero():
                             fig_mot = px.pie(df_by_mot, values="Costo_Total", names="Motivo",
                                               title="Distribución por motivo de merma")
                             fig_mot.update_layout(height=380)
-                            st.plotly_chart(fig_mot, use_container_width=True)
+                            st.plotly_chart(fig_mot, width="stretch")
             except Exception:
                 pass
             st.subheader("📋 Detalle de merma")
             cols_md_show = ["Fecha","Producto","Ingrediente","Cantidad","Unidad_Medida","Motivo","Costo_Unitario","Costo_Total","Comentarios"]
             cols_md_ok   = [c for c in cols_md_show if c in df_md_fil.columns]
-            st.dataframe(df_md_fil[cols_md_ok].sort_values("Fecha", ascending=False), hide_index=True, use_container_width=True)
+            st.dataframe(df_md_fil[cols_md_ok].sort_values("Fecha", ascending=False), hide_index=True, width="stretch")
 
     # ==================== TAB PUNTO DE EQUILIBRIO (selectores separados) ====================
     with tab_pe:
@@ -484,7 +484,7 @@ def show_dashboard_financiero():
             if not df_gf2_fil.empty:
                 cols_gf2 = ["Fecha","Tipo","Categoria","Concepto","Monto","Responsable"]
                 cols_gf2_ok = [c for c in cols_gf2 if c in df_gf2_fil.columns]
-                st.dataframe(df_gf2_fil[cols_gf2_ok].sort_values("Tipo"), hide_index=True, use_container_width=True)
+                st.dataframe(df_gf2_fil[cols_gf2_ok].sort_values("Tipo"), hide_index=True, width="stretch")
             else:
                 st.info("Sin gastos registrados para este período en el módulo de Gastos.")
 
@@ -548,7 +548,7 @@ def show_dashboard_financiero():
             f"{año_anterior} VS {año_actual}": total_var_str
         })
         df_pos_tabla = pd.DataFrame(filas_pos)
-        st.dataframe(df_pos_tabla, hide_index=True, use_container_width=True)
+        st.dataframe(df_pos_tabla, hide_index=True, width="stretch")
 
         # Métricas operativas POS
         st.markdown("### 🎫 Métricas Operativas – POS")
@@ -592,7 +592,7 @@ def show_dashboard_financiero():
             "EFECTIVO": "", "TRANSFERENCIA": "", "TARJETA": "", "UBER": "", "RAPPI": ""
         })
         df_met_tabla = pd.DataFrame(filas_met)
-        st.dataframe(df_met_tabla, hide_index=True, use_container_width=True)
+        st.dataframe(df_met_tabla, hide_index=True, width="stretch")
 
         # Coffee Station
         st.markdown("### ☕ Coffee Station")
@@ -630,7 +630,7 @@ def show_dashboard_financiero():
             "TICKET PROMEDIO": f"${total_cs_ticket:,.2f}"
         })
         df_cs_tabla = pd.DataFrame(filas_cs)
-        st.dataframe(df_cs_tabla, hide_index=True, use_container_width=True)
+        st.dataframe(df_cs_tabla, hide_index=True, width="stretch")
 
         # Resumen por canal
         st.markdown("### 📊 Resumen por Canal")
@@ -656,7 +656,7 @@ def show_dashboard_financiero():
             {"CANAL": "TOTAL", "VENTA COBRADA": f"${total_general_cobrado:,.0f}", "META": f"${meta_total_anual:,.0f}", "CUMPLIMIENTO": f"{cumpl_total:.2f}%"},
         ]
         df_resumen = pd.DataFrame(resumen_canal)
-        st.dataframe(df_resumen, hide_index=True, use_container_width=True)
+        st.dataframe(df_resumen, hide_index=True, width="stretch")
 
         # Captura de metas de canales adicionales
         st.divider()

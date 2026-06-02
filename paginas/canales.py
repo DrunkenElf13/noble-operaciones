@@ -22,7 +22,7 @@ def show_canales():
     with tab_can2:
         st.subheader("Configuración de Canales")
         if not df_cfg.empty:
-            st.dataframe(df_cfg, hide_index=True, use_container_width=True)
+            st.dataframe(df_cfg, hide_index=True, width="stretch")
         with st.form("f_new_canal"):
             canal_nombre = st.text_input("Nombre del Canal:")
             tipo_meta = st.selectbox("Tipo de Meta:", ["mensual", "fija"])
@@ -105,6 +105,6 @@ def show_canales():
             if all_events:
                 df_all_events = pd.concat(all_events, ignore_index=True)
                 df_all_events["Fecha"] = pd.to_datetime(df_all_events["Fecha"], errors="coerce")
-                st.dataframe(df_all_events.sort_values("Fecha", ascending=False).head(50), hide_index=True, use_container_width=True)
+                st.dataframe(df_all_events.sort_values("Fecha", ascending=False).head(50), hide_index=True, width="stretch")
             else:
                 st.info("No hay eventos registrados aún.")

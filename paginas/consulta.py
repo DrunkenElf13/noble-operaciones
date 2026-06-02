@@ -50,9 +50,9 @@ def show_consulta():
         minimo = row.get("Mínimo",0)
         color  = "background-color: rgba(255, 75, 75, 0.2)" if total < minimo else ""
         return [color] * len(row)
-    st.dataframe(df_final.style.apply(highlight_low, axis=1), use_container_width=True, hide_index=True)
+    st.dataframe(df_final.style.apply(highlight_low, axis=1), width="stretch", hide_index=True)
     st.divider()
     csv = df_final.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Descargar Reporte (CSV)", data=csv,
                        file_name=f"Inventario_{u_sel}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.csv",
-                       mime="text/csv", use_container_width=True)
+                       mime="text/csv", width="stretch")

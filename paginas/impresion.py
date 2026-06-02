@@ -89,7 +89,7 @@ def show_impresion():
         st.download_button(
             label="📄 Descargar PDF 58mm", data=pdf_bytes,
             file_name=f"conteo_{u_sel.replace(' ','_')}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.pdf",
-            mime="application/pdf", use_container_width=True, type="primary"
+            mime="application/pdf", width="stretch", type="primary"
         )
     else:
         st.info("Selecciona grupos para generar la lista.")

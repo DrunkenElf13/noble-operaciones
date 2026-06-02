@@ -53,7 +53,7 @@ def show_ingresos():
                               "+ Ingreso":0.0})
         df_edit   = pd.DataFrame(bulk_data)
         edited_df = st.data_editor(df_edit[["Insumo","Stock Alm","Stock Barra","+ Ingreso"]],
-                                   hide_index=True, use_container_width=True,
+                                   hide_index=True, width="stretch",
                                    disabled=["Insumo","Stock Alm","Stock Barra"])
         proc_bulk = st.session_state.get("_procesando_bulk", False)
         btn_bulk  = st.button("📦 EJECUTAR INGRESO BULK", type="primary", disabled=proc_bulk)
@@ -140,7 +140,7 @@ def show_ingresos():
                 regs_ingreso[nom] = {"nuevo_a":nuevo_alm,"b":v_b_prev,"nuevo_n":nuevo_neto,"row":row_ins,"min":v_min,"tara":tara_ingreso}
                 st.divider()
             proc_ing = st.session_state.get("_procesando_ingreso", False)
-            btn_ing  = st.button("📦 EJECUTAR INGRESO", use_container_width=True, type="primary", disabled=proc_ing)
+            btn_ing  = st.button("📦 EJECUTAR INGRESO", width="stretch", type="primary", disabled=proc_ing)
             if btn_ing and not proc_ing:
                 st.session_state["_procesando_ingreso"] = True
                 ws_his, err = safe_worksheet(sh, "Historial")

@@ -27,7 +27,7 @@ def show_lista_compra():
                        "Stock Mínimo","Necesita Compra","Responsable","Fecha de Inventario","Observaciones"]
         cols_compra_ok = [c for c in cols_compra if c in com.columns]
         st.dataframe(com[cols_compra_ok].sort_values(["Unidad de Negocio","Grupo"]),
-                     use_container_width=True, hide_index=True)
+                     width="stretch", hide_index=True)
         with st.expander("🖨️ Descargar PDF (58mm)"):
             lineas_pdf = [
                 (f"* COMPRAS {u_opcion.upper() if u_opcion!='Todas' else 'GLOBAL'} *", "title"),
@@ -47,7 +47,7 @@ def show_lista_compra():
             st.download_button(
                 label="📄 Descargar PDF 58mm", data=pdf_bytes,
                 file_name=f"compras_{u_opcion.replace(' ','_')}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf", use_container_width=True, type="primary"
+                mime="application/pdf", width="stretch", type="primary"
             )
     else:
         st.success("No hay alertas de reabastecimiento activas.")

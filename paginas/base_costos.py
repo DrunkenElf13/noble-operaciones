@@ -131,7 +131,7 @@ def show_base_costos():
         st.subheader("📋 Costos registrados")
         if not df_ci.empty:
             df_ci_latest = df_ci.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
-            st.dataframe(df_ci_latest, hide_index=True, use_container_width=True)
+            st.dataframe(df_ci_latest, hide_index=True, width="stretch")
         else:
             st.info("Sin costos registrados aún.")
 
@@ -193,7 +193,7 @@ def show_base_costos():
                                 if df_resultado is not None and not df_resultado.empty:
                                     st.session_state["import_preview"] = df_resultado
                                     st.success(f"Se generaron {len(df_resultado)} filas de recetas.")
-                                    st.dataframe(df_resultado, use_container_width=True)
+                                    st.dataframe(df_resultado, width="stretch")
                 except Exception as e:
                     st.error(f"Error al leer el archivo: {e}")
             if "import_preview" in st.session_state and st.session_state["import_preview"] is not None:
@@ -323,7 +323,7 @@ def show_base_costos():
                     "total": st.column_config.NumberColumn("Total", min_value=0.0, disabled=True)
                 },
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 num_rows="dynamic"
             )
             for idx, row in edited_df.iterrows():
@@ -339,7 +339,7 @@ def show_base_costos():
             c3.metric("Food Cost %", f"{fc_pct:.1f}%")
             c4.metric("Margen Bruto", f"${st.session_state.receta_precio - costo_total:,.2f}" if st.session_state.receta_precio > 0 else "—")
 
-            if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", use_container_width=True):
+            if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", width="stretch"):
                 nombre_final = st.session_state.receta_nombre.strip()
                 if not nombre_final:
                     st.error("Escribe el nombre de la receta en el formulario superior.")
@@ -394,4 +394,4 @@ def show_base_costos():
             st.info("No hay ingredientes. Usa el botón 'Agregar a la receta' para comenzar.")
         if not df_rec.empty:
             st.subheader("📋 Recetas registradas")
-            st.dataframe(df_rec, hide_index=True, use_container_width=True)
+            st.dataframe(df_rec, hide_index=True, width="stretch")

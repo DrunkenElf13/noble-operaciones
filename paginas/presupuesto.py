@@ -76,7 +76,7 @@ def show_presupuesto():
     st.divider()
     st.metric("💰 Presupuesto Anual Total", f"${total_anual_p:,.2f}")
 
-    if st.button("💾 GUARDAR PRESUPUESTO", type="primary", use_container_width=True):
+    if st.button("💾 GUARDAR PRESUPUESTO", type="primary", width="stretch"):
         ws_ppto, err_ppto = _asegurar_hoja_presupuesto()
         if err_ppto:
             st.error(err_ppto)

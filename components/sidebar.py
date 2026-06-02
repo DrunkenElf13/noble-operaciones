@@ -18,7 +18,7 @@ def render_sidebar(cambiar_pagina):
             st.write("Inicia sesión para editar datos.")
             with st.form("login_form"):
                 pin_input = st.text_input("Ingresa tu Clave:", type="password")
-                submitted = st.form_submit_button("Desbloquear Sistema", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("Desbloquear Sistema", type="primary", width="stretch")
                 if submitted:
                     if pin_input in USUARIOS_PIN:
                         st.session_state.auth_status = True
@@ -29,7 +29,7 @@ def render_sidebar(cambiar_pagina):
                         st.error("⚠️ Clave incorrecta o no registrada.")
         else:
             st.write(f"👤 Operador: **{st.session_state.current_user}**")
-            if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            if st.button("🚪 Cerrar Sesión", width="stretch"):
                 for k in ["auth_status","current_user","user_role"]:
                     st.session_state[k] = False if k == "auth_status" else None
                 st.session_state.pagina = "Dashboard"
@@ -37,32 +37,32 @@ def render_sidebar(cambiar_pagina):
 
         st.divider()
         st.title("⚙️ Operaciones Noble")
-        if st.button("📊 Dashboard Principal", use_container_width=True): cambiar_pagina("Dashboard")
+        if st.button("📊 Dashboard Principal", width="stretch"): cambiar_pagina("Dashboard")
         st.divider()
         st.write("**📦 Movimientos de Stock:**")
-        if st.button("📝 Capturar inventario", use_container_width=True): cambiar_pagina("Inventario")
-        if st.button("📥 Entrada de compras", use_container_width=True): cambiar_pagina("Ingresos")
-        if st.button("📦 Inventario actual", use_container_width=True): cambiar_pagina("Consulta")
+        if st.button("📝 Capturar inventario", width="stretch"): cambiar_pagina("Inventario")
+        if st.button("📥 Entrada de compras", width="stretch"): cambiar_pagina("Ingresos")
+        if st.button("📦 Inventario actual", width="stretch"): cambiar_pagina("Consulta")
         st.divider()
         st.write("**💰 Ventas:**")
-        if st.button("📈 Registrar Ventas", use_container_width=True): cambiar_pagina("Ventas")
-        if st.button("📊 Dashboard de Ventas", use_container_width=True): cambiar_pagina("DashboardVentas")
-        if st.button("📥 Importar Histórico", use_container_width=True): cambiar_pagina("ImportarVentas")
+        if st.button("📈 Registrar Ventas", width="stretch"): cambiar_pagina("Ventas")
+        if st.button("📊 Dashboard de Ventas", width="stretch"): cambiar_pagina("DashboardVentas")
+        if st.button("📥 Importar Histórico", width="stretch"): cambiar_pagina("ImportarVentas")
         st.divider()
         st.write("**💸 Finanzas:**")
-        if st.button("💰 Registrar Gasto", use_container_width=True): cambiar_pagina("RegistrarGasto")
-        if st.button("📋 Presupuesto Anual", use_container_width=True): cambiar_pagina("Presupuesto")
-        if st.button("🧾 Base de Costos", use_container_width=True): cambiar_pagina("BaseCostos")
-        if st.button("📉 Registrar Merma", use_container_width=True): cambiar_pagina("RegistrarMerma")
-        if st.button("📊 Dashboard Financiero", use_container_width=True): cambiar_pagina("DashboardFinanciero")
+        if st.button("💰 Registrar Gasto", width="stretch"): cambiar_pagina("RegistrarGasto")
+        if st.button("📋 Presupuesto Anual", width="stretch"): cambiar_pagina("Presupuesto")
+        if st.button("🧾 Base de Costos", width="stretch"): cambiar_pagina("BaseCostos")
+        if st.button("📉 Registrar Merma", width="stretch"): cambiar_pagina("RegistrarMerma")
+        if st.button("📊 Dashboard Financiero", width="stretch"): cambiar_pagina("DashboardFinanciero")
         st.divider()
         st.write("**📅 Calendario:**")
-        if st.button("📅 Calendario", use_container_width=True): cambiar_pagina("Calendario")
+        if st.button("📅 Calendario", width="stretch"): cambiar_pagina("Calendario")
         st.divider()
         st.write("**🖨️ Tickets (58mm):**")
-        if st.button("📋 Lista de Conteo", use_container_width=True): cambiar_pagina("Impresion")
-        if st.button("🛒 Lista de Compra", use_container_width=True): cambiar_pagina("ListaCompra")
-        if st.button("📦 Reporte de Stock", use_container_width=True): cambiar_pagina("ReporteStock")
+        if st.button("📋 Lista de Conteo", width="stretch"): cambiar_pagina("Impresion")
+        if st.button("🛒 Lista de Compra", width="stretch"): cambiar_pagina("ListaCompra")
+        if st.button("📦 Reporte de Stock", width="stretch"): cambiar_pagina("ReporteStock")
 
         st.divider()
         with st.expander("ℹ️ Guía de Clasificación (Grupos)"):
@@ -111,13 +111,13 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                 {"Grupo":"F","Nombre":"Comida y Vitrina","Rutina":"Cada 2 días","Riesgo":"Alto","Almacén":"Vitrina / Refrigerador","Nota":"Verificar caducidad"},
                 {"Grupo":"G","Nombre":"Compras","Rutina":"Cada 2 días","Riesgo":"Bajo","Almacén":"Bodega general / Mostrador","Nota":"Registrar cada entrada"},
             ]
-            st.dataframe(pd.DataFrame(grupos_info), hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame(grupos_info), hide_index=True, width="stretch")
 
         # ZONA ADMIN
         if st.session_state.user_role == "admin":
             st.divider()
             st.write("**🛠️ Administración Avanzada:**")
-            if st.button("🔒 Corte de Mes", use_container_width=True): cambiar_pagina("CorteMes")
+            if st.button("🔒 Corte de Mes", width="stretch"): cambiar_pagina("CorteMes")
 
             st.divider()
             with st.expander("👤 Gestión de Accesos"):
@@ -125,7 +125,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                 n_nombre = st.text_input("Nombre de Usuario:")
                 n_clave  = st.text_input("Clave de Acceso:")
                 n_rol    = st.selectbox("Nivel de Permisos:", ["barista","admin"])
-                if st.button("➕ Guardar Usuario", use_container_width=True):
+                if st.button("➕ Guardar Usuario", width="stretch"):
                     if n_nombre and n_clave:
                         ws_acc, err = safe_worksheet(sh, "Accesos")
                         if err:
@@ -152,7 +152,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                 st.write("**Eliminar Barista**")
                 if LISTA_RESPONSABLES:
                     u_del = st.selectbox("Seleccionar:", LISTA_RESPONSABLES)
-                    if st.button("❌ Borrar Acceso", use_container_width=True):
+                    if st.button("❌ Borrar Acceso", width="stretch"):
                         ws_acc, err = safe_worksheet(sh, "Accesos")
                         if err:
                             st.error(err)
@@ -186,7 +186,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                          "ImportarVentas","RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma",
                          "DashboardFinanciero","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"],
                         default=["Todas"])
-                    if st.form_submit_button("📢 Publicar aviso", use_container_width=True):
+                    if st.form_submit_button("📢 Publicar aviso", width="stretch"):
                         if not av_titulo.strip() or not av_msg.strip():
                             st.error("Título y mensaje son obligatorios.")
                         else:
@@ -222,7 +222,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                             st.caption(str(av.get("Mensaje",""))[:80])
                         with col_b:
                             av_id = str(av.get("ID",""))
-                            if st.button("Desactivar" if activo else "Activar", key=f"tog_{av_id}", use_container_width=True):
+                            if st.button("Desactivar" if activo else "Activar", key=f"tog_{av_id}", width="stretch"):
                                 ws_av, err = safe_worksheet(sh, "Avisos")
                                 if not err:
                                     try:
@@ -281,7 +281,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
 
             # 🧹 BOTÓN DE LIMPIEZA DE CACHÉ
             st.divider()
-            if st.button("🧹 Limpiar caché", use_container_width=True, help="Refresca todos los datos desde Google Sheets."):
+            if st.button("🧹 Limpiar caché", width="stretch", help="Refresca todos los datos desde Google Sheets."):
                 st.cache_data.clear()
                 st.success("✅ Caché limpiada. Los datos se recargarán al navegar.")
                 time.sleep(0.5)

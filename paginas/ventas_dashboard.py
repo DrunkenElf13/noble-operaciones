@@ -116,7 +116,7 @@ def show_dashboard_ventas():
                 lambda row: ["background-color: rgba(80,200,120,0.15)" if limpiar_valor(row.get("Venta_Diaria",0)) >= limpiar_valor(row.get("Meta_Diaria",0))
                              else "background-color: rgba(239,159,39,0.15)" if limpiar_valor(row.get("Venta_Diaria",0)) >= limpiar_valor(row.get("Meta_Diaria",0))*0.7
                              else "background-color: rgba(226,75,74,0.12)"] * len(row), axis=1
-            ), hide_index=True, use_container_width=True)
+            ), hide_index=True, width="stretch")
         else:
             st.info("Sin registros de Noble para este mes.")
     
@@ -136,7 +136,7 @@ def show_dashboard_ventas():
             c4.metric("Eventos registrados", num_eventos)
             cols_mostrar = ["Fecha", "Cliente", "Total_Cotizado", "Adeudo", "Anticipo", "Metodo_Pago", "Notas"]
             cols_ok = [c for c in cols_mostrar if c in df_cs.columns]
-            st.dataframe(df_cs[cols_ok].sort_values("Fecha"), hide_index=True, use_container_width=True)
+            st.dataframe(df_cs[cols_ok].sort_values("Fecha"), hide_index=True, width="stretch")
         else:
             st.info("Sin registros de Coffee Station para este mes.")
             # Diagnóstico específico
@@ -160,7 +160,7 @@ def show_dashboard_ventas():
             c4.metric("Eventos registrados", num_eventos)
             cols_mostrar = ["Fecha", "Cliente", "Total_Cotizado", "Adeudo", "Anticipo", "Metodo_Pago", "Notas"]
             cols_ok = [c for c in cols_mostrar if c in df_ntg.columns]
-            st.dataframe(df_ntg[cols_ok].sort_values("Fecha"), hide_index=True, use_container_width=True)
+            st.dataframe(df_ntg[cols_ok].sort_values("Fecha"), hide_index=True, width="stretch")
         else:
             st.info("Sin registros de Noble To Go para este mes.")
             if "debug_carga_ventas" in st.session_state:
@@ -171,4 +171,4 @@ def show_dashboard_ventas():
     csv = df_mes.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Descargar CSV del mes", data=csv,
                        file_name=f"ventas_{mes_sel_str.replace(' ','_')}.csv",
-                       mime="text/csv", use_container_width=True)
+                       mime="text/csv", width="stretch")

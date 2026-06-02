@@ -96,8 +96,8 @@ def show_importar_ventas():
                 st.success(f"✅ {len(filas_import)} día(s) con venta detectados. Venta acumulada: **${total_imp:,.2f}**")
                 if dias_sin_venta:
                     st.caption(f"Días sin venta (omitidos): {dias_sin_venta}")
-                st.dataframe(df_prev, hide_index=True, use_container_width=True)
-                if st.button("📤 GUARDAR EN GOOGLE SHEETS", type="primary", use_container_width=True):
+                st.dataframe(df_prev, hide_index=True, width="stretch")
+                if st.button("📤 GUARDAR EN GOOGLE SHEETS", type="primary", width="stretch"):
                     ws_v, err = _asegurar_hoja_ventas()
                     if err:
                         st.error(err)

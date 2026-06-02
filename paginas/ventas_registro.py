@@ -200,7 +200,7 @@ def show_ventas():
         if dia_sin_venta and venta_total == 0:
             st.warning("Se registrará día con $0.")
 
-        if st.button("💾 GUARDAR", type="primary", use_container_width=True):
+        if st.button("💾 GUARDAR", type="primary", width="stretch"):
             if venta_total == 0 and total_tix == 0 and not dia_sin_venta:
                 st.warning("Ingresa valores o activa 'Día sin venta'.")
             else:
@@ -300,7 +300,7 @@ def show_ventas():
             )
             texto_masivo = st.text_area("Pega aquí:", height=200, key="texto_masivo")
             canal_masivo = st.selectbox("Canal:", ["Coffee Station", "Noble To Go"], key="canal_masivo")
-            if st.button("📤 Procesar todo", type="primary", use_container_width=True):
+            if st.button("📤 Procesar todo", type="primary", width="stretch"):
                 if not texto_masivo.strip():
                     st.error("Pega al menos una línea.")
                 else:
