@@ -267,11 +267,12 @@ def show_ventas():
                 st.error("El monto debe ser mayor a cero.")
             else:
                 id_unico = str(uuid.uuid4())[:8]
-                # Textos no redundantes
+                # Título limpio: solo el cliente
+                titulo = cliente_ev.strip() if cliente_ev.strip() else "Evento sin cliente"
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
                     "tipo": "💰 Venta",
-                    "titulo": f"{canal_sel} - {cliente_ev}" if cliente_ev else canal_sel,
+                    "titulo": titulo,
                     "cliente": cliente_ev,
                     "contacto": contacto_ev,
                     "ubicacion": ubicacion_ev,
@@ -298,11 +299,13 @@ def show_ventas():
                 from data_loaders import cargar_todas_ventas
                 cargar_todas_ventas.clear()
 
+                # Crear evento de entrega si la fecha difiere
                 if fecha_entr_ev != fecha_venta:
+                    titulo_entr = titulo  # mismo título limpio
                     datos_entrega = datos_evento.copy()
                     datos_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
                     datos_entrega["tipo"] = "📦 Entrega"
-                    datos_entrega["titulo"] = f"{canal_sel}: {cliente_ev}" if cliente_ev else f"{canal_sel} entrega"
+                    datos_entrega["titulo"] = titulo_entr
                     datos_entrega["origen"] = canal_sel
                     ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
                     if not ok_ent:
@@ -338,7 +341,7 @@ def show_ventas():
                             mensajes_fallo.append(f"Línea ignorada (formato incorrecto): {linea[:60]}...")
                             continue
                         id_unico = str(uuid.uuid4())[:8]
-                        titulo = f"{canal_masivo} - {datos_parseados['cliente']}" if datos_parseados["cliente"] else canal_masivo
+                        titulo = datos_parseados["cliente"].strip() if datos_parseados["cliente"].strip() else "Evento sin cliente"
                         datos_evento = {
                             "fecha": datos_parseados["fecha"],
                             "tipo": "💰 Venta",
@@ -371,7 +374,7 @@ def show_ventas():
                             datos_entrega = datos_evento.copy()
                             datos_entrega["fecha"] = datos_parseados["fecha_entrega"]
                             datos_entrega["tipo"] = "📦 Entrega"
-                            datos_entrega["titulo"] = f"{canal_masivo}: {datos_parseados['cliente']}" if datos_parseados["cliente"] else f"{canal_masivo} entrega"
+                            datos_entrega["titulo"] = titulo  # mismo título limpio
                             ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
                             if not ok_ent:
                                 mensajes_fallo.append(f"Error al guardar entrega (ID {id_unico}_entrega): {msg_ent}")
