@@ -35,71 +35,63 @@ def cargar_eventos_mes(mes, año):
                         df[col] = ""
                 for _, row in df.iterrows():
                     fecha_inicio = _parse_fecha(row.get("Fecha", ""))
-                    fecha_fin_str = row.get("Fecha_Fin", "")
-                    fecha_fin = _parse_fecha(fecha_fin_str) if fecha_fin_str else None
-                    fecha_entrega_str = row.get("Fecha_Entrega", "")
-                    fecha_entrega = _parse_fecha(fecha_entrega_str) if fecha_entrega_str else None
+                    if not fecha_inicio:
+                        continue
+                    # Solo mostrar en el mes si la fecha corresponde
+                    if fecha_inicio.month != mes or fecha_inicio.year != año:
+                        continue
+
                     id_base = row.get("ID", "")
                     origen = str(row.get("Origen", "manual")).strip().lower() or "manual"
-                    if fecha_inicio:
-                        # Determinar si es un evento de varios días válido
-                        es_rango_valido = False
-                        if fecha_fin and fecha_fin > fecha_inicio:
-                            # Descartar si fecha_fin es igual a fecha_entrega (error común)
-                            if fecha_entrega and fecha_fin.date() == fecha_entrega.date():
-                                es_rango_valido = False
-                            else:
-                                # Solo permitir rangos de hasta 31 días, a menos que sea tipo Vacaciones
-                                dif_dias = (fecha_fin - fecha_inicio).days
-                                if dif_dias <= 31 or row.get("Tipo", "") == "Vacaciones":
-                                    es_rango_valido = True
-                        if es_rango_valido:
-                            fechas_rango = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
-                        else:
-                            fechas_rango = [fecha_inicio]
 
-                        for f in fechas_rango:
-                            if f.month == mes and f.year == año:
-                                titulo_base = row.get("Título", "")
-                                nota_entrega = ""
-                                if fecha_entrega and fecha_entrega.date() != fecha_inicio.date():
-                                    nota_entrega = f" 📅 entrega: {fecha_entrega.strftime('%d/%m/%y')}"
-                                titulo_grid = titulo_base + nota_entrega if nota_entrega else titulo_base
-                                ev = {
-                                    "id": id_base if f == fecha_inicio else f"{id_base}_dia_{f.day}",
-                                    "fecha": f,
-                                    "tipo_evento": row.get("Tipo", "Otro"),
-                                    "titulo": titulo_base,
-                                    "titulo_grid": titulo_grid,
-                                    "cliente": row.get("Cliente", ""),
-                                    "contacto": row.get("Contacto", ""),
-                                    "ubicacion": row.get("Ubicacion", ""),
-                                    "descripcion": row.get("Descripcion", ""),
-                                    "total_cotizado": limpiar_valor(row.get("Total_Cotizado", 0)),
-                                    "adeudo": limpiar_valor(row.get("Adeudo", 0)),
-                                    "metodo_pago": row.get("Metodo_Pago", ""),
-                                    "fecha_contratacion": row.get("Fecha_Contratacion", ""),
-                                    "fecha_entrega": fecha_entrega_str,
-                                    "fecha_entrega_dt": fecha_entrega,
-                                    "abonos": row.get("Abonos", ""),
-                                    "notas": row.get("Notas", ""),
-                                    "color": row.get("Color", "#4A90D9"),
-                                    "responsable": row.get("Responsable", ""),
-                                    "origen": origen,
-                                    "anticipo": limpiar_valor(row.get("Anticipo", 0)),
-                                    "fecha_fin": fecha_fin_str
-                                }
-                                if ev["id"] not in ids_vistos:
-                                    eventos.append(ev)
-                                    ids_vistos.add(ev["id"])
+                    # Para canales de venta, el título ya viene formateado con prefijo
+                    titulo = row.get("Título", "")
+                    tipo_evento = row.get("Tipo", "Otro")
+                    color = row.get("Color", "#4A90D9")
+                    if origen in ["coffee station", "noble to go"]:
+                        # Asegurar el prefijo adecuado
+                        if origen == "coffee station":
+                            prefijo = "☕ Evento"
+                        else:
+                            prefijo = "🥤 Entrega"
+                        # Si el título no comienza con el prefijo, lo corregimos
+                        if not titulo.startswith(prefijo):
+                            titulo = f"{prefijo} - {titulo}"
+                        tipo_evento = prefijo
+                        color = "#4A90D9" if origen == "coffee station" else "#9B59B6"
+
+                    ev = {
+                        "id": id_base,
+                        "fecha": fecha_inicio,
+                        "tipo_evento": tipo_evento,
+                        "titulo": titulo,
+                        "cliente": row.get("Cliente", ""),
+                        "contacto": row.get("Contacto", ""),
+                        "ubicacion": row.get("Ubicacion", ""),
+                        "descripcion": row.get("Descripcion", ""),
+                        "total_cotizado": limpiar_valor(row.get("Total_Cotizado", 0)),
+                        "adeudo": limpiar_valor(row.get("Adeudo", 0)),
+                        "metodo_pago": row.get("Metodo_Pago", ""),
+                        "fecha_contratacion": row.get("Fecha_Contratacion", ""),
+                        "fecha_entrega": row.get("Fecha_Entrega", ""),
+                        "abonos": row.get("Abonos", ""),
+                        "notas": row.get("Notas", ""),
+                        "color": color,
+                        "responsable": row.get("Responsable", ""),
+                        "origen": origen,
+                        "anticipo": limpiar_valor(row.get("Anticipo", 0)),
+                        "fecha_fin": row.get("Fecha_Fin", ""),
+                    }
+                    if ev["id"] not in ids_vistos:
+                        eventos.append(ev)
+                        ids_vistos.add(ev["id"])
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # Ventas diarias Noble
+    # Ventas Noble POS (se mantiene igual)
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
-            now = datetime.now()
             meta_mensual = 145000.0
             dias_habiles = 26
             meta_diaria = meta_mensual / dias_habiles if dias_habiles > 0 else 0
@@ -112,7 +104,6 @@ def cargar_eventos_mes(mes, año):
                         "fecha": fecha,
                         "tipo_evento": "Venta Noble",
                         "titulo": "Venta Noble",
-                        "titulo_grid": "Venta Noble",
                         "total_cotizado": monto,
                         "adeudo": 0,
                         "color": "#48B065",
@@ -269,6 +260,7 @@ def eliminar_evento(id_evento: str):
             if fila[0] == id_evento:
                 if len(fila) > 19:
                     origen = str(fila[19]).strip()
+                # Eliminar también posibles entregas asociadas (por si acaso)
                 id_base = id_evento.split("_entrega")[0]
                 for j, f2 in enumerate(todos[1:], start=2):
                     if f2[0] == f"{id_base}_entrega" or f2[0].startswith(f"{id_base}_entrega"):
