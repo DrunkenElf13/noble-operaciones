@@ -33,7 +33,7 @@ PALETA_EVENTOS = {
     "Otro": COLOR_SUBTEXTO,
 }
 
-# ─── CONSTANTES DE NEGOCIO (sin cambios lógicos) ───
+# ─── CONSTANTES DE NEGOCIO ───
 COLS_INSUMOS = [
     "Unidad de Negocio", "Nombre del Insumo", "Marca", "Proveedor", "Grupo",
     "Espacio_1", "Presentación de Compra", "Unidad de Medida",
