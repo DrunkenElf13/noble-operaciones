@@ -42,14 +42,13 @@ ICONOS_TIPO = {
     "Adeudo": "⚠️",
 }
 
-# Tipos disponibles para creación manual
 TIPOS_MANUALES = ["Vacaciones", "Fecha importante", "Adeudo", "Otro"]
 
 CAMPOS_POR_TIPO = {
     "Vacaciones": ["titulo", "fecha_inicio", "fecha_fin", "color", "notas"],
     "Fecha importante": ["titulo", "descripcion", "fecha_inicio", "fecha_fin", "color", "notas"],
     "Adeudo": ["titulo", "cliente", "total_cotizado", "adeudo", "metodo_pago", "fecha_inicio", "fecha_entrega", "color", "notas"],
-    "Otro": ["titulo", "cliente", "contacto", "ubicacion", "descripcion", "total_cotizado", "adeudo", "anticipo", "metodo_pago", "fecha_contratacion", "fecha_inicio", "fecha_entrega", "abonos", "notas", "color"],
+    "Otro": ["titulo", "cliente", "contacto", "ubicacion", "descripcion", "total_cotizado", "adeudo", "anticipo", "metodo_pago", "fecha_contratacion", "fecha_inicio", "fecha_entrega", "fecha_fin", "abonos", "notas", "color"],
 }
 
 
@@ -233,7 +232,7 @@ def show_calendario():
     else:
         st.info("No hay eventos este mes.")
 
-    # ---------- FORMULARIO MANUAL (con toggle siempre visible) ----------
+    # ---------- FORMULARIO MANUAL ----------
     st.divider()
     with st.expander("➕ Nuevo evento manual", expanded=False):
         with st.form("f_evento_manual", clear_on_submit=True):
@@ -242,7 +241,6 @@ def show_calendario():
             col1, col2 = st.columns(2)
             with col1:
                 fecha_ev = st.date_input("Fecha inicio", value=hoy.date(), key="fecha_manual")
-                # Toggle siempre presente para eventos manuales
                 es_rango = st.toggle("Evento de varios días", value=False, key="rango_manual")
                 if es_rango:
                     fecha_fin_ev = st.date_input("Fecha fin", value=fecha_ev, min_value=fecha_ev, key="fecha_fin_manual")
@@ -336,7 +334,7 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # ---------- EDICIÓN (se mantiene igual) ----------
+    # ---------- EDICIÓN ----------
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
         st.subheader(f"Editando: {ev['titulo']}")
@@ -421,10 +419,9 @@ def show_calendario():
                     del st.session_state["editando_evento"]
                     st.rerun()
 
-    # ---------- ABONOS (global, no solo del mes) ----------
+    # ---------- ABONOS ----------
     st.subheader("💵 Registrar abono")
     with st.expander("Añadir abono a evento con adeudo"):
-        # Cargamos todos los eventos con adeudo de la hoja Calendario
         ws_cal, _ = _asegurar_hoja_calendario()
         eventos_adeudo = []
         if ws_cal:
@@ -446,7 +443,6 @@ def show_calendario():
                             })
 
         if eventos_adeudo:
-            # Búsqueda por cliente
             cliente_busqueda = st.text_input("Filtrar por cliente", key="abono_cliente")
             if cliente_busqueda:
                 eventos_adeudo = [e for e in eventos_adeudo
@@ -520,13 +516,11 @@ def show_calendario():
                     st.caption(f"**{len(df)} registros encontrados**")
                     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
                     with col_f1:
-                        # Lista de años disponibles
                         años_disponibles = sorted(df["_fecha_dt"].dropna().dt.year.unique().astype(int), reverse=True)
                         año_filtro = st.selectbox("Año", ["Todos"] + [str(a) for a in años_disponibles],
                                                   key=f"año_{nombre_hoja}")
                     with col_f2:
-                        meses_disponibles = list(range(1, 13))
-                        mes_filtro = st.selectbox("Mes", ["Todos"] + [calendar.month_name[m] for m in meses_disponibles],
+                        mes_filtro = st.selectbox("Mes", ["Todos"] + [calendar.month_name[m] for m in range(1, 13)],
                                                   key=f"mes_{nombre_hoja}")
                     with col_f3:
                         cliente_filtro = st.text_input("Buscar cliente", key=f"cliente_{nombre_hoja}")
@@ -538,14 +532,12 @@ def show_calendario():
                 if año_filtro != "Todos":
                     df = df[df["_fecha_dt"].dt.year == int(año_filtro)]
                 if mes_filtro != "Todos":
-                    mes_num = meses_disponibles[calendar.month_name.values().index(mes_filtro) + 1]  # no, simplificamos
-                    # Mejor: obtener el número del mes
                     try:
                         mes_num = list(calendar.month_name).index(mes_filtro)
+                        if 1 <= mes_num <= 12:
+                            df = df[df["_fecha_dt"].dt.month == mes_num]
                     except ValueError:
-                        mes_num = None
-                    if mes_num and mes_num >= 1 and mes_num <= 12:
-                        df = df[df["_fecha_dt"].dt.month == mes_num]
+                        pass
                 if cliente_filtro.strip():
                     df = df[df["Cliente"].astype(str).str.contains(cliente_filtro.strip(), case=False, na=False)]
                 if adeudo_filtro == "Con adeudo":
