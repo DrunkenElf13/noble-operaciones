@@ -41,12 +41,14 @@ def _construir_fila_venta(
         tickets_pos, tickets_uber, tickets_rappi, total_tix,
         tix_prom, meta_mensual, dias_habiles, meta_diaria,
         responsable, notas, canal,
+        0.0,  # Adeudo siempre 0 para Noble POS
+        0.0,  # Anticipo siempre 0 para Noble POS
     ]
 
 def _construir_fila_venta_canal(datos_evento: dict, id_evento: str):
     """Construye una fila para la hoja del canal con las columnas de Calendario."""
     return [
-        id_evento,  # ID unificado
+        id_evento,
         datos_evento.get("fecha", ""),
         datos_evento.get("tipo", ""),
         datos_evento.get("titulo", ""),
@@ -224,7 +226,6 @@ def show_ventas():
             if monto_ev <= 0:
                 st.error("El monto debe ser mayor a cero.")
             else:
-                # Generar un ID único para todo el flujo
                 id_unico = str(uuid.uuid4())[:8]
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
@@ -246,35 +247,39 @@ def show_ventas():
                     "anticipo": anticipo_ev,
                     "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_venta else "",
                 }
-                # 1. Guardar en la hoja del canal con el ID unificado
+
+                # 1. Guardar en la hoja del canal
                 ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
                 if err_canal:
                     st.error(err_canal)
-                else:
-                    fila = _construir_fila_venta_canal(datos_evento, id_unico)
-                    ok, msg = append_rows_con_retry(ws_canal, [fila])
-                    if not ok:
-                        st.error(msg)
-                        st.stop()
-                    from data_loaders import cargar_todas_ventas
-                    cargar_todas_ventas.clear()
+                    st.stop()
+                fila = _construir_fila_venta_canal(datos_evento, id_unico)
+                ok_canal, msg_canal = append_rows_con_retry(ws_canal, [fila])
+                if not ok_canal:
+                    st.error(f"Error al guardar en hoja {canal_sel}: {msg_canal}")
+                    st.stop()
+                # Si se guardó en el canal, procedemos a Calendario
+                from data_loaders import cargar_todas_ventas
+                cargar_todas_ventas.clear()
 
                 # 2. Guardar en Calendario con el MISMO ID
                 datos_evento_cal = datos_evento.copy()
-                datos_evento_cal["id"] = id_unico
-                ok1, _ = agregar_evento(datos_evento_cal, id_unico)  # pasar ID a la función
+                ok_cal, msg_cal = agregar_evento(datos_evento_cal, id_unico)
+                if not ok_cal:
+                    # Avisamos pero no deshacemos el registro del canal (no se puede fácilmente)
+                    st.error(f"⚠️ Venta guardada en {canal_sel} pero falló el registro en Calendario: {msg_cal}. Revisa manualmente.")
+                    st.stop()
 
-                # Si hay fecha de entrega distinta, también se guarda en Calendario
+                # 3. Si hay fecha de entrega distinta, evento adicional en Calendario
                 if fecha_entr_ev != fecha_venta:
                     datos_evento_entrega = datos_evento.copy()
                     datos_evento_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
                     datos_evento_entrega["tipo"] = f"📦 Entrega {canal_sel}"
                     datos_evento_entrega["titulo"] = f"Entrega {canal_sel}: {cliente_ev}" if cliente_ev else f"Entrega {canal_sel}"
-                    agregar_evento(datos_evento_entrega, id_unico + "_entrega")
+                    ok_ent, msg_ent = agregar_evento(datos_evento_entrega, id_unico + "_entrega")
+                    if not ok_ent:
+                        st.warning(f"⚠️ Venta guardada pero falló el registro de la entrega en Calendario: {msg_ent}")
 
-                if ok1:
-                    st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
-                    time.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.error("Error al guardar en calendario")
+                st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
+                time.sleep(0.5)
+                st.rerun()
