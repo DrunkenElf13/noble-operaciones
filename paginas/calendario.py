@@ -7,25 +7,9 @@ from components.calendario_utils import (
     eliminar_evento, registrar_abono
 )
 from config import CANALES_VENTA
-
-COLORES_TIPO = {
-    "💰 Venta": "#4A90D9",
-    "📦 Entrega": "#9B59B6",
-    "Venta Noble": "#48B065",
-    "Vacaciones": "#33FF57",
-    "Adeudo": "#FF3333",
-    "Fecha importante": "#3357FF",
-    "Otro": "#AAAAAA",
-}
-
-ICONOS_TIPO = {
-    "Vacaciones": "🏖️",
-    "Fecha importante": "📌",
-    "Adeudo": "⚠️",
-    "💰 Venta": "💰",
-    "📦 Entrega": "📦",
-    "Venta Noble": "💵",
-}
+from sheets import safe_worksheet, sh
+from data_loaders import cargar_todas_ventas
+from utils import limpiar_valor
 
 PALETA_COLORES = {
     "🔵 Azul": "#4A90D9",
@@ -36,6 +20,24 @@ PALETA_COLORES = {
     "🟡 Amarillo": "#F1C40F",
     "🩵 Turquesa": "#1ABC9C",
     "⚫ Gris": "#34495E",
+}
+
+COLORES_TIPO = {
+    "☕ Evento": "#4A90D9",
+    "🥤 Entrega": "#9B59B6",
+    "Venta Noble": "#48B065",
+    "Vacaciones": "#33FF57",
+    "Fecha importante": "#3357FF",
+    "Adeudo": "#FF3333",
+    "Otro": "#AAAAAA",
+}
+
+ICONOS_TIPO = {
+    "☕ Evento": "☕",
+    "🥤 Entrega": "🥤",
+    "Vacaciones": "🏖️",
+    "Fecha importante": "📌",
+    "Adeudo": "⚠️",
 }
 
 CAMPOS_POR_TIPO = {
@@ -144,9 +146,16 @@ def show_calendario():
             for ev in otros[:2]:
                 color = ev.get("color", "#AAAAAA")
                 icono = ICONOS_TIPO.get(ev["tipo_evento"], "")
-                titulo = ev.get("titulo_grid", ev["titulo"])[:22]
+                titulo = ev["titulo"][:22]
                 texto = f"{icono} {titulo}" if icono else titulo
-                tooltip = f"{ev['tipo_evento']}: {ev['titulo']}\nCliente: {ev.get('cliente','')}\n${ev['total_cotizado']:,.2f}"
+                # Tooltip con información clave
+                tooltip = (
+                    f"{ev['tipo_evento']}: {ev['titulo']}\n"
+                    f"Cliente: {ev.get('cliente','')}\n"
+                    f"Total: ${ev['total_cotizado']:,.2f}\n"
+                    f"Adeudo: ${ev.get('adeudo',0):,.2f}\n"
+                    f"Anticipo: ${ev.get('anticipo',0):,.2f}"
+                )
                 cols[i].markdown(
                     f"<div title='{tooltip}' style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px;'>{texto}</div>",
                     unsafe_allow_html=True
@@ -188,11 +197,6 @@ def show_calendario():
             df_lista = []
             for ev in eventos_unicos.values():
                 fecha_str = ev["fecha"].strftime("%d/%m/%Y")
-                fecha_entrega_dt = ev.get("fecha_entrega_dt")
-                if fecha_entrega_dt and fecha_entrega_dt.date() != ev["fecha"].date():
-                    entrega_mostrar = fecha_entrega_dt.strftime("%d/%m/%Y")
-                else:
-                    entrega_mostrar = ""
                 df_lista.append({
                     "Fecha": fecha_str,
                     "Tipo": ev["tipo_evento"],
@@ -201,7 +205,6 @@ def show_calendario():
                     "Total": ev["total_cotizado"],
                     "Adeudo": ev.get("adeudo", 0),
                     "Anticipo": ev.get("anticipo", 0),
-                    "Entrega": entrega_mostrar,
                 })
             df_display = pd.DataFrame(df_lista).sort_values("Fecha")
             st.dataframe(df_display, use_container_width=True, hide_index=True)
@@ -210,7 +213,7 @@ def show_calendario():
     else:
         st.info("No hay eventos este mes.")
 
-    # ────── FORMULARIO MANUAL ──────
+    # ────── FORMULARIO MANUAL (con toggle de varios días) ──────
     st.divider()
     with st.expander("➕ Nuevo evento manual", expanded=False):
         with st.form("f_evento_manual", clear_on_submit=True):
@@ -219,7 +222,6 @@ def show_calendario():
             col1, col2 = st.columns(2)
             with col1:
                 fecha_ev = st.date_input("Fecha inicio", value=hoy.date(), key="fecha_manual")
-                # Toggle para evento de varios días (solo si el tipo lo permite)
                 permite_rango = "fecha_fin" in campos
                 if permite_rango:
                     es_rango = st.toggle("Evento de varios días", value=False, key="rango_manual")
@@ -323,7 +325,6 @@ def show_calendario():
             tipo_ev = st.selectbox("Tipo", list(COLORES_TIPO.keys()),
                                    index=list(COLORES_TIPO.keys()).index(ev["tipo_evento"]) if ev["tipo_evento"] in COLORES_TIPO else 0,
                                    key="tipo_editar")
-            # Simplificamos mostrando todos los campos para edición
             col1, col2 = st.columns(2)
             with col1:
                 fecha_ev = st.date_input("Fecha inicio", value=ev["fecha"].date() if hasattr(ev["fecha"], 'date') else ev["fecha"], key="fecha_editar")
@@ -411,3 +412,40 @@ def show_calendario():
                             st.error(msg)
         else:
             st.info("No hay eventos con adeudo pendiente.")
+
+    # ──────────────────────────────────────────────
+    # NUEVO: Panel de detalle de Coffee Station y Noble To Go
+    # ──────────────────────────────────────────────
+    st.divider()
+    with st.expander("📋 Detalle de Coffee Station y Noble To Go", expanded=False):
+        st.markdown("Consulta todos los registros de estos canales, sin importar la fecha.")
+        tab_cs, tab_ntg = st.tabs(["☕ Coffee Station", "🥤 Noble To Go"])
+
+        @st.cache_data(ttl=120)
+        def cargar_detalle_canal(nombre_hoja):
+            ws, err = safe_worksheet(sh, nombre_hoja)
+            if ws:
+                datos = ws.get_all_values()
+                if len(datos) > 1:
+                    df = pd.DataFrame(datos[1:], columns=datos[0])
+                    # Asegurar que tenga al menos las columnas básicas
+                    columnas_deseadas = ["ID","Fecha","Título","Cliente","Total_Cotizado","Adeudo","Anticipo","Metodo_Pago","Fecha_Contratacion","Fecha_Entrega","Notas"]
+                    for col in columnas_deseadas:
+                        if col not in df.columns:
+                            df[col] = ""
+                    return df[columnas_deseadas]
+            return pd.DataFrame()
+
+        with tab_cs:
+            df_cs = cargar_detalle_canal("Coffee Station")
+            if not df_cs.empty:
+                st.dataframe(df_cs, hide_index=True, use_container_width=True)
+            else:
+                st.info("No hay registros en Coffee Station.")
+
+        with tab_ntg:
+            df_ntg = cargar_detalle_canal("Noble To Go")
+            if not df_ntg.empty:
+                st.dataframe(df_ntg, hide_index=True, use_container_width=True)
+            else:
+                st.info("No hay registros en Noble To Go.")
