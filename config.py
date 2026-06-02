@@ -50,7 +50,8 @@ COLS_CALENDARIO = [
     "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
     "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
     "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
-    "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin"
+    "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin",
+    "Origen",          # ← NUEVA COLUMNA: "manual", "Coffee Station", "Noble To Go", "Venta Noble"
 ]
 COLS_PERMISOS = ["Rol", "Pagina"]
 
