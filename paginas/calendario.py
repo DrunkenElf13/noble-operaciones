@@ -6,7 +6,7 @@ from components.calendario_utils import (
     cargar_eventos_mes, agregar_evento, actualizar_evento,
     eliminar_evento, registrar_abono
 )
-from config import CANALES_VENTA
+from config import CANALES_VENTA, COLS_CALENDARIO
 from sheets import safe_worksheet, sh
 from utils import limpiar_valor
 
@@ -221,7 +221,7 @@ def show_calendario():
     else:
         st.info("No hay eventos este mes.")
 
-    # Formulario manual (con toggle de varios días solo para tipos que lo permitan)
+    # ────── FORMULARIO MANUAL ──────
     st.divider()
     with st.expander("➕ Nuevo evento manual", expanded=False):
         with st.form("f_evento_manual", clear_on_submit=True):
@@ -325,7 +325,7 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # Edición (idéntico a antes, se mantiene)
+    # ────── EDICIÓN ──────
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
         st.subheader(f"Editando: {ev['titulo']}")
@@ -397,7 +397,7 @@ def show_calendario():
                     del st.session_state["editando_evento"]
                     st.rerun()
 
-    # Abonos (idéntico)
+    # ────── ABONOS ──────
     st.subheader("💵 Registrar abono")
     with st.expander("Añadir abono a evento con adeudo"):
         eventos_con_adeudo = [e for e in eventos if e.get("adeudo",0) > 0 and e["origen"] != "Venta Noble"]
@@ -421,7 +421,7 @@ def show_calendario():
         else:
             st.info("No hay eventos con adeudo pendiente.")
 
-      # ─────────────────────────────────────────────
+    # ─────────────────────────────────────────────
     # Panel de detalle de Coffee Station y Noble To Go
     # ─────────────────────────────────────────────
     st.divider()
@@ -449,14 +449,6 @@ def show_calendario():
                     return df
             return pd.DataFrame()
 
-        COLS_CALENDARIO = [
-            "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
-            "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
-            "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
-            "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin",
-            "Origen"
-        ]
-
         for nombre_hoja, tab, prefijo in [
             ("Coffee Station", tab_cs, "☕ Evento"),
             ("Noble To Go", tab_ntg, "🥤 Entrega"),
@@ -466,6 +458,10 @@ def show_calendario():
                 if df.empty:
                     st.info(f"No hay registros en {nombre_hoja}.")
                     continue
+
+                # Excluir IDs de entrega heredados de versiones anteriores
+                if "ID" in df.columns:
+                    df = df[~df["ID"].astype(str).str.contains("_entrega", na=False)]
 
                 # ── Filtros ──
                 with st.container():
