@@ -15,7 +15,16 @@ def show_dashboard_ventas():
     df = cargar_todas_ventas()
     if df.empty:
         st.info("Sin registros de venta en ningún canal.")
+        # Mostrar diagnóstico si existe
+        if "debug_carga_ventas" in st.session_state:
+            with st.expander("🔍 Diagnóstico de carga"):
+                st.write(st.session_state["debug_carga_ventas"])
         st.stop()
+    
+    # Bloque de diagnóstico general (siempre visible al inicio)
+    if "debug_carga_ventas" in st.session_state:
+        with st.expander("🔍 Diagnóstico de carga de hojas"):
+            st.write(st.session_state["debug_carga_ventas"])
     
     # Selector de canal
     canal_opciones = ["Todos"] + CANALES_VENTA
@@ -23,11 +32,12 @@ def show_dashboard_ventas():
     
     if canal_sel != "Todos":
         df = df[df["Canal"] == canal_sel].copy()
-    # Si "Todos", df queda con los tres canales
     
-    # Si después del filtro está vacío
     if df.empty:
         st.warning(f"No hay datos para {canal_sel}.")
+        # Mostrar diagnóstico específico del canal seleccionado
+        if canal_sel in ["Coffee Station", "Noble To Go"]:
+            st.info("ℹ️ Si acabas de cargar datos, verifica que el mes seleccionado coincida con las fechas de los eventos.")
         st.stop()
     
     # Selección de mes
@@ -40,7 +50,7 @@ def show_dashboard_ventas():
     )
     meses_disp = [(m,a) for m,a in meses_disp if m > 0 and a > 0]
     if not meses_disp:
-        st.info("No hay meses completos disponibles.")
+        st.info("No hay meses completos disponibles. Verifica que los eventos tengan Mes y Año correctos.")
         st.stop()
     opciones_mes = [f"{calendar.month_name[m].capitalize()} {a}" for m,a in meses_disp]
     mes_sel_str = st.selectbox("📅 Mes:", opciones_mes)
@@ -95,7 +105,6 @@ def show_dashboard_ventas():
             tk4.metric("Ticket Promedio Real", f"${tix_prom_g:,.2f}" if tix_prom_g > 0 else "—")
 
             st.divider()
-            # Detalle diario Noble
             df_disp = df_noble[["Día","Fecha","Efectivo","Transferencias","Tarjeta","Total_POS",
                                 "Uber_Eats","Rappi","Venta_Diaria","Total_Tickets",
                                 "Ticket_Promedio","Meta_Diaria","Responsable","Notas"]].copy()
@@ -125,12 +134,15 @@ def show_dashboard_ventas():
             c2.metric("Adeudo total", f"${adeudo_cs:,.2f}")
             c3.metric("Anticipo total", f"${anticipo_cs:,.2f}")
             c4.metric("Eventos registrados", num_eventos)
-            # Lista de eventos
             cols_mostrar = ["Fecha", "Cliente", "Total_Cotizado", "Adeudo", "Anticipo", "Metodo_Pago", "Notas"]
             cols_ok = [c for c in cols_mostrar if c in df_cs.columns]
             st.dataframe(df_cs[cols_ok].sort_values("Fecha"), hide_index=True, use_container_width=True)
         else:
             st.info("Sin registros de Coffee Station para este mes.")
+            # Diagnóstico específico
+            if "debug_carga_ventas" in st.session_state:
+                st.caption("Diagnóstico de carga:")
+                st.caption(st.session_state["debug_carga_ventas"])
     
     # ──── Noble To Go ────
     if canal_sel in ["Noble To Go", "Todos"]:
@@ -151,8 +163,10 @@ def show_dashboard_ventas():
             st.dataframe(df_ntg[cols_ok].sort_values("Fecha"), hide_index=True, use_container_width=True)
         else:
             st.info("Sin registros de Noble To Go para este mes.")
+            if "debug_carga_ventas" in st.session_state:
+                st.caption("Diagnóstico de carga:")
+                st.caption(st.session_state["debug_carga_ventas"])
     
-    # Botón de descarga CSV (opcional, del mes seleccionado)
     st.divider()
     csv = df_mes.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Descargar CSV del mes", data=csv,
