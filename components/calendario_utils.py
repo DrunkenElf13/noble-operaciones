@@ -51,7 +51,6 @@ def cargar_eventos_mes(mes, año):
                                 )
                         if fecha_inicio.month == mes and fecha_inicio.year == año:
                             titulo = row.get("Título", "")
-                            # Forzar prefijo para canales (CORREGIDO: comparación con mayúsculas)
                             if origen in ["Coffee Station", "Noble To Go"]:
                                 prefijo = "☕ Evento" if origen == "Coffee Station" else "🥤 Entrega"
                                 if not titulo.startswith(prefijo):
