@@ -4,14 +4,15 @@ import numpy as np
 import calendar
 import plotly.graph_objects as go
 import plotly.express as px
+import time
 from data_loaders import (
     cargar_todas_ventas, cargar_gastos, cargar_presupuesto,
     cargar_costos_insumos, cargar_merma, cargar_recetas
 )
-from sheets import safe_worksheet, sh
+from sheets import safe_worksheet, sh, append_rows_con_retry, _asegurar_hoja_presupuesto
 from utils import limpiar_valor, ahora_hermosillo, _proyectar_tendencia
 from auth import tiene_permiso
-from config import CANALES_VENTA
+from config import CANALES_VENTA, COLS_PRESUPUESTO
 
 def _gauge(valor, minimo, maximo, titulo, sufijo="%", umbral_verde=80, umbral_amarillo=60):
     try:
@@ -53,15 +54,18 @@ def show_dashboard_financiero():
         st.info("Sin datos de ventas. Comienza registrando ventas diarias.")
         st.stop()
 
-    tab_comp, tab_proy, tab_fc, tab_merma_d, tab_pe = st.tabs([
+    tab_comp, tab_proy, tab_fc, tab_merma_d, tab_pe, tab_tablas = st.tabs([
         "📊 Comparativo",
         "🔮 Proyecciones",
         "🍽️ Food Cost & Margen",
         "📉 Merma",
         "⚖️ Punto de Equilibrio",
+        "📋 Tablas Comparativas",
     ])
 
+    # ==================== TAB COMPARATIVO (EXISTENTE) ====================
     with tab_comp:
+        # ... (todo el código existente del comparativo sin cambios) ...
         st.subheader("📊 Ventas vs Gastos por Período")
         periodo_comp = st.radio("Agrupar por:", ["Mes","Trimestre","Cuatrimestre","Año"], horizontal=True)
         df_vm = df_vf.copy()
@@ -76,7 +80,6 @@ def show_dashboard_financiero():
                  Rappi=("Rappi","sum"))
             .reset_index()
         )
-        # Ventas por canal principal
         if "Canal" in df_vm.columns:
             ventas_por_canal = (
                 df_vm.groupby(["Año_num","Mes_num","Canal"])["Venta_Diaria"]
@@ -158,7 +161,9 @@ def show_dashboard_financiero():
         st.subheader("📋 Tabla de datos")
         st.dataframe(df_agrup, hide_index=True, use_container_width=True)
 
+    # ==================== TAB PROYECCIONES (EXISTENTE) ====================
     with tab_proy:
+        # ... (código existente sin cambios) ...
         st.subheader("🔮 Proyecciones de Ventas por Canal")
         hoy_pr        = ahora_hermosillo().date()
         dias_en_mes_pr = calendar.monthrange(hoy_pr.year, hoy_pr.month)[1]
@@ -231,7 +236,9 @@ def show_dashboard_financiero():
         else:
             st.info("Configura el presupuesto anual en '📋 Presupuesto Anual' para ver el velocímetro anual.")
 
+    # ==================== TAB FOOD COST (EXISTENTE) ====================
     with tab_fc:
+        # ... (código existente sin cambios) ...
         st.subheader("🍽️ Food Cost & Margen por Producto")
         if df_bcf.empty:
             st.info("Sin datos en Costos de Insumos. Ve a '🧾 Base de Costos' para registrar tus costos.")
@@ -311,7 +318,9 @@ def show_dashboard_financiero():
                 hide_index=True, use_container_width=True
             )
 
+    # ==================== TAB MERMA (EXISTENTE) ====================
     with tab_merma_d:
+        # ... (código existente sin cambios) ...
         st.subheader("📉 Análisis de Merma")
         if df_mermaf.empty:
             st.info("Sin registros de merma. Ve a '📉 Registrar Merma' para comenzar.")
@@ -374,7 +383,9 @@ def show_dashboard_financiero():
             cols_md_ok   = [c for c in cols_md_show if c in df_md_fil.columns]
             st.dataframe(df_md_fil[cols_md_ok].sort_values("Fecha", ascending=False), hide_index=True, use_container_width=True)
 
+    # ==================== TAB PUNTO DE EQUILIBRIO (EXISTENTE) ====================
     with tab_pe:
+        # ... (código existente sin cambios) ...
         st.subheader("⚖️ Punto de Equilibrio Mensual")
         hoy_pe     = ahora_hermosillo().date()
         años_pe_op = sorted(set([int(limpiar_valor(a)) for a in df_vf["Año"].unique() if limpiar_valor(a) > 0]), reverse=True)
@@ -475,3 +486,275 @@ def show_dashboard_financiero():
                 st.dataframe(df_gf2_fil[cols_gf2_ok].sort_values("Tipo"), hide_index=True, use_container_width=True)
             else:
                 st.info("Sin gastos registrados para este período en el módulo de Gastos.")
+
+    # ==================== NUEVA PESTAÑA: TABLAS COMPARATIVAS ====================
+    with tab_tablas:
+        st.subheader("📋 Tablas Comparativas por Canal")
+
+        # --- Datos necesarios ---
+        hoy_tab = ahora_hermosillo().date()
+        año_actual = hoy_tab.year
+        año_anterior = año_actual - 1
+
+        # Ventas por mes y año para POS (Noble)
+        df_pos = df_vf[df_vf["Canal"] == "Noble"].copy()
+        # Ventas Coffee Station
+        df_cs = df_vf[df_vf["Canal"] == "Coffee Station"].copy()
+
+        # Metas desde presupuesto
+        metas_pos = {}
+        metas_cs = {}
+        if not df_pptof.empty:
+            for año in [año_anterior, año_actual]:
+                df_ppto_año = df_pptof[df_pptof["Año"].apply(limpiar_valor) == año]
+                for _, r in df_ppto_año.iterrows():
+                    mes = int(limpiar_valor(r["Mes"]))
+                    if 1 <= mes <= 12:
+                        if año == año_actual:
+                            metas_pos[mes] = limpiar_valor(r.get("Meta_Total", 0))
+                            metas_cs[mes] = limpiar_valor(r.get("Meta_CoffeeStation", 0))
+                        # Para año anterior solo se usará en comparativa POS
+
+        # Tabla 1: Resultados generales POS (solo año actual vs anterior)
+        st.markdown("### 🏢 Resultados Generales – POS (Noble)")
+        meses_nombres = [calendar.month_name[m].capitalize() for m in range(1,13)]
+
+        filas_pos = []
+        for mes in range(1, 13):
+            venta_ant = df_pos[(df_pos["Mes"].apply(limpiar_valor) == mes) & (df_pos["Año"].apply(limpiar_valor) == año_anterior)]["Venta_Diaria"].sum()
+            venta_act = df_pos[(df_pos["Mes"].apply(limpiar_valor) == mes) & (df_pos["Año"].apply(limpiar_valor) == año_actual)]["Venta_Diaria"].sum()
+            meta = metas_pos.get(mes, 0)
+            cumpl = (venta_act / meta * 100) if meta > 0 else 0
+            var = ((venta_act - venta_ant) / venta_ant * 100) if venta_ant > 0 else None
+            var_str = f"{var:+.2f}%" if var is not None else "—"
+            filas_pos.append({
+                "MES": meses_nombres[mes-1],
+                f"VENTA {año_anterior}": f"${venta_ant:,.0f}",
+                f"VENTA {año_actual}": f"${venta_act:,.0f}",
+                "META MENSUAL": f"${meta:,.0f}",
+                "CUMPLIMIENTO": f"{cumpl:.2f}%",
+                f"{año_anterior} VS {año_actual}": var_str
+            })
+        # Totales
+        total_ant = sum(limpiar_valor(float(r[f"VENTA {año_anterior}"].replace("$","").replace(",",""))) for r in filas_pos)
+        total_act = sum(limpiar_valor(float(r[f"VENTA {año_actual}"].replace("$","").replace(",",""))) for r in filas_pos)
+        total_meta = sum(metas_pos.values())
+        total_cumpl = (total_act / total_meta * 100) if total_meta > 0 else 0
+        total_var = ((total_act - total_ant) / total_ant * 100) if total_ant > 0 else None
+        total_var_str = f"{total_var:+.2f}%" if total_var is not None else "—"
+        filas_pos.append({
+            "MES": "TOTAL",
+            f"VENTA {año_anterior}": f"${total_ant:,.0f}",
+            f"VENTA {año_actual}": f"${total_act:,.0f}",
+            "META MENSUAL": f"${total_meta:,.0f}",
+            "CUMPLIMIENTO": f"{total_cumpl:.2f}%",
+            f"{año_anterior} VS {año_actual}": total_var_str
+        })
+        df_pos_tabla = pd.DataFrame(filas_pos)
+        st.dataframe(df_pos_tabla, hide_index=True, use_container_width=True)
+
+        # Tabla 2: Métricas operativas POS (solo año actual)
+        st.markdown("### 🎫 Métricas Operativas – POS")
+        filas_met = []
+        for mes in range(1, 13):
+            df_mes_pos = df_pos[(df_pos["Mes"].apply(limpiar_valor) == mes) & (df_pos["Año"].apply(limpiar_valor) == año_actual)]
+            transacciones = int(df_mes_pos["Total_Tickets"].sum()) if not df_mes_pos.empty else 0
+            venta_mes = df_mes_pos["Venta_Diaria"].sum() if not df_mes_pos.empty else 0
+            ticket_prom = round(venta_mes / transacciones, 2) if transacciones > 0 else 0
+            # Mix canales (Efectivo, Transferencias, Tarjeta, Uber, Rappi)
+            efect = df_mes_pos["Efectivo"].sum()
+            trans = df_mes_pos["Transferencias"].sum()
+            tarj = df_mes_pos["Tarjeta"].sum()
+            uber = df_mes_pos["Uber_Eats"].sum()
+            rapp = df_mes_pos["Rappi"].sum()
+            total_pagos = efect + trans + tarj + uber + rapp
+            if total_pagos > 0:
+                mix_efect = f"{efect/total_pagos*100:.0f}%"
+                mix_trans = f"{trans/total_pagos*100:.0f}%"
+                mix_tarj = f"{tarj/total_pagos*100:.0f}%"
+                mix_uber = f"{uber/total_pagos*100:.0f}%"
+                mix_rapp = f"{rapp/total_pagos*100:.0f}%"
+            else:
+                mix_efect = mix_trans = mix_tarj = mix_uber = mix_rapp = "—"
+            filas_met.append({
+                "MES": meses_nombres[mes-1],
+                "TRANSACCIONES": transacciones,
+                "TICKET PROMEDIO": f"${ticket_prom:,.2f}",
+                "EFECTIVO": mix_efect,
+                "TRANSFERENCIA": mix_trans,
+                "TARJETA": mix_tarj,
+                "UBER": mix_uber,
+                "RAPPI": mix_rapp,
+            })
+        # Totales
+        total_trans = sum(r["TRANSACCIONES"] for r in filas_met)
+        total_venta_met = total_act
+        prom_total = round(total_venta_met / total_trans, 2) if total_trans > 0 else 0
+        filas_met.append({
+            "MES": "TOTAL",
+            "TRANSACCIONES": total_trans,
+            "TICKET PROMEDIO": f"${prom_total:,.2f}",
+            "EFECTIVO": "", "TRANSFERENCIA": "", "TARJETA": "", "UBER": "", "RAPPI": ""
+        })
+        df_met_tabla = pd.DataFrame(filas_met)
+        st.dataframe(df_met_tabla, hide_index=True, use_container_width=True)
+
+        # Tabla 3: Coffee Station
+        st.markdown("### ☕ Coffee Station")
+        filas_cs = []
+        for mes in range(1, 13):
+            df_mes_cs = df_cs[(df_cs["Mes"].apply(limpiar_valor) == mes) & (df_cs["Año"].apply(limpiar_valor) == año_actual)]
+            venta_cs_mes = df_mes_cs["Venta_Diaria"].sum() if not df_mes_cs.empty else 0
+            servicios = len(df_mes_cs) if not df_mes_cs.empty else 0
+            ticket_prom_cs = round(venta_cs_mes / servicios, 2) if servicios > 0 else 0
+            meta_cs_mes = metas_cs.get(mes, 0)
+            cumpl_cs = (venta_cs_mes / meta_cs_mes * 100) if meta_cs_mes > 0 else 0
+            filas_cs.append({
+                "MES": meses_nombres[mes-1],
+                "VENTA": f"${venta_cs_mes:,.0f}",
+                "META MENSUAL": f"${meta_cs_mes:,.0f}",
+                "CUMPLIMIENTO": f"{cumpl_cs:.2f}%",
+                "SERVICIOS": servicios,
+                "TICKET PROMEDIO": f"${ticket_prom_cs:,.2f}"
+            })
+        total_cs_venta = sum(limpiar_valor(float(r["VENTA"].replace("$","").replace(",",""))) for r in filas_cs)
+        total_cs_serv = sum(r["SERVICIOS"] for r in filas_cs)
+        total_cs_meta = sum(metas_cs.values())
+        total_cs_cumpl = (total_cs_venta / total_cs_meta * 100) if total_cs_meta > 0 else 0
+        total_cs_ticket = round(total_cs_venta / total_cs_serv, 2) if total_cs_serv > 0 else 0
+        filas_cs.append({
+            "MES": "TOTAL",
+            "VENTA": f"${total_cs_venta:,.0f}",
+            "META MENSUAL": f"${total_cs_meta:,.0f}",
+            "CUMPLIMIENTO": f"{total_cs_cumpl:.2f}%",
+            "SERVICIOS": total_cs_serv,
+            "TICKET PROMEDIO": f"${total_cs_ticket:,.2f}"
+        })
+        df_cs_tabla = pd.DataFrame(filas_cs)
+        st.dataframe(df_cs_tabla, hide_index=True, use_container_width=True)
+
+        # Tabla 4: Resumen por canal (anual actual)
+        st.markdown("### 📊 Resumen por Canal")
+        total_noble = df_pos[df_pos["Año"].apply(limpiar_valor) == año_actual]["Venta_Diaria"].sum()
+        total_cs_anual = df_cs[df_cs["Año"].apply(limpiar_valor) == año_actual]["Venta_Diaria"].sum()
+        # Noble To Go
+        df_ntg = df_vf[df_vf["Canal"] == "Noble To Go"]
+        total_ntg_anual = df_ntg[df_ntg["Año"].apply(limpiar_valor) == año_actual]["Venta_Diaria"].sum() if not df_ntg.empty else 0
+        meta_noble_anual = sum(metas_pos.values())
+        meta_cs_anual = sum(metas_cs.values())
+        # Meta To Go desde presupuesto
+        meta_ntg_anual = 0
+        if not df_pptof.empty:
+            df_ppto_act = df_pptof[df_pptof["Año"].apply(limpiar_valor) == año_actual]
+            if not df_ppto_act.empty:
+                meta_ntg_anual = df_ppto_act["Meta_ToGo"].apply(limpiar_valor).sum()
+        cumpl_noble = (total_noble / meta_noble_anual * 100) if meta_noble_anual > 0 else 0
+        cumpl_cs_anual = (total_cs_anual / meta_cs_anual * 100) if meta_cs_anual > 0 else 0
+        cumpl_ntg = (total_ntg_anual / meta_ntg_anual * 100) if meta_ntg_anual > 0 else 0
+        total_general = total_noble + total_cs_anual + total_ntg_anual
+        meta_total_anual = meta_noble_anual + meta_cs_anual + meta_ntg_anual
+        cumpl_total = (total_general / meta_total_anual * 100) if meta_total_anual > 0 else 0
+
+        resumen_canal = [
+            {"CANAL": "Cafetería (Noble)", "VENTA": f"${total_noble:,.0f}", "META": f"${meta_noble_anual:,.0f}", "CUMPLIMIENTO": f"{cumpl_noble:.2f}%"},
+            {"CANAL": "Coffee Station", "VENTA": f"${total_cs_anual:,.0f}", "META": f"${meta_cs_anual:,.0f}", "CUMPLIMIENTO": f"{cumpl_cs_anual:.2f}%"},
+            {"CANAL": "Noble To Go", "VENTA": f"${total_ntg_anual:,.0f}", "META": f"${meta_ntg_anual:,.0f}", "CUMPLIMIENTO": f"{cumpl_ntg:.2f}%"},
+            {"CANAL": "TOTAL", "VENTA": f"${total_general:,.0f}", "META": f"${meta_total_anual:,.0f}", "CUMPLIMIENTO": f"{cumpl_total:.2f}%"},
+        ]
+        df_resumen = pd.DataFrame(resumen_canal)
+        st.dataframe(df_resumen, hide_index=True, use_container_width=True)
+
+        # --- CAPTURA RÁPIDA DE METAS MENSUALES (Coffee Station y To Go) ---
+        st.divider()
+        with st.expander("⚙️ Ajustar metas mensuales de canales adicionales", expanded=False):
+            st.markdown("Actualiza las metas de Coffee Station y Noble To Go para el año actual. Se guardan en la hoja Presupuesto.")
+            with st.form("f_metas_canales"):
+                col_cs, col_ntg = st.columns(2)
+                with col_cs:
+                    st.write("**☕ Coffee Station**")
+                    meta_cs_mensual = {}
+                    for m in range(1, 13):
+                        meta_cs_mensual[m] = st.number_input(
+                            f"{calendar.month_name[m].capitalize()}:",
+                            min_value=0.0, step=100.0,
+                            value=float(metas_cs.get(m, 0)),
+                            key=f"meta_cs_{m}"
+                        )
+                with col_ntg:
+                    st.write("**🥤 Noble To Go**")
+                    # Cargar metas existentes de To Go
+                    metas_ntg = {}
+                    if not df_pptof.empty:
+                        df_ppto_act = df_pptof[df_pptof["Año"].apply(limpiar_valor) == año_actual]
+                        for _, r in df_ppto_act.iterrows():
+                            mes = int(limpiar_valor(r["Mes"]))
+                            if 1 <= mes <= 12:
+                                metas_ntg[mes] = limpiar_valor(r.get("Meta_ToGo", 0))
+                    meta_ntg_mensual = {}
+                    for m in range(1, 13):
+                        meta_ntg_mensual[m] = st.number_input(
+                            f"{calendar.month_name[m].capitalize()}:",
+                            min_value=0.0, step=100.0,
+                            value=float(metas_ntg.get(m, 0)),
+                            key=f"meta_ntg_{m}"
+                        )
+                if st.form_submit_button("💾 Guardar metas"):
+                    ws_ppto, err_ppto = _asegurar_hoja_presupuesto()
+                    if err_ppto:
+                        st.error(err_ppto)
+                    else:
+                        try:
+                            # Leer datos actuales y quitar filas del año actual para estos canales (solo actualizamos Coffee y To Go, sin tocar POS/Uber/Rappi)
+                            todos_ppto = ws_ppto.get_all_values()
+                            if len(todos_ppto) > 1:
+                                df_old = pd.DataFrame(todos_ppto[1:], columns=todos_ppto[0])
+                                # Conservamos filas que no sean del año actual, o que sean del año actual pero no tengan mes (poco probable)
+                                mask_año_act = df_old["Año"].astype(str).str.strip() == str(año_actual)
+                                df_old = df_old[~mask_año_act]  # eliminamos todo el año actual
+                            else:
+                                df_old = pd.DataFrame()
+                            # Construir nuevas filas para el año actual con metas de POS (mantener las que ya existen) y actualizar CS/ToGo
+                            # Pero para no perder las metas POS, Uber, Rappi del año actual, debemos conservarlas del presupuesto existente.
+                            # En su lugar, vamos a hacer un merge: para cada mes, si ya existe una fila en df_pptof para ese mes y año, actualizamos; si no, creamos.
+                            # Primero obtenemos las metas POS/Uber/Rappi actuales del año actual desde df_pptof (que está en memoria)
+                            metas_pos_exist = {}
+                            metas_uber_exist = {}
+                            metas_rappi_exist = {}
+                            metas_cs_exist = {}
+                            metas_ntg_exist = {}
+                            if not df_pptof.empty:
+                                df_ppto_act_mem = df_pptof[df_pptof["Año"].apply(limpiar_valor) == año_actual]
+                                for _, r in df_ppto_act_mem.iterrows():
+                                    mes = int(limpiar_valor(r["Mes"]))
+                                    if 1 <= mes <= 12:
+                                        metas_pos_exist[mes] = limpiar_valor(r.get("Meta_Total", 0))
+                                        metas_uber_exist[mes] = limpiar_valor(r.get("Meta_Uber", 0))
+                                        metas_rappi_exist[mes] = limpiar_valor(r.get("Meta_Rappi", 0))
+                                        metas_cs_exist[mes] = limpiar_valor(r.get("Meta_CoffeeStation", 0))
+                                        metas_ntg_exist[mes] = limpiar_valor(r.get("Meta_ToGo", 0))
+                            # Ahora construimos filas nuevas para cada mes del año actual
+                            nuevas_filas = []
+                            for m in range(1, 13):
+                                # Conservar las metas originales de POS/Uber/Rappi, y actualizar CS y ToGo con los valores del formulario
+                                meta_total = metas_pos_exist.get(m, 0)
+                                meta_pos = metas_pos_exist.get(m, 0)  # en el presupuesto Meta_POS está separado
+                                meta_uber = metas_uber_exist.get(m, 0)
+                                meta_rappi = metas_rappi_exist.get(m, 0)
+                                meta_cs_nuevo = meta_cs_mensual[m]
+                                meta_ntg_nuevo = meta_ntg_mensual[m]
+                                nuevas_filas.append([
+                                    año_actual, m, meta_total, meta_pos, meta_uber, meta_rappi,
+                                    meta_cs_nuevo, meta_ntg_nuevo, ""
+                                ])
+                            # Limpiar hoja y reescribir todo
+                            ws_ppto.clear()
+                            ws_ppto.append_row(COLS_PRESUPUESTO)
+                            if not df_old.empty:
+                                ws_ppto.append_rows(df_old.values.tolist(), value_input_option="USER_ENTERED")
+                            ws_ppto.append_rows(nuevas_filas, value_input_option="USER_ENTERED")
+                            cargar_presupuesto.clear()
+                            st.success("✅ Metas de Coffee Station y Noble To Go actualizadas.")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al guardar: {e}")
