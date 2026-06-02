@@ -18,15 +18,15 @@ def _parse_fecha(fecha):
     except Exception:
         return None
 
+@st.cache_data(ttl=120)  # ← Cache de 2 minutos para eventos del mes
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
 
-    # 1. Calendario (incluye eventos de canales porque se guardan allí con ID unificado)
     ws_cal, err = _asegurar_hoja_calendario()
     if ws_cal:
         try:
-            datos = ws_cal.get_all_values()
+            datos = ws_cal.get_all_values()  # Esta lectura ya está dentro de un try, si falla se maneja
             if len(datos) > 1:
                 df = pd.DataFrame(datos[1:], columns=datos[0])
                 for _, row in df.iterrows():
@@ -43,7 +43,6 @@ def cargar_eventos_mes(mes, año):
                             fechas_rango = [fecha_inicio]
                         for f in fechas_rango:
                             if f.month == mes and f.year == año:
-                                # Calcular si la fecha de entrega es distinta a la del evento
                                 nota_entrega = ""
                                 if fecha_entrega and fecha_entrega.date() != fecha_inicio.date():
                                     nota_entrega = f" 📅 entrega: {fecha_entrega.strftime('%d/%m/%y')}"
@@ -79,9 +78,9 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
-    # 2. Ventas diarias (solo Noble POS) – ya no leemos CoffeeStation/NobleToGo aquí
+    # Ventas diarias (solo Noble POS) – desde caché de cargar_todas_ventas
     try:
-        df_ventas = cargar_todas_ventas()
+        df_ventas = cargar_todas_ventas()  # ya está cacheada
         if not df_ventas.empty:
             now = datetime.now()
             if now.month == mes and now.year == año:
@@ -148,7 +147,6 @@ def cargar_eventos_mes(mes, año):
     return eventos
 
 def agregar_evento(datos: dict, id_externo: str = None):
-    """Agrega un evento a Calendario. Si se proporciona id_externo, se usa ese; si no, se genera uno nuevo."""
     ws, err = _asegurar_hoja_calendario()
     if err:
         return False, err
