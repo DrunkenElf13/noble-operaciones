@@ -265,7 +265,7 @@ def cargar_todas_ventas():
                 df = pd.DataFrame(datos[1:], columns=datos[0])
                 # Si la hoja es CoffeeStation o NobleToGo y tiene columnas de Calendario,
                 # convertir Total_Cotizado en Venta_Diaria y extraer Adeudo/Anticipo
-                if hoja == "CoffeeStation":
+                if hoja in ["CoffeeStation", "NobleToGo"]:
                     if "Total_Cotizado" in df.columns:
                         df["Venta_Diaria"] = df["Total_Cotizado"].apply(limpiar_valor)
                     else:
@@ -275,24 +275,20 @@ def cargar_todas_ventas():
                             df[col] = df[col].apply(limpiar_valor)
                         else:
                             df[col] = 0.0
-                    for col in COLS_VENTAS:
-                        if col not in df.columns:
-                            df[col] = ""
-                    df["Canal"] = "Coffee Station"      # ← NOMBRE CORRECTO (con espacio)
-                elif hoja == "NobleToGo":
-                    if "Total_Cotizado" in df.columns:
-                        df["Venta_Diaria"] = df["Total_Cotizado"].apply(limpiar_valor)
+                    # Agregar Mes y Año desde la columna Fecha
+                    if "Fecha" in df.columns:
+                        fechas_dt = pd.to_datetime(df["Fecha"], errors="coerce")
+                        df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
+                        df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
                     else:
-                        df["Venta_Diaria"] = 0.0
-                    for col in ["Adeudo", "Anticipo"]:
-                        if col in df.columns:
-                            df[col] = df[col].apply(limpiar_valor)
-                        else:
-                            df[col] = 0.0
+                        df["Mes"] = ""
+                        df["Año"] = ""
+                    # Agregar columnas necesarias para COLS_VENTAS
                     for col in COLS_VENTAS:
                         if col not in df.columns:
                             df[col] = ""
-                    df["Canal"] = "Noble To Go"          # ← NOMBRE CORRECTO (con espacio)
+                    # Asignar nombre de canal correcto
+                    df["Canal"] = "Coffee Station" if hoja == "CoffeeStation" else "Noble To Go"
                 else:  # Ventas (POS)
                     if "Canal" not in df.columns:
                         df["Canal"] = "Noble"
