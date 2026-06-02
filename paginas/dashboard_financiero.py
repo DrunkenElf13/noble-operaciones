@@ -63,10 +63,11 @@ def show_dashboard_financiero():
         "📋 Tablas Comparativas",
     ])
 
-    # ==================== TAB COMPARATIVO ====================
+    # ==================== TAB COMPARATIVO (restaurado con agrupación) ====================
     with tab_comp:
         st.subheader("📊 Ventas vs Gastos por Período")
         periodo_comp = st.radio("Agrupar por:", ["Mes","Trimestre","Cuatrimestre","Año"], horizontal=True)
+
         df_vm = df_vf.copy()
         df_vm["Mes_num"] = df_vm["Mes"].apply(limpiar_valor).astype(int)
         df_vm["Año_num"] = df_vm["Año"].apply(limpiar_valor).astype(int)
@@ -79,6 +80,7 @@ def show_dashboard_financiero():
                  Rappi=("Rappi","sum"))
             .reset_index()
         )
+        # Ventas por canal principal
         if "Canal" in df_vm.columns:
             ventas_por_canal = (
                 df_vm.groupby(["Año_num","Mes_num","Canal"])["Venta_Diaria"]
@@ -160,15 +162,21 @@ def show_dashboard_financiero():
         st.subheader("📋 Tabla de datos")
         st.dataframe(df_agrup, hide_index=True, use_container_width=True)
 
-    # ==================== TAB PROYECCIONES ====================
+    # ==================== TAB PROYECCIONES (selectores separados) ====================
     with tab_proy:
         st.subheader("🔮 Proyecciones de Ventas por Canal")
         hoy_pr        = ahora_hermosillo().date()
         dias_en_mes_pr = calendar.monthrange(hoy_pr.year, hoy_pr.month)[1]
-        df_vf_mes_pr = df_vf[
-            (df_vf["Mes"].apply(limpiar_valor) == hoy_pr.month) &
-            (df_vf["Año"].apply(limpiar_valor) == hoy_pr.year)
-        ].copy()
+        # Selectores
+        años_pr = sorted(df_vf["Año"].apply(limpiar_valor).astype(int).unique(), reverse=True)
+        año_pr = st.selectbox("Año", años_pr, key="año_proy")
+        mes_pr = st.selectbox("Mes", list(range(1,13)),
+                              index=hoy_pr.month-1,
+                              format_func=lambda m: calendar.month_name[m],
+                              key="mes_proy")
+
+        df_vf_mes_pr = df_vf[(df_vf["Mes"].apply(limpiar_valor) == mes_pr) &
+                             (df_vf["Año"].apply(limpiar_valor) == año_pr)].copy()
         venta_acum_pr = df_vf_mes_pr["Venta_Diaria"].sum() if not df_vf_mes_pr.empty else 0.0
         dias_con_v_pr = int((df_vf_mes_pr["Venta_Diaria"] > 0).sum()) if not df_vf_mes_pr.empty else 0
         dias_restantes_pr = dias_en_mes_pr - hoy_pr.day
@@ -177,10 +185,8 @@ def show_dashboard_financiero():
 
         metas_canal = {"Noble": 145000.0, "Coffee Station": 0.0, "Noble To Go": 0.0}
         if not df_pptof.empty:
-            ppto_mes_pr = df_pptof[
-                (df_pptof["Mes"].apply(limpiar_valor) == hoy_pr.month) &
-                (df_pptof["Año"].apply(limpiar_valor) == hoy_pr.year)
-            ]
+            ppto_mes_pr = df_pptof[(df_pptof["Mes"].apply(limpiar_valor) == mes_pr) &
+                                   (df_pptof["Año"].apply(limpiar_valor) == año_pr)]
             if not ppto_mes_pr.empty:
                 metas_canal["Noble"] = limpiar_valor(ppto_mes_pr["Meta_Total"].iloc[-1]) or 145000.0
                 metas_canal["Coffee Station"] = limpiar_valor(ppto_mes_pr["Meta_CoffeeStation"].iloc[-1]) or 0.0
@@ -193,7 +199,7 @@ def show_dashboard_financiero():
             else:
                 ventas_por_canal_mes[canal] = venta_acum_pr if canal == "Noble" else 0.0
 
-        st.subheader(f"📅 {calendar.month_name[hoy_pr.month].capitalize()} {hoy_pr.year}")
+        st.subheader(f"📅 {calendar.month_name[mes_pr]} {año_pr}")
         cols_meta = st.columns(len(CANALES_VENTA))
         for i, canal in enumerate(CANALES_VENTA):
             acum = ventas_por_canal_mes.get(canal, 0.0)
@@ -215,17 +221,17 @@ def show_dashboard_financiero():
                 use_container_width=True
             )
         st.divider()
-        st.subheader(f"📊 Cumplimiento anual vs presupuesto — {hoy_pr.year}")
-        venta_anual_pr = df_vf[df_vf["Año"].apply(limpiar_valor) == hoy_pr.year]["Venta_Diaria"].sum()
+        st.subheader(f"📊 Cumplimiento anual vs presupuesto — {año_pr}")
+        venta_anual_pr = df_vf[df_vf["Año"].apply(limpiar_valor) == año_pr]["Venta_Diaria"].sum()
         ppto_anual_pr  = 0.0
         if not df_pptof.empty:
-            ppto_año_pr = df_pptof[df_pptof["Año"].apply(limpiar_valor) == hoy_pr.year]
+            ppto_año_pr = df_pptof[df_pptof["Año"].apply(limpiar_valor) == año_pr]
             if not ppto_año_pr.empty:
                 ppto_anual_pr = ppto_año_pr["Meta_Total"].apply(limpiar_valor).sum()
         if ppto_anual_pr > 0:
             cumpl_anual_pr = min(venta_anual_pr / ppto_anual_pr * 100, 150)
             try:
-                _gauge(cumpl_anual_pr, 0, 150, f"Cumplimiento Presupuesto Anual {hoy_pr.year}", sufijo="%")
+                _gauge(cumpl_anual_pr, 0, 150, f"Cumplimiento Presupuesto Anual {año_pr}", sufijo="%")
             except Exception:
                 st.metric("Cumplimiento anual", f"{cumpl_anual_pr:.1f}%")
             ga1, ga2 = st.columns(2)
@@ -234,7 +240,7 @@ def show_dashboard_financiero():
         else:
             st.info("Configura el presupuesto anual en '📋 Presupuesto Anual' para ver el velocímetro anual.")
 
-    # ==================== TAB FOOD COST ====================
+    # ==================== TAB FOOD COST (sin cambios) ====================
     with tab_fc:
         st.subheader("🍽️ Food Cost & Margen por Producto")
         if df_bcf.empty:
@@ -315,7 +321,7 @@ def show_dashboard_financiero():
                 hide_index=True, use_container_width=True
             )
 
-    # ==================== TAB MERMA ====================
+    # ==================== TAB MERMA (selectores separados) ====================
     with tab_merma_d:
         st.subheader("📉 Análisis de Merma")
         if df_mermaf.empty:
@@ -379,7 +385,7 @@ def show_dashboard_financiero():
             cols_md_ok   = [c for c in cols_md_show if c in df_md_fil.columns]
             st.dataframe(df_md_fil[cols_md_ok].sort_values("Fecha", ascending=False), hide_index=True, use_container_width=True)
 
-    # ==================== TAB PUNTO DE EQUILIBRIO ====================
+    # ==================== TAB PUNTO DE EQUILIBRIO (selectores separados) ====================
     with tab_pe:
         st.subheader("⚖️ Punto de Equilibrio Mensual")
         hoy_pe     = ahora_hermosillo().date()
@@ -482,7 +488,7 @@ def show_dashboard_financiero():
             else:
                 st.info("Sin gastos registrados para este período en el módulo de Gastos.")
 
-    # ==================== NUEVA PESTAÑA: TABLAS COMPARATIVAS ====================
+    # ==================== TABLAS COMPARATIVAS (completa) ====================
     with tab_tablas:
         st.subheader("📋 Tablas Comparativas por Canal")
 
@@ -652,7 +658,7 @@ def show_dashboard_financiero():
         df_resumen = pd.DataFrame(resumen_canal)
         st.dataframe(df_resumen, hide_index=True, use_container_width=True)
 
-        # Captura de metas de canales adicionales (opcional expander)
+        # Captura de metas de canales adicionales
         st.divider()
         with st.expander("⚙️ Ajustar metas mensuales de canales adicionales", expanded=False):
             st.markdown("Actualiza las metas de Coffee Station y Noble To Go para el año actual. Se guardan en la hoja Presupuesto.")
