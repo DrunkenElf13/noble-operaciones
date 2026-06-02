@@ -34,7 +34,6 @@ from paginas.gastos import show_gastos
 from paginas.presupuesto import show_presupuesto
 from paginas.base_costos import show_base_costos
 from paginas.merma import show_merma
-from paginas.canales import show_canales
 from paginas.dashboard_financiero import show_dashboard_financiero
 from paginas.calendario import show_calendario
 
@@ -107,8 +106,6 @@ elif pagina == "BaseCostos":
     if tiene_permiso("BaseCostos"): show_base_costos()
 elif pagina == "RegistrarMerma":
     if tiene_permiso("RegistrarMerma"): show_merma()
-elif pagina == "CanalesVenta":
-    if tiene_permiso("CanalesVenta"): show_canales()
 elif pagina == "DashboardFinanciero":
     if tiene_permiso("DashboardFinanciero"): show_dashboard_financiero()
 elif pagina == "Calendario":
