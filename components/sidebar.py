@@ -55,7 +55,6 @@ def render_sidebar(cambiar_pagina):
         if st.button("🧾 Base de Costos", use_container_width=True): cambiar_pagina("BaseCostos")
         if st.button("📉 Registrar Merma", use_container_width=True): cambiar_pagina("RegistrarMerma")
         if st.button("📊 Dashboard Financiero", use_container_width=True): cambiar_pagina("DashboardFinanciero")
-        if st.button("🛒 Canales de Venta", use_container_width=True): cambiar_pagina("CanalesVenta")
         st.divider()
         st.write("**📅 Calendario:**")
         if st.button("📅 Calendario", use_container_width=True): cambiar_pagina("Calendario")
@@ -185,7 +184,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                     av_pagina = st.multiselect("Mostrar en páginas:", 
                         ["Todas","Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas",
                          "ImportarVentas","RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma",
-                         "DashboardFinanciero","CanalesVenta","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"],
+                         "DashboardFinanciero","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"],
                         default=["Todas"])
                     if st.form_submit_button("📢 Publicar aviso", use_container_width=True):
                         if not av_titulo.strip() or not av_msg.strip():
@@ -243,7 +242,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                 st.write("Asigna qué páginas puede ver cada rol.")
                 all_pages = ["Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas","ImportarVentas",
                              "RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma","DashboardFinanciero",
-                             "CanalesVenta","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"]
+                             "Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"]
                 ws_perm, err_perm = safe_worksheet(sh, "Permisos")
                 if err_perm:
                     try:
