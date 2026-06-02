@@ -1,3 +1,39 @@
+# ─── PALETA CORPORATIVA NOBLE ───
+COLOR_FONDO      = "#0f172a"   # slate-900
+COLOR_TARJETA    = "#1e293b"   # slate-800
+COLOR_ACENTO     = "#334155"   # slate-700
+COLOR_TEXTO      = "#f8fafc"   # slate-50
+COLOR_SUBTEXTO   = "#94a3b8"   # slate-400
+COLOR_BORDE      = "#475569"   # slate-600
+
+COLOR_EXITO      = "#22c55e"   # green-500
+COLOR_ADVERTENCIA= "#eab308"   # yellow-500
+COLOR_ERROR      = "#ef4444"   # red-500
+COLOR_INFO       = "#3b82f6"   # blue-500
+COLOR_DESTACADO  = "#f97316"   # orange-500
+
+# Colores por canal
+COLOR_NOBLE      = "#22c55e"
+COLOR_CS         = "#3b82f6"
+COLOR_NTG        = "#a855f7"
+
+PALETA_CANALES = {
+    "Noble": COLOR_NOBLE,
+    "Coffee Station": COLOR_CS,
+    "Noble To Go": COLOR_NTG,
+}
+
+PALETA_EVENTOS = {
+    "☕ Evento": COLOR_CS,
+    "🥤 Entrega": COLOR_NTG,
+    "Venta Noble": COLOR_NOBLE,
+    "Vacaciones": "#22c55e",
+    "Fecha importante": "#3b82f6",
+    "Adeudo": COLOR_ERROR,
+    "Otro": COLOR_SUBTEXTO,
+}
+
+# ─── CONSTANTES DE NEGOCIO (sin cambios lógicos) ───
 COLS_INSUMOS = [
     "Unidad de Negocio", "Nombre del Insumo", "Marca", "Proveedor", "Grupo",
     "Espacio_1", "Presentación de Compra", "Unidad de Medida",
@@ -51,7 +87,7 @@ COLS_CALENDARIO = [
     "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
     "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
     "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin",
-    "Origen",          # ← NUEVA COLUMNA: "manual", "Coffee Station", "Noble To Go", "Venta Noble"
+    "Origen",
 ]
 COLS_PERMISOS = ["Rol", "Pagina"]
 
