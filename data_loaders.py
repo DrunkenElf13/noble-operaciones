@@ -4,8 +4,8 @@ from sheets import safe_worksheet, sh
 from utils import normalizar_dataframe, limpiar_valor, normalizar_nombre
 from config import (COLS_INSUMOS, COLS_HISTORIAL, COLS_VENTAS, COLS_GASTOS,
                     COLS_PRESUPUESTO, COLS_BASE_COSTOS, COLS_MERMA,
-                    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_CANALES_CONFIG,
-                    COLS_AVISOS, COLS_CRITICAS_INSUMOS, COLS_CRITICAS_HISTORIAL)
+                    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_AVISOS,
+                    COLS_CRITICAS_INSUMOS, COLS_CRITICAS_HISTORIAL)
 
 @st.cache_data(ttl=30)
 def cargar_datos_integrales():
@@ -209,25 +209,6 @@ def cargar_recetas():
     except Exception as e:
         st.warning(f"Error cargando recetas: {e}")
         return pd.DataFrame(columns=COLS_RECETAS)
-
-@st.cache_data(ttl=60)
-def cargar_config_canales():
-    if sh is None:
-        return pd.DataFrame(columns=COLS_CANALES_CONFIG)
-    ws, err = safe_worksheet(sh, "Config_Canales")
-    if err:
-        return pd.DataFrame(columns=COLS_CANALES_CONFIG)
-    try:
-        data = ws.get_all_values()
-        if len(data) < 2:
-            return pd.DataFrame(columns=COLS_CANALES_CONFIG)
-        df = pd.DataFrame(data[1:], columns=data[0])
-        for col in COLS_CANALES_CONFIG:
-            if col not in df.columns:
-                df[col] = ""
-        return df
-    except Exception:
-        return pd.DataFrame(columns=COLS_CANALES_CONFIG)
 
 @st.cache_data(ttl=30)
 def cargar_merma():
