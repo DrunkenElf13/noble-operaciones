@@ -21,6 +21,12 @@ COLORES_TIPO = {
     "📦 Entrega Noble To Go": "#9B59B6",
 }
 
+ICONOS_TIPO = {
+    "Vacaciones": "🏖️",
+    "Fecha importante": "📌",
+    "Adeudo": "⚠️",
+}
+
 PALETA_COLORES = {
     "🔵 Azul": "#4A90D9",
     "🟣 Morado": "#9B59B6",
@@ -40,6 +46,8 @@ def show_calendario():
         st.session_state.cal_mes = hoy.month
     if "cal_año" not in st.session_state:
         st.session_state.cal_año = hoy.year
+    if "dia_seleccionado" not in st.session_state:
+        st.session_state.dia_seleccionado = hoy.date()
 
     col_anio, col_mes, col_btn = st.columns([1,1,2])
     with col_anio:
@@ -103,15 +111,22 @@ def show_calendario():
                 cols[i].markdown("")
                 continue
 
-            # Número del día (solo texto)
-            cols[i].markdown(f"**{dia.day}**")
+            # Destacar día seleccionado con borde
+            if dia == st.session_state.dia_seleccionado:
+                estilo_dia = "border: 2px solid #4A90D9; border-radius: 4px; padding: 2px;"
+            else:
+                estilo_dia = ""
 
-            eventos_dia = [e for e in eventos if e["fecha"].date() == dia]  # dia ya es date, no necesita .date()
+            # Número del día clickeable para seleccionar
+            if cols[i].button(str(dia.day), key=f"dia_{dia.day}_{dia.month}", help="Ver detalles"):
+                st.session_state.dia_seleccionado = dia
+                st.rerun()
+
+            eventos_dia = [e for e in eventos if e["fecha"].date() == dia]
             ventas_noble = [e for e in eventos_dia if e["tipo_evento"] == "Venta Noble"]
             otros = [e for e in eventos_dia if e["tipo_evento"] != "Venta Noble"]
             total_noble = sum(e["total_cotizado"] for e in ventas_noble)
 
-            # Cintillo verde de venta Noble (HTML puro, solo visual)
             if total_noble > 0:
                 meta = ventas_noble[0].get("meta_diaria", 145000/26) if ventas_noble else 145000/26
                 pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
@@ -131,16 +146,44 @@ def show_calendario():
                     unsafe_allow_html=True
                 )
 
-            # Etiquetas de otros eventos (máximo 2)
-            for ev in otros[:2]:
+            # Mostrar hasta 2 eventos con íconos y colores
+            for idx, ev in enumerate(otros[:2]):
                 color = ev.get("color", "#AAAAAA")
-                titulo = ev["titulo"][:20]
+                tipo = ev["tipo_evento"]
+                icono = ICONOS_TIPO.get(tipo, "")
+                titulo = ev["titulo"][:22]
+                texto = f"{icono} {titulo}" if icono else titulo
+                # Tooltip con más info
+                tooltip = f"{tipo}: {ev['titulo']}\nCliente: {ev.get('cliente','')}\n${ev['total_cotizado']:,.2f}"
                 cols[i].markdown(
-                    f"<div style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px; color:#111;'>{titulo}</div>",
+                    f"<div title='{tooltip}' style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px; color:#111;'>{texto}</div>",
                     unsafe_allow_html=True
                 )
             if len(otros) > 2:
                 cols[i].markdown(f"<small>+{len(otros)-2} más</small>", unsafe_allow_html=True)
+
+    # ────── Panel de día seleccionado ──────
+    st.divider()
+    st.subheader(f"📌 Detalle del {st.session_state.dia_seleccionado.strftime('%d/%m/%Y')}")
+    eventos_dia_sel = [e for e in eventos if e["fecha"].date() == st.session_state.dia_seleccionado]
+    if eventos_dia_sel:
+        for ev in eventos_dia_sel:
+            with st.container():
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    st.markdown(
+                        f"<div style='width:20px;height:20px;background-color:{ev.get('color', '#AAAAAA')};border-radius:4px;'></div>",
+                        unsafe_allow_html=True
+                    )
+                with col2:
+                    st.write(f"**{ev['tipo_evento']}**: {ev['titulo']}")
+                    st.caption(f"Cliente: {ev.get('cliente','')} | ${ev['total_cotizado']:,.2f}")
+                    if ev.get("adeudo", 0) > 0:
+                        st.caption(f"Adeudo: ${ev['adeudo']:,.2f}")
+                    if ev.get("notas"):
+                        st.caption(f"Notas: {ev['notas']}")
+    else:
+        st.info("Sin eventos para este día.")
 
     st.divider()
     st.subheader("📋 Eventos del mes")
@@ -151,20 +194,36 @@ def show_calendario():
             for ev in eventos_filtrados:
                 id_base = ev["id"].split("_dia_")[0].split("_entrega")[0]
                 if id_base not in eventos_unicos:
-                    ev_copia = ev.copy()
-                    if ev.get("fecha_fin") and ev["fecha_fin"] != ev["fecha"].strftime("%Y-%m-%d"):
-                        ev_copia["titulo"] = f"{ev['titulo']} (hasta {ev['fecha_fin']})"
-                    eventos_unicos[id_base] = ev_copia
-            df_eventos = pd.DataFrame(list(eventos_unicos.values()))
-            df_eventos["fecha_str"] = df_eventos["fecha"].dt.strftime("%d/%m/%Y")
-            cols_show = ["fecha_str", "tipo_evento", "titulo", "cliente", "total_cotizado", "adeudo", "anticipo", "ubicacion"]
-            df_display = df_eventos[cols_show].sort_values("fecha_str")
+                    eventos_unicos[id_base] = ev
+
+            df_lista = []
+            for ev in eventos_unicos.values():
+                fecha_str = ev["fecha"].strftime("%d/%m/%Y")
+                fecha_entrega = ev.get("fecha_entrega", "")
+                fecha_entrega_dt = ev.get("fecha_entrega_dt")
+                if fecha_entrega_dt and fecha_entrega_dt.date() != ev["fecha"].date():
+                    fecha_entrega_mostrar = fecha_entrega_dt.strftime("%d/%m/%Y")
+                else:
+                    fecha_entrega_mostrar = ""
+                df_lista.append({
+                    "fecha_str": fecha_str,
+                    "tipo_evento": ev["tipo_evento"],
+                    "titulo": ev["titulo"],
+                    "cliente": ev.get("cliente", ""),
+                    "total_cotizado": ev["total_cotizado"],
+                    "adeudo": ev.get("adeudo", 0),
+                    "anticipo": ev.get("anticipo", 0),
+                    "fecha_entrega": fecha_entrega_mostrar,
+                    "ubicacion": ev.get("ubicacion", ""),
+                })
+            df_display = pd.DataFrame(df_lista).sort_values("fecha_str")
             st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
             st.info("No hay eventos este mes (solo ventas regulares).")
     else:
         st.info("No hay eventos este mes.")
 
+    # ────── Formulario nuevo evento manual ──────
     st.divider()
     with st.expander("➕ Nuevo evento manual (no ventas)", expanded=False):
         with st.form("f_evento", clear_on_submit=True):
@@ -213,6 +272,7 @@ def show_calendario():
                         "responsable": st.session_state.current_user,
                         "anticipo": anticipo_ev,
                         "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_ev else "",
+                        "origen": "manual",
                     }
                     ok, msg = agregar_evento(datos)
                     if ok:
@@ -222,6 +282,7 @@ def show_calendario():
                     else:
                         st.error(msg)
 
+    # ────── Edición de evento (si hay uno en edición) ──────
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
         st.subheader(f"Editando: {ev['titulo']}")
@@ -271,6 +332,7 @@ def show_calendario():
                         "responsable": st.session_state.current_user,
                         "anticipo": anticipo_ev,
                         "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_ev else "",
+                        "origen": ev.get("origen", "manual"),
                     }
                     ok, msg = actualizar_evento(ev["id"], datos)
                     if ok:
@@ -285,9 +347,10 @@ def show_calendario():
                     del st.session_state["editando_evento"]
                     st.rerun()
 
+    # ────── Registrar abono ──────
     st.subheader("💵 Registrar abono")
     with st.expander("Añadir abono a un evento con adeudo"):
-        eventos_con_adeudo = [e for e in eventos if e.get("adeudo", 0) > 0 and e["origen"] == "calendario"]
+        eventos_con_adeudo = [e for e in eventos if e.get("adeudo", 0) > 0 and e["origen"] != "Venta Noble"]
         if eventos_con_adeudo:
             opciones_abono = {f"{e['fecha'].strftime('%d/%m/%Y')} - {e['titulo']} (Adeudo: ${e['adeudo']:,.2f})": e for e in eventos_con_adeudo}
             sel_abono = st.selectbox("Evento", list(opciones_abono.keys()))
