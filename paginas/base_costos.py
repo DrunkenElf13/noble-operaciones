@@ -4,7 +4,7 @@ import time
 from data_loaders import cargar_costos_insumos, cargar_recetas, cargar_datos_integrales
 from sheets import _asegurar_hoja_costos_insumos, _asegurar_hoja_recetas, append_rows_con_retry
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
-from config import UNIDADES_MED
+from config import UNIDADES_MED, COLOR_TARJETA, COLOR_SUBTEXTO, COLOR_EXITO
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
@@ -79,16 +79,16 @@ def show_base_costos():
     if not tiene_permiso("BaseCostos"):
         st.error("No tienes permiso para esta página.")
         st.stop()
-    st.title("🧾 Base de Costos y Recetas")
+    st.title("Base de Costos y Recetas")
     mostrar_avisos("BaseCostos")
     if not st.session_state.auth_status:
-        st.error("🔒 Autenticación requerida.")
+        st.error("Autenticación requerida.")
         st.stop()
 
-    tab_costos, tab_recetas = st.tabs(["💰 Costos de Insumos", "🍽️ Recetas"])
+    tab_costos, tab_recetas = st.tabs(["Costos de Insumos", "Recetas"])
 
     with tab_costos:
-        st.subheader("Registro de Costo de Insumos (desde catálogo)")
+        st.subheader("Registro de Costo de Insumos")
         df_ci = cargar_costos_insumos()
         df_cat = cargar_datos_integrales()[0]
         if df_cat.empty:
@@ -96,21 +96,25 @@ def show_base_costos():
         else:
             with st.form("f_costo_insumo", clear_on_submit=True):
                 insumo_opts = sorted(df_cat["Nombre del Insumo"].dropna().unique())
-                insumo_sel = st.selectbox("Selecciona el Insumo:", insumo_opts)
+                insumo_sel = st.selectbox("Insumo", insumo_opts)
                 mask_cat = df_cat["Nombre del Insumo"] == insumo_sel
                 info_cat = {}
                 if mask_cat.any():
                     info_cat = df_cat[mask_cat].iloc[0].to_dict()
-                marca_ci = st.text_input("Marca:", value=str(info_cat.get("Marca","")))
-                prov_ci  = st.text_input("Proveedor:", value=str(info_cat.get("Proveedor","")))
-                um_ci    = st.selectbox("Unidad de Medida:", UNIDADES_MED, index=UNIDADES_MED.index(str(info_cat.get("Unidad de Medida","pz")).lower()) if str(info_cat.get("Unidad de Medida","pz")).lower() in UNIDADES_MED else 0)
-                pres_ci  = st.text_input("Presentación:", value=str(info_cat.get("Presentación de Compra","")))
-                costo_pres = st.number_input("Costo de la Presentación ($):", min_value=0.0, step=0.5, value=0.0)
-                costo_unit = st.number_input("Costo por Unidad ($):", min_value=0.0, step=0.001, value=0.0,
+                marca_ci = st.text_input("Marca", value=str(info_cat.get("Marca","")))
+                prov_ci  = st.text_input("Proveedor", value=str(info_cat.get("Proveedor","")))
+                um_ci    = st.selectbox("Unidad de Medida", UNIDADES_MED,
+                                        index=UNIDADES_MED.index(str(info_cat.get("Unidad de Medida","pz")).lower())
+                                        if str(info_cat.get("Unidad de Medida","pz")).lower() in UNIDADES_MED else 0)
+                pres_ci  = st.text_input("Presentación", value=str(info_cat.get("Presentación de Compra","")))
+                costo_pres = st.number_input("Costo de la Presentación ($)", min_value=0.0, step=0.5, value=0.0)
+                costo_unit = st.number_input("Costo por Unidad ($)", min_value=0.0, step=0.001, value=0.0,
                                              help="Costo por gramo, mililitro, pieza, etc.")
-                unidad_costo = st.text_input("Unidad de Costo:", placeholder="Ej: $/gr, $/ml, $/pz")
-                resp_ci = st.selectbox("Responsable:", st.session_state.responsables, index=st.session_state.responsables.index(st.session_state.current_user) if st.session_state.current_user in st.session_state.responsables else 0)
-                if st.form_submit_button("💾 Guardar Costo"):
+                unidad_costo = st.text_input("Unidad de Costo", placeholder="Ej: $/gr, $/ml, $/pz")
+                resp_ci = st.selectbox("Responsable", st.session_state.responsables,
+                                       index=st.session_state.responsables.index(st.session_state.current_user)
+                                       if st.session_state.current_user in st.session_state.responsables else 0)
+                if st.form_submit_button("Guardar Costo", width="stretch"):
                     if costo_pres <= 0:
                         st.error("El costo de la presentación debe ser mayor a cero.")
                     else:
@@ -128,7 +132,7 @@ def show_base_costos():
                                 st.rerun()
                             else:
                                 st.error(msg)
-        st.subheader("📋 Costos registrados")
+        st.subheader("Costos registrados")
         if not df_ci.empty:
             df_ci_latest = df_ci.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
             st.dataframe(df_ci_latest, hide_index=True, width="stretch")
@@ -136,7 +140,7 @@ def show_base_costos():
             st.info("Sin costos registrados aún.")
 
     with tab_recetas:
-        st.subheader("📋 Editor de Recetas (Visual / Bulk)")
+        st.subheader("Editor de Recetas")
         df_rec = cargar_recetas()
         df_ci2 = cargar_costos_insumos()
         df_cat2 = cargar_datos_integrales()[0]
@@ -148,14 +152,10 @@ def show_base_costos():
         else:
             insumos_con_costo = sorted(df_cat2["Nombre del Insumo"].dropna().unique()) if not df_cat2.empty else []
 
-        # ── IMPORTACIÓN ──
-        with st.expander("📥 Importar recetas desde Excel", expanded=False):
-            st.markdown("""
-            **Sube un archivo Excel (.xlsx) con las columnas:**  
-            `Receta`, `Ingrediente`, `Cantidad`, `Unidad` (opcional) y `Precio_Venta` (opcional).  
-            Si no incluyes precio de venta, se usará el valor por defecto que establezcas abajo.
-            """)
-            precio_default_imp = st.number_input("Precio de venta por defecto ($):", min_value=0.0, step=1.0, value=0.0)
+        # Importación
+        with st.expander("Importar recetas desde Excel"):
+            st.markdown("Columnas esperadas: `Receta`, `Ingrediente`, `Cantidad`, `Unidad` (opcional), `Precio_Venta` (opcional).")
+            precio_default_imp = st.number_input("Precio de venta por defecto ($)", min_value=0.0, step=1.0, value=0.0)
             archivo_imp = st.file_uploader("Selecciona el archivo Excel", type=["xlsx"], key="import_recetas")
             if archivo_imp is not None:
                 try:
@@ -167,7 +167,7 @@ def show_base_costos():
                     else:
                         ingredientes_unicos = sorted(df_import[col_ing].dropna().unique())
                         st.info(f"Se encontraron {len(ingredientes_unicos)} ingredientes distintos en el archivo.")
-                        st.write("**Asigna cada ingrediente del archivo a un insumo del catálogo:**")
+                        st.write("Asigna cada ingrediente del archivo a un insumo del catálogo:")
                         mapeo = {}
                         for ing in ingredientes_unicos:
                             opciones = ["(Omitir)"] + insumos_con_costo
@@ -177,15 +177,10 @@ def show_base_costos():
                                 if normalizar_nombre(cat_ing) == ing_norm:
                                     default_idx = i + 1
                                     break
-                            seleccion = st.selectbox(
-                                f"'{ing}' →",
-                                opciones,
-                                index=default_idx,
-                                key=f"map_{ing}"
-                            )
+                            seleccion = st.selectbox(f"'{ing}' →", opciones, index=default_idx, key=f"map_{ing}")
                             if seleccion != "(Omitir)":
                                 mapeo[ing] = seleccion
-                        if st.button("🔍 Previsualizar recetas importadas"):
+                        if st.button("Previsualizar recetas importadas"):
                             if not mapeo:
                                 st.warning("Asigna al menos un ingrediente.")
                             else:
@@ -197,7 +192,7 @@ def show_base_costos():
                 except Exception as e:
                     st.error(f"Error al leer el archivo: {e}")
             if "import_preview" in st.session_state and st.session_state["import_preview"] is not None:
-                if st.button("💾 GUARDAR TODAS LAS RECETAS IMPORTADAS", type="primary"):
+                if st.button("Guardar todas las recetas importadas", width="stretch", type="primary"):
                     ws_rec, err = _asegurar_hoja_recetas()
                     if err:
                         st.error(err)
@@ -215,17 +210,17 @@ def show_base_costos():
                         else:
                             st.error(msg)
 
-        # ── EDITOR MANUAL ──
+        # Editor manual
         st.divider()
-        st.subheader("✏️ Editor manual de receta")
+        st.subheader("Editor manual de receta")
         recetas_existentes = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
         col1, col2 = st.columns(2)
         with col1:
-            modo_receta = st.radio("Modo:", ["Nueva receta", "Editar receta existente"])
+            modo_receta = st.radio("Modo", ["Nueva receta", "Editar receta existente"])
         with col2:
             if modo_receta == "Editar receta existente" and recetas_existentes:
-                receta_edit_sel = st.selectbox("Receta a editar:", recetas_existentes)
-                if st.button("📂 Cargar receta"):
+                receta_edit_sel = st.selectbox("Receta a editar", recetas_existentes)
+                if st.button("Cargar receta"):
                     df_edit = df_rec[df_rec["Receta"] == receta_edit_sel]
                     if not df_edit.empty:
                         nuevos_ingredientes = []
@@ -249,7 +244,7 @@ def show_base_costos():
                         st.session_state.receta_original = receta_edit_sel
                         st.rerun()
             else:
-                if st.button("🧹 Nueva receta (limpiar)"):
+                if st.button("Nueva receta (limpiar)"):
                     st.session_state.ingredientes_receta = []
                     st.session_state.receta_nombre = ""
                     st.session_state.receta_precio = 0.0
@@ -259,23 +254,23 @@ def show_base_costos():
 
         col_r1, col_r2, col_r3 = st.columns(3)
         with col_r1:
-            nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
+            nombre_receta = st.text_input("Nombre de la receta", value=st.session_state.receta_nombre, key="receta_nombre_input")
         with col_r2:
-            precio_venta = st.number_input("Precio de Venta ($):", min_value=0.0, step=1.0, value=st.session_state.receta_precio, key="receta_precio_input")
+            precio_venta = st.number_input("Precio de Venta ($)", min_value=0.0, step=1.0, value=st.session_state.receta_precio, key="receta_precio_input")
         with col_r3:
-            factor = st.number_input("Factor de precio sugerido:", min_value=0.1, step=0.1, value=st.session_state.receta_factor, key="receta_factor_input")
+            factor = st.number_input("Factor de precio sugerido", min_value=0.1, step=0.1, value=st.session_state.receta_factor, key="receta_factor_input")
         st.session_state.receta_nombre = nombre_receta
         st.session_state.receta_precio = precio_venta
         st.session_state.receta_factor = factor
 
-        with st.expander("➕ Agregar ingrediente a la receta", expanded=(len(st.session_state.ingredientes_receta) == 0)):
+        with st.expander("Agregar ingrediente a la receta", expanded=(len(st.session_state.ingredientes_receta) == 0)):
             insumo_opt = insumos_con_costo
             if insumo_opt:
                 col_i1, col_i2, col_i3 = st.columns(3)
                 with col_i1:
-                    insumo_add = st.selectbox("Ingrediente:", insumo_opt, key="add_ing")
+                    insumo_add = st.selectbox("Ingrediente", insumo_opt, key="add_ing")
                 with col_i2:
-                    cantidad_add = st.number_input("Cantidad:", min_value=0.0, step=0.1, key="add_cant")
+                    cantidad_add = st.number_input("Cantidad", min_value=0.0, step=0.1, key="add_cant")
                 costo_uni_add = 0.0
                 unidad_add = "pz"
                 if not df_ci2.empty:
@@ -302,7 +297,7 @@ def show_base_costos():
             else:
                 st.warning("No hay insumos con costo registrado. Ve a 'Costos de Insumos' primero.")
 
-        st.subheader("📋 Ingredientes de la receta (edita directamente)")
+        st.subheader("Ingredientes de la receta")
         if st.session_state.ingredientes_receta:
             df_ingredientes = pd.DataFrame(st.session_state.ingredientes_receta)
             for col in ["insumo","cantidad","unidad","costo_unit","total"]:
@@ -312,11 +307,7 @@ def show_base_costos():
             edited_df = st.data_editor(
                 df_ingredientes,
                 column_config={
-                    "insumo": st.column_config.SelectboxColumn(
-                        "Ingrediente",
-                        options=insumos_con_costo,
-                        required=True
-                    ),
+                    "insumo": st.column_config.SelectboxColumn("Ingrediente", options=insumos_con_costo, required=True),
                     "cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, step=0.1),
                     "unidad": st.column_config.SelectboxColumn("Unidad", options=UNIDADES_MED),
                     "costo_unit": st.column_config.NumberColumn("Costo Unitario", min_value=0.0, step=0.001),
@@ -339,7 +330,7 @@ def show_base_costos():
             c3.metric("Food Cost %", f"{fc_pct:.1f}%")
             c4.metric("Margen Bruto", f"${st.session_state.receta_precio - costo_total:,.2f}" if st.session_state.receta_precio > 0 else "—")
 
-            if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", width="stretch"):
+            if st.button("Guardar receta completa", width="stretch", type="primary"):
                 nombre_final = st.session_state.receta_nombre.strip()
                 if not nombre_final:
                     st.error("Escribe el nombre de la receta en el formulario superior.")
@@ -393,5 +384,5 @@ def show_base_costos():
         else:
             st.info("No hay ingredientes. Usa el botón 'Agregar a la receta' para comenzar.")
         if not df_rec.empty:
-            st.subheader("📋 Recetas registradas")
+            st.subheader("Recetas registradas")
             st.dataframe(df_rec, hide_index=True, width="stretch")
