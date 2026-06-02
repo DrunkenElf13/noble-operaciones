@@ -119,7 +119,17 @@ def _asegurar_hoja_merma():
 
 def _asegurar_hoja_calendario():
     try:
-        return sh.worksheet("Calendario"), None
+        ws = sh.worksheet("Calendario")
+        # Verificar que los encabezados estén completos
+        try:
+            encabezados_actuales = ws.row_values(1)
+            if len(encabezados_actuales) < len(COLS_CALENDARIO):
+                # Actualizar la fila de encabezados sin borrar datos
+                ws.update(range_name="A1:T1", values=[COLS_CALENDARIO])
+        except Exception:
+            # Si no se puede leer, actualizamos igual
+            ws.update(range_name="A1:T1", values=[COLS_CALENDARIO])
+        return ws, None
     except gspread.exceptions.WorksheetNotFound:
         try:
             ws = sh.add_worksheet(title="Calendario", rows="1000", cols=str(len(COLS_CALENDARIO)))
@@ -135,19 +145,16 @@ def _asegurar_hoja_canal_ventas(nombre_canal: str):
     Solo escribe encabezados si la hoja está vacía (menos de 2 filas)."""
     ws, err = safe_worksheet(sh, nombre_canal)
     if err:
-        # No existe, la creamos
         try:
             ws = sh.add_worksheet(title=nombre_canal, rows="1000", cols=str(len(COLS_CALENDARIO)))
             ws.append_row(COLS_CALENDARIO)
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja {nombre_canal}: {e}"
-    # Si ya existe, verificar si tiene datos (más de 1 fila). Si solo tiene encabezados o está vacía, normalizamos.
     try:
         valores = ws.get_all_values()
         if len(valores) < 2:
-            # Solo hay encabezados (o nada), sobrescribir para asegurar columnas correctas
-            ws.update(range_name="A1:S1", values=[COLS_CALENDARIO])
+            ws.update(range_name="A1:T1", values=[COLS_CALENDARIO])
     except Exception:
-        pass  # Si no podemos verificar, no tocamos para no romper nada
+        pass
     return ws, None
