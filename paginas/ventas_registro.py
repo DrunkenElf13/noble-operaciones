@@ -42,8 +42,8 @@ def _construir_fila_venta(
         tickets_pos, tickets_uber, tickets_rappi, total_tix,
         tix_prom, meta_mensual, dias_habiles, meta_diaria,
         responsable, notas, canal,
-        0.0,  # Adeudo siempre 0 para Noble POS
-        0.0,  # Anticipo siempre 0 para Noble POS
+        0.0,  # Adeudo
+        0.0,  # Anticipo
     ]
 
 def _construir_fila_venta_canal(datos_evento: dict, id_evento: str):
@@ -68,12 +68,11 @@ def _construir_fila_venta_canal(datos_evento: dict, id_evento: str):
         datos_evento.get("responsable", ""),
         datos_evento.get("anticipo", 0),
         datos_evento.get("fecha_fin", ""),
+        datos_evento.get("origen", "manual"),  # columna origen
     ]
 
 def _parsear_linea_masiva(linea: str) -> dict | None:
-    """Convierte una línea de texto en un dict con los datos del evento.
-    Formato esperado: Fecha\tTotal_Cotizado\tCliente\tFecha_Entrega\tMetodo_Pago
-    Faltantes se dejan vacíos."""
+    """Convierte una línea de texto en un dict con los datos del evento."""
     partes = [p.strip() for p in linea.split("\t")]
     if len(partes) < 2:
         return None
@@ -98,7 +97,7 @@ def _parsear_linea_masiva(linea: str) -> dict | None:
         try:
             fecha_entrega = datetime.strptime(fecha_entrega_str, "%Y-%m-%d").date()
         except ValueError:
-            fecha_entrega = fecha  # si no se entiende, usamos la misma fecha
+            fecha_entrega = fecha
     else:
         fecha_entrega = fecha
 
@@ -287,36 +286,28 @@ def show_ventas():
                     "responsable": st.session_state.current_user,
                     "anticipo": anticipo_ev,
                     "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_venta else "",
+                    "origen": canal_sel,  # "Coffee Station" o "Noble To Go"
                 }
 
-                # 1. Guardar en la hoja del canal
-                ws_canal, err_canal = _asegurar_hoja_canal_ventas(canal_sel)
-                if err_canal:
-                    st.error(err_canal)
+                # Guardar en Calendario y hoja de canal (ahora lo hace agregar_evento)
+                ok_cal, msg_cal = agregar_evento(datos_evento, id_unico)
+                if not ok_cal:
+                    st.error(f"Error al guardar en Calendario: {msg_cal}")
                     st.stop()
-                fila = _construir_fila_venta_canal(datos_evento, id_unico)
-                ok_canal, msg_canal = append_rows_con_retry(ws_canal, [fila])
-                if not ok_canal:
-                    st.error(f"Error al guardar en hoja {canal_sel}: {msg_canal}")
-                    st.stop()
+
                 from data_loaders import cargar_todas_ventas
                 cargar_todas_ventas.clear()
 
-                # 2. Guardar en Calendario
-                datos_evento_cal = datos_evento.copy()
-                ok_cal, msg_cal = agregar_evento(datos_evento_cal, id_unico)
-                if not ok_cal:
-                    st.error(f"⚠️ Venta guardada en {canal_sel} pero falló el registro en Calendario: {msg_cal}. Revisa manualmente.")
-                    st.stop()
-
+                # Si hay fecha de entrega distinta, crear evento de entrega
                 if fecha_entr_ev != fecha_venta:
-                    datos_evento_entrega = datos_evento.copy()
-                    datos_evento_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
-                    datos_evento_entrega["tipo"] = f"📦 Entrega {canal_sel}"
-                    datos_evento_entrega["titulo"] = f"Entrega {canal_sel}: {cliente_ev}" if cliente_ev else f"Entrega {canal_sel}"
-                    ok_ent, msg_ent = agregar_evento(datos_evento_entrega, id_unico + "_entrega")
+                    datos_entrega = datos_evento.copy()
+                    datos_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
+                    datos_entrega["tipo"] = f"📦 Entrega {canal_sel}"
+                    datos_entrega["titulo"] = f"Entrega {canal_sel}: {cliente_ev}" if cliente_ev else f"Entrega {canal_sel}"
+                    datos_entrega["origen"] = canal_sel
+                    ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
                     if not ok_ent:
-                        st.warning(f"⚠️ Venta guardada pero falló el registro de la entrega en Calendario: {msg_ent}")
+                        st.warning(f"⚠️ Venta guardada pero falló el registro de la entrega: {msg_ent}")
 
                 st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
                 time.sleep(0.5)
@@ -328,7 +319,7 @@ def show_ventas():
             **Formato esperado** (una línea por evento, columnas separadas por **tabulaciones**):  
             `Fecha  Total_Cotizado  Cliente  Fecha_Entrega  Método_de_Pago`  
             - **Fecha** y **Total_Cotizado** son obligatorios.  
-            - **Cliente**, **Fecha_Entrega** y **Método de Pago** son opcionales (se dejan vacíos si faltan).  
+            - **Cliente**, **Fecha_Entrega** y **Método de Pago** son opcionales.  
             - Ejemplo: `2026-01-17	5500	Fernanda Federico	2026-01-17	Transferencia`
             """)
             texto_masivo = st.text_area("Pega aquí tus líneas:", height=200, key="texto_masivo")
@@ -341,13 +332,6 @@ def show_ventas():
                     procesadas = 0
                     fallas = 0
                     mensajes_fallo = []
-                    ws_canal_m, err_canal_m = _asegurar_hoja_canal_ventas(canal_masivo)
-                    if err_canal_m:
-                        st.error(err_canal_m)
-                        st.stop()
-                    # Preparamos todas las filas para el canal y los eventos para Calendario
-                    filas_para_canal = []
-                    eventos_para_calendario = []
                     for linea in lineas:
                         datos_parseados = _parsear_linea_masiva(linea)
                         if datos_parseados is None:
@@ -377,43 +361,34 @@ def show_ventas():
                             "responsable": st.session_state.current_user,
                             "anticipo": 0.0,
                             "fecha_fin": "",
+                            "origen": canal_masivo,
                         }
-                        filas_para_canal.append(_construir_fila_venta_canal(datos_evento, id_unico))
-                        eventos_para_calendario.append((datos_evento, id_unico))
+                        ok_cal, msg_cal = agregar_evento(datos_evento, id_unico)
+                        if not ok_cal:
+                            fallas += 1
+                            mensajes_fallo.append(f"Error al guardar en Calendario (ID {id_unico}): {msg_cal}")
+                            continue
+                        # Entregas si fecha distinta
+                        fecha_ev = datetime.strptime(datos_parseados["fecha"], "%Y-%m-%d").date()
+                        fecha_ent = datetime.strptime(datos_parseados["fecha_entrega"], "%Y-%m-%d").date()
+                        if fecha_ent != fecha_ev:
+                            datos_entrega = datos_evento.copy()
+                            datos_entrega["fecha"] = datos_parseados["fecha_entrega"]
+                            datos_entrega["tipo"] = f"📦 Entrega {canal_masivo}"
+                            datos_entrega["titulo"] = f"Entrega {canal_masivo}: {datos_parseados['cliente']}" if datos_parseados["cliente"] else f"Entrega {canal_masivo}"
+                            ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
+                            if not ok_ent:
+                                mensajes_fallo.append(f"Error al guardar entrega (ID {id_unico}_entrega): {msg_ent}")
                         procesadas += 1
 
-                    if not filas_para_canal:
-                        st.warning("No se encontraron líneas válidas para procesar.")
+                    from data_loaders import cargar_todas_ventas
+                    cargar_todas_ventas.clear()
+
+                    if procesadas > 0:
+                        st.success(f"✅ {procesadas} líneas procesadas correctamente.")
+                    if fallas > 0:
+                        st.warning(f"⚠️ {fallas} líneas no se pudieron procesar.")
                         for msg in mensajes_fallo:
                             st.caption(msg)
-                    else:
-                        # 1. Guardar todas las filas en la hoja del canal de una vez
-                        ok, msg = append_rows_con_retry(ws_canal_m, filas_para_canal)
-                        if not ok:
-                            st.error(f"Error al guardar en {canal_masivo}: {msg}")
-                            st.stop()
-                        # 2. Guardar en Calendario uno por uno
-                        cal_ok = 0
-                        cal_fallos = []
-                        for datos_ev, id_ev in eventos_para_calendario:
-                            ok_cal, msg_cal = agregar_evento(datos_ev, id_ev)
-                            if ok_cal:
-                                cal_ok += 1
-                            else:
-                                cal_fallos.append(f"ID {id_ev}: {msg_cal}")
-                                # Registrar también la entrega si corresponde, incluso si el principal falló? No, omitimos para no complicar.
-
-                        from data_loaders import cargar_todas_ventas
-                        cargar_todas_ventas.clear()
-
-                        if cal_fallos:
-                            st.warning(
-                                f"✅ {procesadas} líneas guardadas en {canal_masivo}, pero {len(cal_fallos)} eventos no se registraron en Calendario:\n" +
-                                "\n".join(cal_fallos)
-                            )
-                        else:
-                            st.success(f"✅ {procesadas} líneas procesadas y registradas en {canal_masivo} y Calendario.")
-                        if fallas > 0:
-                            st.info(f"Se omitieron {fallas} líneas por formato incorrecto.")
-                        time.sleep(0.5)
-                        st.rerun()
+                    time.sleep(0.5)
+                    st.rerun()
