@@ -131,7 +131,8 @@ def _asegurar_hoja_calendario():
         return None, f"Error accediendo a Calendario: {e}"
 
 def _asegurar_hoja_canal_ventas(nombre_canal: str):
-    """Crea o actualiza la hoja del canal con las columnas de Calendario."""
+    """Crea o actualiza la hoja del canal con las columnas de Calendario.
+    Solo escribe encabezados si la hoja está vacía (menos de 2 filas)."""
     ws, err = safe_worksheet(sh, nombre_canal)
     if err:
         # No existe, la creamos
@@ -141,9 +142,12 @@ def _asegurar_hoja_canal_ventas(nombre_canal: str):
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja {nombre_canal}: {e}"
-    # Si existe, SOBRESCRIBIR los encabezados para asegurar que coincidan
+    # Si ya existe, verificar si tiene datos (más de 1 fila). Si solo tiene encabezados o está vacía, normalizamos.
     try:
-        ws.update(range_name="A1:S1", values=[COLS_CALENDARIO])
-        return ws, None
-    except Exception as e:
-        return None, f"Error al actualizar hoja {nombre_canal}: {e}"
+        valores = ws.get_all_values()
+        if len(valores) < 2:
+            # Solo hay encabezados (o nada), sobrescribir para asegurar columnas correctas
+            ws.update(range_name="A1:S1", values=[COLS_CALENDARIO])
+    except Exception:
+        pass  # Si no podemos verificar, no tocamos para no romper nada
+    return ws, None
