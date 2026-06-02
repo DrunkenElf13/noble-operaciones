@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import re
 from sheets import safe_worksheet, sh
 from utils import normalizar_dataframe, limpiar_valor, normalizar_nombre
 from config import (COLS_INSUMOS, COLS_HISTORIAL, COLS_VENTAS, COLS_GASTOS,
@@ -257,14 +258,14 @@ def cargar_todas_ventas():
     """Lee las hojas Ventas, CoffeeStation y NobleToGo y las une, incluyendo Adeudo y Anticipo."""
     hojas = ["Ventas", "CoffeeStation", "NobleToGo"]
     dfs = []
+    debug_info = []  # almacenar información de diagnóstico
     for hoja in hojas:
         ws, err = safe_worksheet(sh, hoja)
         if ws:
             datos = ws.get_all_values()
             if len(datos) > 1:
                 df = pd.DataFrame(datos[1:], columns=datos[0])
-                # Si la hoja es CoffeeStation o NobleToGo y tiene columnas de Calendario,
-                # convertir Total_Cotizado en Venta_Diaria y extraer Adeudo/Anticipo
+                filas_original = len(df)
                 if hoja in ["CoffeeStation", "NobleToGo"]:
                     if "Total_Cotizado" in df.columns:
                         df["Venta_Diaria"] = df["Total_Cotizado"].apply(limpiar_valor)
@@ -275,37 +276,31 @@ def cargar_todas_ventas():
                             df[col] = df[col].apply(limpiar_valor)
                         else:
                             df[col] = 0.0
-                    # Extraer Mes y Año directamente del string de fecha (formato YYYY-MM-DD)
+                    # Extracción robusta de Mes y Año desde Fecha
                     if "Fecha" in df.columns:
-                        df["Fecha_str"] = df["Fecha"].astype(str).str.strip()
-                        # Extraer año y mes mediante split
-                        def _extraer_mes(fecha_str):
-                            try:
-                                partes = fecha_str.split("-")
-                                if len(partes) >= 2:
-                                    return int(partes[1])
-                                return 0
-                            except:
-                                return 0
-                        def _extraer_año(fecha_str):
-                            try:
-                                partes = fecha_str.split("-")
-                                if len(partes) >= 1:
-                                    return int(partes[0])
-                                return 0
-                            except:
-                                return 0
-                        df["Mes"] = df["Fecha_str"].apply(_extraer_mes).astype(str)
-                        df["Año"] = df["Fecha_str"].apply(_extraer_año).astype(str)
-                        df.drop(columns=["Fecha_str"], inplace=True)
+                        # Intentar con regex para YYYY-MM-DD
+                        def extraer_mes(fecha_str):
+                            m = re.search(r'(\d{4})-(\d{2})', str(fecha_str))
+                            if m:
+                                return m.group(2)
+                            return "0"
+                        def extraer_año(fecha_str):
+                            m = re.search(r'(\d{4})-(\d{2})', str(fecha_str))
+                            if m:
+                                return m.group(1)
+                            return "0"
+                        df["Mes"] = df["Fecha"].apply(extraer_mes)
+                        df["Año"] = df["Fecha"].apply(extraer_año)
+                        # Guardar info de las primeras fechas para debug
+                        if filas_original > 0:
+                            ejemplo_fecha = df["Fecha"].iloc[0]
+                            debug_info.append(f"{hoja}: {filas_original} filas. Ejemplo Fecha='{ejemplo_fecha}' → Mes={df['Mes'].iloc[0]}, Año={df['Año'].iloc[0]}")
                     else:
                         df["Mes"] = "0"
                         df["Año"] = "0"
-                    # Agregar columnas necesarias para COLS_VENTAS
                     for col in COLS_VENTAS:
                         if col not in df.columns:
                             df[col] = ""
-                    # Asignar nombre de canal correcto
                     df["Canal"] = "Coffee Station" if hoja == "CoffeeStation" else "Noble To Go"
                 else:  # Ventas (POS)
                     if "Canal" not in df.columns:
@@ -320,6 +315,14 @@ def cargar_todas_ventas():
                     if col not in df.columns:
                         df[col] = "" if col not in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi","Venta_Diaria","Tickets_POS","Tickets_Uber","Tickets_Rappi","Total_Tickets","Ticket_Promedio","Meta_Mensual","Dias_Habiles","Meta_Diaria","Adeudo","Anticipo"] else 0.0
                 dfs.append(df[COLS_VENTAS])
+            else:
+                debug_info.append(f"{hoja}: sin datos (solo encabezados)")
+        else:
+            debug_info.append(f"{hoja}: no se pudo leer la hoja")
+    
+    # Guardar debug_info en st.session_state para mostrarlo en dashboards si es necesario
+    st.session_state["debug_carga_ventas"] = debug_info
+
     if dfs:
         df_total = pd.concat(dfs, ignore_index=True)
         df_total["Fecha"] = pd.to_datetime(df_total["Fecha"], errors="coerce")
