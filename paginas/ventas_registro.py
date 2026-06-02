@@ -250,15 +250,9 @@ def show_ventas():
                 adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0)
                 anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0)
                 fecha_contr_ev = st.date_input("Fecha contratación", value=hoy)
-                fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy)
-
-                # Toggle para evento de varios días (CORRECTO)
-                es_rango = st.toggle("Evento de varios días", value=False)
-                if es_rango:
-                    fecha_fin_ev = st.date_input("Fecha fin", value=fecha_venta, min_value=fecha_venta)
-                else:
-                    fecha_fin_ev = fecha_venta  # sin rango
-
+                # La fecha del evento/entrega es la que se usará para el calendario
+                fecha_entr_ev = st.date_input("Fecha del evento/entrega", value=hoy,
+                                              help="Esta fecha se mostrará en el calendario")
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
             enviar = st.form_submit_button("💾 Guardar venta")
@@ -269,10 +263,13 @@ def show_ventas():
             else:
                 id_unico = str(uuid.uuid4())[:8]
                 titulo = cliente_ev.strip() if cliente_ev.strip() else "Evento sin cliente"
+                # Prefijo según canal
+                prefijo = "☕ Evento" if canal_sel == "Coffee Station" else "🥤 Entrega"
+                tipo_evento = "☕ Evento" if canal_sel == "Coffee Station" else "🥤 Entrega"
                 datos_evento = {
-                    "fecha": fecha_venta.strftime("%Y-%m-%d"),
-                    "tipo": "💰 Venta",
-                    "titulo": titulo,
+                    "fecha": fecha_entr_ev.strftime("%Y-%m-%d"),  # <-- fecha del evento/entrega
+                    "tipo": tipo_evento,
+                    "titulo": f"{prefijo} - {titulo}",
                     "cliente": cliente_ev,
                     "contacto": contacto_ev,
                     "ubicacion": ubicacion_ev,
@@ -281,13 +278,13 @@ def show_ventas():
                     "adeudo": adeudo_ev,
                     "metodo_pago": metodo_pago,
                     "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d"),
-                    "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d"),
+                    "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d"),  # redundante pero útil
                     "abonos": abonos_ev,
                     "notas": notas_ev,
                     "color": color_ev,
                     "responsable": st.session_state.current_user,
                     "anticipo": anticipo_ev,
-                    "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if es_rango and fecha_fin_ev != fecha_venta else "",
+                    "fecha_fin": "",  # no se usa para canales
                     "origen": canal_sel,
                 }
 
@@ -299,38 +296,13 @@ def show_ventas():
                 from data_loaders import cargar_todas_ventas
                 cargar_todas_ventas.clear()
 
-                # Si hay fecha de entrega distinta, crear evento de entrega SIN montos
-                if fecha_entr_ev != fecha_venta:
-                    datos_entrega = {
-                        "fecha": fecha_entr_ev.strftime("%Y-%m-%d"),
-                        "tipo": "📦 Entrega",
-                        "titulo": titulo,
-                        "cliente": cliente_ev,
-                        "contacto": contacto_ev,
-                        "ubicacion": ubicacion_ev,
-                        "descripcion": descripcion_ev,
-                        "total_cotizado": 0,       # No duplicar
-                        "adeudo": 0,               # No duplicar
-                        "metodo_pago": "",
-                        "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d"),
-                        "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d"),
-                        "abonos": "",
-                        "notas": notas_ev,
-                        "color": color_ev,
-                        "responsable": st.session_state.current_user,
-                        "anticipo": 0,             # No duplicar
-                        "fecha_fin": "",
-                        "origen": canal_sel,
-                    }
-                    agregar_evento(datos_entrega, id_unico + "_entrega")
-
                 st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
                 time.sleep(0.5)
                 st.rerun()
 
         # ──── CARGA MASIVA ────
         with st.expander("📥 Carga masiva histórica", expanded=False):
-            st.markdown("Formato: `Fecha  Total_Cotizado  Cliente  Fecha_Entrega  Método_Pago` (separado por tabulaciones)")
+            st.markdown("Formato: `Fecha_venta  Total_Cotizado  Cliente  Fecha_Evento  Método_Pago` (separado por tabulaciones)")
             texto_masivo = st.text_area("Pega aquí:", height=200, key="texto_masivo")
             canal_masivo = st.selectbox("Canal:", ["Coffee Station", "Noble To Go"], key="canal_masivo")
             if st.button("📤 Procesar todo", type="primary", use_container_width=True, key="btn_masivo"):
@@ -347,10 +319,11 @@ def show_ventas():
                             continue
                         id_unico = str(uuid.uuid4())[:8]
                         titulo = parsed["cliente"].strip() if parsed["cliente"].strip() else "Evento sin cliente"
+                        prefijo = "☕ Evento" if canal_masivo == "Coffee Station" else "🥤 Entrega"
                         datos_evento = {
-                            "fecha": parsed["fecha"],
-                            "tipo": "💰 Venta",
-                            "titulo": titulo,
+                            "fecha": parsed["fecha_entrega"],   # fecha del evento/entrega
+                            "tipo": prefijo,
+                            "titulo": f"{prefijo} - {titulo}",
                             "cliente": parsed["cliente"],
                             "contacto": "",
                             "ubicacion": "",
@@ -358,7 +331,7 @@ def show_ventas():
                             "total_cotizado": parsed["total_cotizado"],
                             "adeudo": 0.0,
                             "metodo_pago": parsed["metodo_pago"],
-                            "fecha_contratacion": "",
+                            "fecha_contratacion": parsed["fecha"],  # fecha de venta original
                             "fecha_entrega": parsed["fecha_entrega"],
                             "abonos": "",
                             "notas": "",
@@ -372,31 +345,6 @@ def show_ventas():
                         if not ok:
                             fallas.append(f"Error ID {id_unico}: {msg}")
                             continue
-                        fecha_ev = datetime.strptime(parsed["fecha"], "%Y-%m-%d").date()
-                        fecha_ent = datetime.strptime(parsed["fecha_entrega"], "%Y-%m-%d").date()
-                        if fecha_ent != fecha_ev:
-                            datos_entrega = {
-                                "fecha": parsed["fecha_entrega"],
-                                "tipo": "📦 Entrega",
-                                "titulo": titulo,
-                                "cliente": parsed["cliente"],
-                                "contacto": "",
-                                "ubicacion": "",
-                                "descripcion": "",
-                                "total_cotizado": 0,
-                                "adeudo": 0,
-                                "metodo_pago": "",
-                                "fecha_contratacion": "",
-                                "fecha_entrega": parsed["fecha_entrega"],
-                                "abonos": "",
-                                "notas": "",
-                                "color": "#4A90D9",
-                                "responsable": st.session_state.current_user,
-                                "anticipo": 0,
-                                "fecha_fin": "",
-                                "origen": canal_masivo,
-                            }
-                            agregar_evento(datos_entrega, id_unico + "_entrega")
                         procesadas += 1
                     from data_loaders import cargar_todas_ventas
                     cargar_todas_ventas.clear()
