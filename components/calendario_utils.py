@@ -23,7 +23,6 @@ def _parse_fecha(fecha):
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
-
     ws_cal, err = _asegurar_hoja_calendario()
     if ws_cal:
         try:
@@ -41,31 +40,26 @@ def cargar_eventos_mes(mes, año):
                     fecha_entrega_str = row.get("Fecha_Entrega", "")
                     fecha_entrega = _parse_fecha(fecha_entrega_str) if fecha_entrega_str else None
                     id_base = row.get("ID", "")
-                    origen = str(row.get("Origen", "manual")).strip().lower()
-                    if origen == "":
-                        origen = "manual"
+                    origen = str(row.get("Origen", "manual")).strip().lower() or "manual"
                     if fecha_inicio:
-                        if fecha_fin and fecha_fin > fecha_inicio:
+                        # Determinar rango de días
+                        if fecha_fin and fecha_fin > fecha_inicio and (fecha_fin - fecha_inicio).days < 365:
                             fechas_rango = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
                         else:
                             fechas_rango = [fecha_inicio]
                         for f in fechas_rango:
                             if f.month == mes and f.year == año:
-                                # Para las tarjetas del calendario, podemos agregar la nota de entrega solo en el título mostrado en la cuadrícula,
-                                # pero para la tabla de eventos del mes usaremos el título limpio sin la nota.
-                                # Construimos dos versiones: titulo (limpio) y titulo_grid (con nota de entrega)
                                 titulo_base = row.get("Título", "")
-                                titulo_grid = titulo_base
+                                nota_entrega = ""
                                 if fecha_entrega and fecha_entrega.date() != fecha_inicio.date():
-                                    nota = f" 📅 entrega: {fecha_entrega.strftime('%d/%m/%y')}"
-                                    titulo_grid = titulo_base + nota
-
+                                    nota_entrega = f" 📅 entrega: {fecha_entrega.strftime('%d/%m/%y')}"
+                                titulo_grid = titulo_base + nota_entrega if nota_entrega else titulo_base
                                 ev = {
                                     "id": id_base if f == fecha_inicio else f"{id_base}_dia_{f.day}",
                                     "fecha": f,
                                     "tipo_evento": row.get("Tipo", "Otro"),
-                                    "titulo": titulo_base,          # limpio para la tabla
-                                    "titulo_grid": titulo_grid,    # con nota para la cuadrícula
+                                    "titulo": titulo_base,
+                                    "titulo_grid": titulo_grid,
                                     "cliente": row.get("Cliente", ""),
                                     "contacto": row.get("Contacto", ""),
                                     "ubicacion": row.get("Ubicacion", ""),
@@ -90,69 +84,34 @@ def cargar_eventos_mes(mes, año):
         except Exception as e:
             st.warning(f"Error al leer Calendario: {e}")
 
+    # Ventas diarias Noble
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
             now = datetime.now()
-            if now.month == mes and now.year == año:
-                df_mes_actual = df_ventas[
-                    (df_ventas["Mes"].apply(limpiar_valor) == mes) &
-                    (df_ventas["Año"].apply(limpiar_valor) == año)
-                ]
-                meta_mensual = 145000.0
-                dias_habiles = 26
-                if not df_mes_actual.empty and "Meta_Mensual" in df_mes_actual.columns:
-                    meta_mensual = limpiar_valor(df_mes_actual["Meta_Mensual"].iloc[-1]) or 145000.0
-                if "Dias_Habiles" in df_mes_actual.columns and not df_mes_actual.empty:
-                    dias_habiles = int(limpiar_valor(df_mes_actual["Dias_Habiles"].iloc[-1]) or 26)
-            else:
-                meta_mensual = 145000.0
-                dias_habiles = 26
+            meta_mensual = 145000.0
+            dias_habiles = 26
             meta_diaria = meta_mensual / dias_habiles if dias_habiles > 0 else 0
-
             for _, row in df_ventas.iterrows():
                 fecha = _parse_fecha(row.get("Fecha"))
-                if fecha and fecha.month == mes and fecha.year == año:
-                    canal_venta = row.get("Canal", "Noble") or "Noble"
+                if fecha and fecha.month == mes and fecha.year == año and row.get("Canal", "") == "Noble":
                     monto = limpiar_valor(row.get("Venta_Diaria", 0))
-                    if canal_venta == "Noble":
-                        ev = {
-                            "id": f"venta_{fecha.strftime('%Y-%m-%d')}_Noble",
-                            "fecha": fecha,
-                            "tipo_evento": "Venta Noble",
-                            "titulo": "Venta Noble",
-                            "titulo_grid": "Venta Noble",
-                            "cliente": "",
-                            "contacto": "",
-                            "ubicacion": "",
-                            "descripcion": f"Venta del día: ${monto:,.2f}",
-                            "total_cotizado": monto,
-                            "adeudo": 0,
-                            "metodo_pago": "",
-                            "fecha_contratacion": "",
-                            "fecha_entrega": "",
-                            "fecha_entrega_dt": None,
-                            "abonos": "",
-                            "notas": "",
-                            "color": "#48B065",
-                            "responsable": row.get("Responsable", ""),
-                            "origen": "Venta Noble",
-                            "anticipo": 0,
-                            "fecha_fin": "",
-                            "meta_diaria": meta_diaria,
-                            "efectivo": limpiar_valor(row.get("Efectivo", 0)),
-                            "transferencias": limpiar_valor(row.get("Transferencias", 0)),
-                            "tarjeta": limpiar_valor(row.get("Tarjeta", 0)),
-                            "uber_eats": limpiar_valor(row.get("Uber_Eats", 0)),
-                            "rappi": limpiar_valor(row.get("Rappi", 0)),
-                            "tickets_pos": int(limpiar_valor(row.get("Tickets_POS", 0))),
-                            "tickets_uber": int(limpiar_valor(row.get("Tickets_Uber", 0))),
-                            "tickets_rappi": int(limpiar_valor(row.get("Tickets_Rappi", 0))),
-                            "notas_venta": row.get("Notas", ""),
-                        }
-                        if ev["id"] not in ids_vistos:
-                            eventos.append(ev)
-                            ids_vistos.add(ev["id"])
+                    ev = {
+                        "id": f"venta_{fecha.strftime('%Y-%m-%d')}_Noble",
+                        "fecha": fecha,
+                        "tipo_evento": "Venta Noble",
+                        "titulo": "Venta Noble",
+                        "titulo_grid": "Venta Noble",
+                        "total_cotizado": monto,
+                        "adeudo": 0,
+                        "color": "#48B065",
+                        "origen": "Venta Noble",
+                        "anticipo": 0,
+                        "meta_diaria": meta_diaria,
+                    }
+                    if ev["id"] not in ids_vistos:
+                        eventos.append(ev)
+                        ids_vistos.add(ev["id"])
     except Exception as e:
         st.warning(f"Error al leer ventas: {e}")
 
@@ -299,8 +258,6 @@ def eliminar_evento(id_evento: str):
             if fila[0] == id_evento:
                 if len(fila) > 19:
                     origen = str(fila[19]).strip()
-                else:
-                    origen = "manual"
                 id_base = id_evento.split("_entrega")[0]
                 for j, f2 in enumerate(todos[1:], start=2):
                     if f2[0] == f"{id_base}_entrega" or f2[0].startswith(f"{id_base}_entrega"):
@@ -316,7 +273,7 @@ def eliminar_evento(id_evento: str):
             ws.delete_rows(i)
         if origen in ["Coffee Station", "Noble To Go"]:
             _sincronizar_canal(id_evento, {"origen": origen}, "eliminar")
-        return True, f"Evento(s) eliminado(s): {len(ids_a_eliminar)}"
+        return True, f"{len(ids_a_eliminar)} evento(s) eliminado(s)."
     except Exception as e:
         return False, str(e)
 
@@ -337,11 +294,10 @@ def registrar_abono(id_evento: str, monto: float):
                 fecha_hoy = datetime.now().strftime("%Y-%m-%d")
                 nuevo_abono = f"{abonos_previos}; {fecha_hoy}: ${monto:,.2f}" if abonos_previos else f"{fecha_hoy}: ${monto:,.2f}"
                 ws.update(range_name=f"N{i}", values=[[nuevo_abono]])
-                origen = "manual"
+                # sincronizar con hoja de canal
                 if len(fila) > 19:
                     origen = str(fila[19]).strip()
-                if origen in ["Coffee Station", "Noble To Go"]:
-                    try:
+                    if origen in ["Coffee Station", "Noble To Go"]:
                         ws_canal, _ = _asegurar_hoja_canal_ventas(origen)
                         if ws_canal:
                             todos_canal = ws_canal.get_all_values()
@@ -350,8 +306,6 @@ def registrar_abono(id_evento: str, monto: float):
                                     ws_canal.update(range_name=f"J{j}", values=[[nuevo_adeudo]])
                                     ws_canal.update(range_name=f"N{j}", values=[[nuevo_abono]])
                                     break
-                    except Exception:
-                        pass
                 return True, f"Abono de ${monto:,.2f} registrado. Nuevo adeudo: ${nuevo_adeudo:,.2f}"
         return False, "Evento no encontrado"
     except Exception as e:
