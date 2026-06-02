@@ -92,7 +92,7 @@ def render_sidebar(cambiar_pagina):
                 n_nombre = st.text_input("Nombre")
                 n_clave = st.text_input("Clave")
                 n_rol = st.selectbox("Rol", ["barista","admin"])
-                if st.button("Guardar usuario"):
+                if st.button("Guardar usuario", width="stretch"):
                     if n_nombre and n_clave:
                         ws_acc, err = safe_worksheet(sh, "Accesos")
                         if not err:
@@ -116,7 +116,7 @@ def render_sidebar(cambiar_pagina):
                 # Eliminar usuario
                 if LISTA_RESPONSABLES:
                     u_del = st.selectbox("Eliminar usuario", LISTA_RESPONSABLES)
-                    if st.button("Eliminar"):
+                    if st.button("Eliminar", width="stretch"):
                         ws_acc, err = safe_worksheet(sh, "Accesos")
                         if not err:
                             try:
@@ -144,7 +144,7 @@ def render_sidebar(cambiar_pagina):
                          "ImportarVentas","RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma",
                          "DashboardFinanciero","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"],
                         default=["Todas"])
-                    if st.form_submit_button("Publicar"):
+                    if st.form_submit_button("Publicar", width="stretch"):
                         if av_titulo.strip() and av_msg.strip():
                             ws_av, err = safe_worksheet(sh, "Avisos")
                             if err:
@@ -170,7 +170,7 @@ def render_sidebar(cambiar_pagina):
                         estado = "🟢" if activo else "⚫"
                         av_id = str(av.get("ID",""))
                         st.caption(f"{estado} {av.get('Título','')}")
-                        if st.button("Desactivar" if activo else "Activar", key=f"tog_{av_id}"):
+                        if st.button("Desactivar" if activo else "Activar", key=f"tog_{av_id}", width="stretch"):
                             ws_av, err = safe_worksheet(sh, "Avisos")
                             if not err:
                                 try:
@@ -199,7 +199,7 @@ def render_sidebar(cambiar_pagina):
                     rol_perm = st.selectbox("Rol", ["barista"])
                     paginas_activas = [p for p in all_pages if p in PERMISOS.get(rol_perm, [])]
                     paginas_sel = st.multiselect("Páginas permitidas", all_pages, default=paginas_activas)
-                    if st.form_submit_button("Guardar permisos"):
+                    if st.form_submit_button("Guardar permisos", width="stretch"):
                         if ws_perm:
                             try:
                                 data = ws_perm.get_all_values()
@@ -258,7 +258,7 @@ def render_sidebar(cambiar_pagina):
                         um = st.selectbox("Unidad medida", UNIDADES_MED)
                         sm = st.number_input("Stock mínimo", min_value=0.0)
                         tara_new = st.number_input("Tara (kg/gr)", min_value=0.0, value=0.0)
-                        if st.form_submit_button("Crear insumo"):
+                        if st.form_submit_button("Crear insumo", width="stretch"):
                             if not n.strip():
                                 st.error("Nombre obligatorio")
                             else:
@@ -296,7 +296,7 @@ def render_sidebar(cambiar_pagina):
                                     e_tara = st.number_input("Tara (kg/gr)", min_value=0.0, value=limpiar_valor(d.get("Tara",0)))
                                     activo_actual = str(d.get("Activo", "TRUE")).strip().upper() == "TRUE"
                                     e_activo = st.toggle("Activo", value=activo_actual)
-                                    if st.form_submit_button("Actualizar"):
+                                    if st.form_submit_button("Actualizar", width="stretch"):
                                         if not e_n.strip():
                                             st.error("Nombre obligatorio")
                                         else:
