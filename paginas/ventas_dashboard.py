@@ -4,7 +4,8 @@ import calendar
 from data_loaders import cargar_todas_ventas
 from utils import limpiar_valor, ahora_hermosillo
 from auth import tiene_permiso
-from config import CANALES_VENTA
+from config import CANALES_VENTA, COLS_CALENDARIO
+from sheets import safe_worksheet, sh
 
 def show_dashboard_ventas():
     if not tiene_permiso("DashboardVentas"):
@@ -15,16 +16,7 @@ def show_dashboard_ventas():
     df = cargar_todas_ventas()
     if df.empty:
         st.info("Sin registros de venta en ningún canal.")
-        # Mostrar diagnóstico si existe
-        if "debug_carga_ventas" in st.session_state:
-            with st.expander("🔍 Diagnóstico de carga"):
-                st.write(st.session_state["debug_carga_ventas"])
         st.stop()
-    
-    # Bloque de diagnóstico general (siempre visible al inicio)
-    if "debug_carga_ventas" in st.session_state:
-        with st.expander("🔍 Diagnóstico de carga de hojas"):
-            st.write(st.session_state["debug_carga_ventas"])
     
     # Selector de canal
     canal_opciones = ["Todos"] + CANALES_VENTA
@@ -35,46 +27,38 @@ def show_dashboard_ventas():
     
     if df.empty:
         st.warning(f"No hay datos para {canal_sel}.")
-        # Mostrar diagnóstico específico del canal seleccionado
-        if canal_sel in ["Coffee Station", "Noble To Go"]:
-            st.info("ℹ️ Si acabas de cargar datos, verifica que el mes seleccionado coincida con las fechas de los eventos.")
         st.stop()
     
-    # Selección de mes
+    # Selección de mes y año por separado
     df["Mes_num"] = df["Mes"].apply(limpiar_valor).astype(int)
     df["Año_num"] = df["Año"].apply(limpiar_valor).astype(int)
-    meses_disp = sorted(
-        df[["Mes_num","Año_num"]].drop_duplicates().apply(
-            lambda r: (int(r["Mes_num"]), int(r["Año_num"])), axis=1
-        ).tolist(), reverse=True
-    )
-    meses_disp = [(m,a) for m,a in meses_disp if m > 0 and a > 0]
-    if not meses_disp:
-        st.info("No hay meses completos disponibles. Verifica que los eventos tengan Mes y Año correctos.")
-        st.stop()
-    opciones_mes = [f"{calendar.month_name[m].capitalize()} {a}" for m,a in meses_disp]
-    mes_sel_str = st.selectbox("📅 Mes:", opciones_mes)
-    mes_idx = opciones_mes.index(mes_sel_str)
-    mes_num, año_num = meses_disp[mes_idx]
+    años_disp = sorted(df["Año_num"].unique(), reverse=True)
+    año_actual = ahora_hermosillo().year
+    año_sel = st.selectbox("Año", años_disp, index=años_disp.index(año_actual) if año_actual in años_disp else 0)
+    df_año = df[df["Año_num"] == año_sel]
+    meses_disp = sorted(df_año["Mes_num"].unique())
+    mes_actual = ahora_hermosillo().month
+    mes_sel = st.selectbox("Mes", meses_disp,
+                           index=meses_disp.index(mes_actual) if mes_actual in meses_disp else 0,
+                           format_func=lambda m: calendar.month_name[m])
     
-    df_mes = df[
-        (df["Mes_num"] == mes_num) & (df["Año_num"] == año_num)
-    ].copy()
+    df_mes = df_año[df_año["Mes_num"] == mes_sel].copy()
     if df_mes.empty:
-        st.warning(f"Sin registros para {mes_sel_str}.")
+        st.warning(f"Sin registros para {calendar.month_name[mes_sel]} {año_sel}.")
         st.stop()
     
-    # ──── RESUMEN GLOBAL (solo si se eligió "Todos") ────
+    # ──── RESUMEN GLOBAL (solo "Todos") ────
     if canal_sel == "Todos":
-        st.subheader("💰 Venta total por canal")
+        st.subheader("💰 Venta total por canal (Total | Cobrado)")
         cols_canal = st.columns(3)
         for i, canal in enumerate(CANALES_VENTA):
             df_canal = df_mes[df_mes["Canal"] == canal]
-            total = df_canal["Venta_Diaria"].sum() if not df_canal.empty else 0.0
-            cols_canal[i].metric(f"🏢 {canal}", f"${total:,.2f}")
+            total = df_canal["Venta_Total"].sum() if not df_canal.empty else 0.0
+            cobrado = df_canal["Venta_Diaria"].sum() if not df_canal.empty else 0.0
+            cols_canal[i].metric(f"🏢 {canal}", f"${cobrado:,.2f}", delta=f"Total: ${total:,.2f}")
         st.divider()
     
-    # ──── DETALLE POR CANAL ────
+    # ──── Noble ────
     if canal_sel == "Noble" or (canal_sel == "Todos" and "Noble" in df_mes["Canal"].unique()):
         st.subheader("📈 Noble — Detalle diario")
         df_noble = df_mes[df_mes["Canal"] == "Noble"].sort_values("Fecha")
@@ -130,19 +114,12 @@ def show_dashboard_ventas():
             anticipo_cs = df_cs["Anticipo"].sum() if "Anticipo" in df_cs.columns else 0.0
             num_eventos = len(df_cs)
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Venta total", f"${total_cs:,.2f}")
+            c1.metric("Venta cobrada", f"${total_cs:,.2f}")
             c2.metric("Adeudo total", f"${adeudo_cs:,.2f}")
             c3.metric("Anticipo total", f"${anticipo_cs:,.2f}")
             c4.metric("Eventos registrados", num_eventos)
-            cols_mostrar = ["Fecha", "Cliente", "Total_Cotizado", "Adeudo", "Anticipo", "Metodo_Pago", "Notas"]
-            cols_ok = [c for c in cols_mostrar if c in df_cs.columns]
-            st.dataframe(df_cs[cols_ok].sort_values("Fecha"), hide_index=True, width="stretch")
         else:
             st.info("Sin registros de Coffee Station para este mes.")
-            # Diagnóstico específico
-            if "debug_carga_ventas" in st.session_state:
-                st.caption("Diagnóstico de carga:")
-                st.caption(st.session_state["debug_carga_ventas"])
     
     # ──── Noble To Go ────
     if canal_sel in ["Noble To Go", "Todos"]:
@@ -154,21 +131,54 @@ def show_dashboard_ventas():
             anticipo_ntg = df_ntg["Anticipo"].sum() if "Anticipo" in df_ntg.columns else 0.0
             num_eventos = len(df_ntg)
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Venta total", f"${total_ntg:,.2f}")
+            c1.metric("Venta cobrada", f"${total_ntg:,.2f}")
             c2.metric("Adeudo total", f"${adeudo_ntg:,.2f}")
             c3.metric("Anticipo total", f"${anticipo_ntg:,.2f}")
             c4.metric("Eventos registrados", num_eventos)
-            cols_mostrar = ["Fecha", "Cliente", "Total_Cotizado", "Adeudo", "Anticipo", "Metodo_Pago", "Notas"]
-            cols_ok = [c for c in cols_mostrar if c in df_ntg.columns]
-            st.dataframe(df_ntg[cols_ok].sort_values("Fecha"), hide_index=True, width="stretch")
         else:
             st.info("Sin registros de Noble To Go para este mes.")
-            if "debug_carga_ventas" in st.session_state:
-                st.caption("Diagnóstico de carga:")
-                st.caption(st.session_state["debug_carga_ventas"])
     
+    # ──── DETALLE COMPLETO DE CANALES ADICIONALES ────
     st.divider()
-    csv = df_mes.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Descargar CSV del mes", data=csv,
-                       file_name=f"ventas_{mes_sel_str.replace(' ','_')}.csv",
-                       mime="text/csv", width="stretch")
+    with st.expander(f"📋 Detalle completo de canales adicionales ({calendar.month_name[mes_sel]} {año_sel})", expanded=False):
+        tab_cs_d, tab_ntg_d = st.tabs(["☕ Coffee Station", "🥤 Noble To Go"])
+
+        @st.cache_data(ttl=120)
+        def cargar_detalle_canal(nombre_hoja):
+            ws, err = safe_worksheet(sh, nombre_hoja)
+            if ws:
+                datos = ws.get_all_values()
+                if len(datos) > 1:
+                    df = pd.DataFrame(datos[1:], columns=datos[0])
+                    for col in COLS_CALENDARIO:
+                        if col not in df.columns:
+                            df[col] = ""
+                    if "Fecha" in df.columns:
+                        df["_fecha_dt"] = pd.to_datetime(df["Fecha"], errors="coerce")
+                    return df
+            return pd.DataFrame()
+
+        for nombre_hoja, tab, prefijo in [
+            ("Coffee Station", tab_cs_d, "☕ Evento"),
+            ("Noble To Go", tab_ntg_d, "🥤 Entrega"),
+        ]:
+            with tab:
+                df_canal = cargar_detalle_canal(nombre_hoja)
+                if df_canal.empty:
+                    st.info(f"No hay registros en {nombre_hoja}.")
+                    continue
+                # Excluir IDs de entrega antiguos
+                if "ID" in df_canal.columns:
+                    df_canal = df_canal[~df_canal["ID"].astype(str).str.contains("_entrega", na=False)]
+                # Filtrar por mes y año seleccionados
+                if "_fecha_dt" in df_canal.columns:
+                    df_canal = df_canal[(df_canal["_fecha_dt"].dt.month == mes_sel) &
+                                        (df_canal["_fecha_dt"].dt.year == año_sel)]
+                if df_canal.empty:
+                    st.info(f"Ningún registro en {calendar.month_name[mes_sel]} {año_sel}.")
+                    continue
+                # Ordenar por fecha descendente
+                df_canal = df_canal.sort_values("Fecha", ascending=False)
+                # Mostrar todas las columnas de COLS_CALENDARIO excepto las internas
+                columnas_mostrar = [c for c in COLS_CALENDARIO if c in df_canal.columns and c != "_fecha_dt"]
+                st.dataframe(df_canal[columnas_mostrar], hide_index=True, width="stretch")
