@@ -19,6 +19,7 @@ COLS_VENTAS  = [
     "Tickets_POS", "Tickets_Uber", "Tickets_Rappi", "Total_Tickets",
     "Ticket_Promedio", "Meta_Mensual", "Dias_Habiles", "Meta_Diaria",
     "Responsable", "Notas", "Canal",
+    "Adeudo", "Anticipo",
 ]
 COLS_GASTOS = [
     "ID", "Fecha", "Periodo", "Tipo", "Categoria", "Concepto",
