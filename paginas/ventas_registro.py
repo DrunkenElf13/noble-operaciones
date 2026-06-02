@@ -72,7 +72,6 @@ def _construir_fila_venta_canal(datos_evento: dict, id_evento: str):
     ]
 
 def _parsear_linea_masiva(linea: str) -> dict | None:
-    """Convierte una línea de texto en un dict con los datos del evento."""
     partes = [p.strip() for p in linea.split("\t")]
     if len(partes) < 2:
         return None
@@ -142,7 +141,7 @@ def show_ventas():
 
     st.divider()
 
-    # ──────── POS (Noble) ────────
+    # ──── Noble POS ────
     if canal_sel == "Noble":
         meta_default = 145000.0
         dias_default = 26
@@ -202,23 +201,16 @@ def show_ventas():
         t2.metric("Ticket Promedio", f"${tix_prom:,.2f}" if tix_prom > 0 else "—")
 
         notas_v = st.text_input("📝 Notas del día (opcional):")
-        dia_sin_venta = st.toggle(
-            "📵 Día sin venta (cierre en cero)",
-            value=False,
-            help="Activa esta opción para registrar un día operativo donde no hubo ventas."
-        )
+        dia_sin_venta = st.toggle("📵 Día sin venta", value=False)
         if dia_sin_venta and venta_total == 0:
-            st.warning("⚠️ Se registrará este día con venta = $0.")
+            st.warning("Se registrará día con $0.")
 
-        st.divider()
-        if st.button("💾 GUARDAR REGISTRO DE VENTA", type="primary", use_container_width=True):
+        if st.button("💾 GUARDAR", type="primary", use_container_width=True):
             if venta_total == 0 and total_tix == 0 and not dia_sin_venta:
-                st.warning("⚠️ Ingresa al menos un valor de venta o tickets, o activa 'Día sin venta'.")
+                st.warning("Ingresa valores o activa 'Día sin venta'.")
             else:
                 ws_v, err = _asegurar_hoja_ventas()
-                if err:
-                    st.error(err)
-                else:
+                if not err:
                     notas_final = notas_v if notas_v.strip() else ("DÍA SIN VENTA" if dia_sin_venta else "")
                     fila = _construir_fila_venta(
                         fecha=fecha_venta, efectivo=efectivo, transferencias=transferencias,
@@ -231,13 +223,15 @@ def show_ventas():
                     ok, msg = append_rows_con_retry(ws_v, [fila])
                     if ok:
                         cargar_ventas.clear()
-                        st.success(f"✅ Venta del {fecha_venta.strftime('%d/%m/%Y')} registrada. Total: ${venta_total:,.2f}")
+                        st.success(f"Venta registrada: ${venta_total:,.2f}")
                         time.sleep(0.5)
                         st.rerun()
                     else:
                         st.error(msg)
+                else:
+                    st.error(err)
 
-    # ──────── Coffee Station / Noble To Go ────────
+    # ──── Coffee Station / Noble To Go ────
     else:
         st.subheader(f"📋 Datos del evento — {canal_sel}")
         with st.form("f_evento_canal", clear_on_submit=True):
@@ -257,7 +251,12 @@ def show_ventas():
                 anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0)
                 fecha_contr_ev = st.date_input("Fecha contratación", value=hoy)
                 fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy)
-                fecha_fin_ev = st.date_input("Fecha fin (rango)", value=hoy, help="Si el evento dura varios días")
+                # Toggle para evento de varios días
+                es_rango = st.toggle("Evento de varios días", value=False)
+                if es_rango:
+                    fecha_fin_ev = st.date_input("Fecha fin", value=fecha_venta, min_value=fecha_venta)
+                else:
+                    fecha_fin_ev = fecha_venta  # igual a inicio = un solo día
                 abonos_ev = st.text_area("Abonos (historial)")
                 notas_ev = st.text_area("Notas")
             enviar = st.form_submit_button("💾 Guardar venta")
@@ -267,7 +266,6 @@ def show_ventas():
                 st.error("El monto debe ser mayor a cero.")
             else:
                 id_unico = str(uuid.uuid4())[:8]
-                # Título limpio: solo el cliente
                 titulo = cliente_ev.strip() if cliente_ev.strip() else "Evento sin cliente"
                 datos_evento = {
                     "fecha": fecha_venta.strftime("%Y-%m-%d"),
@@ -287,7 +285,7 @@ def show_ventas():
                     "color": color_ev,
                     "responsable": st.session_state.current_user,
                     "anticipo": anticipo_ev,
-                    "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_venta else "",
+                    "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if es_rango and fecha_fin_ev != fecha_venta else "",
                     "origen": canal_sel,
                 }
 
@@ -299,62 +297,50 @@ def show_ventas():
                 from data_loaders import cargar_todas_ventas
                 cargar_todas_ventas.clear()
 
-                # Crear evento de entrega si la fecha difiere
                 if fecha_entr_ev != fecha_venta:
-                    titulo_entr = titulo  # mismo título limpio
                     datos_entrega = datos_evento.copy()
                     datos_entrega["fecha"] = fecha_entr_ev.strftime("%Y-%m-%d")
                     datos_entrega["tipo"] = "📦 Entrega"
-                    datos_entrega["titulo"] = titulo_entr
+                    datos_entrega["titulo"] = titulo
                     datos_entrega["origen"] = canal_sel
-                    ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
-                    if not ok_ent:
-                        st.warning(f"⚠️ Venta guardada pero falló el registro de la entrega: {msg_ent}")
+                    agregar_evento(datos_entrega, id_unico + "_entrega")
 
                 st.success(f"✅ Venta registrada en {canal_sel}: ${monto_ev:,.2f}")
                 time.sleep(0.5)
                 st.rerun()
 
-        # ──────── CARGA MASIVA HISTÓRICA ────────
-        with st.expander("📥 Carga masiva histórica (varias líneas)", expanded=False):
-            st.markdown("""
-            **Formato esperado** (una línea por evento, columnas separadas por **tabulaciones**):  
-            `Fecha  Total_Cotizado  Cliente  Fecha_Entrega  Método_de_Pago`  
-            - **Fecha** y **Total_Cotizado** son obligatorios.  
-            - **Cliente**, **Fecha_Entrega** y **Método de Pago** son opcionales.  
-            - Ejemplo: `2026-01-17	5500	Fernanda Federico	2026-01-17	Transferencia`
-            """)
-            texto_masivo = st.text_area("Pega aquí tus líneas:", height=200, key="texto_masivo")
+        # ──── CARGA MASIVA ────
+        with st.expander("📥 Carga masiva histórica", expanded=False):
+            st.markdown("Formato: `Fecha  Total_Cotizado  Cliente  Fecha_Entrega  Método_Pago` (separado por tabulaciones)")
+            texto_masivo = st.text_area("Pega aquí:", height=200, key="texto_masivo")
             canal_masivo = st.selectbox("Canal:", ["Coffee Station", "Noble To Go"], key="canal_masivo")
-            if st.button("📤 Procesar y guardar todo", type="primary", use_container_width=True, key="btn_masivo"):
+            if st.button("📤 Procesar todo", type="primary", use_container_width=True, key="btn_masivo"):
                 if not texto_masivo.strip():
                     st.error("Pega al menos una línea.")
                 else:
                     lineas = [l for l in texto_masivo.splitlines() if l.strip()]
                     procesadas = 0
-                    fallas = 0
-                    mensajes_fallo = []
+                    fallas = []
                     for linea in lineas:
-                        datos_parseados = _parsear_linea_masiva(linea)
-                        if datos_parseados is None:
-                            fallas += 1
-                            mensajes_fallo.append(f"Línea ignorada (formato incorrecto): {linea[:60]}...")
+                        parsed = _parsear_linea_masiva(linea)
+                        if parsed is None:
+                            fallas.append(f"Formato inválido: {linea[:50]}...")
                             continue
                         id_unico = str(uuid.uuid4())[:8]
-                        titulo = datos_parseados["cliente"].strip() if datos_parseados["cliente"].strip() else "Evento sin cliente"
+                        titulo = parsed["cliente"].strip() if parsed["cliente"].strip() else "Evento sin cliente"
                         datos_evento = {
-                            "fecha": datos_parseados["fecha"],
+                            "fecha": parsed["fecha"],
                             "tipo": "💰 Venta",
                             "titulo": titulo,
-                            "cliente": datos_parseados["cliente"],
+                            "cliente": parsed["cliente"],
                             "contacto": "",
                             "ubicacion": "",
                             "descripcion": "",
-                            "total_cotizado": datos_parseados["total_cotizado"],
+                            "total_cotizado": parsed["total_cotizado"],
                             "adeudo": 0.0,
-                            "metodo_pago": datos_parseados["metodo_pago"],
+                            "metodo_pago": parsed["metodo_pago"],
                             "fecha_contratacion": "",
-                            "fecha_entrega": datos_parseados["fecha_entrega"],
+                            "fecha_entrega": parsed["fecha_entrega"],
                             "abonos": "",
                             "notas": "",
                             "color": "#4A90D9",
@@ -363,31 +349,26 @@ def show_ventas():
                             "fecha_fin": "",
                             "origen": canal_masivo,
                         }
-                        ok_cal, msg_cal = agregar_evento(datos_evento, id_unico)
-                        if not ok_cal:
-                            fallas += 1
-                            mensajes_fallo.append(f"Error al guardar en Calendario (ID {id_unico}): {msg_cal}")
+                        ok, msg = agregar_evento(datos_evento, id_unico)
+                        if not ok:
+                            fallas.append(f"Error ID {id_unico}: {msg}")
                             continue
-                        fecha_ev = datetime.strptime(datos_parseados["fecha"], "%Y-%m-%d").date()
-                        fecha_ent = datetime.strptime(datos_parseados["fecha_entrega"], "%Y-%m-%d").date()
+                        fecha_ev = datetime.strptime(parsed["fecha"], "%Y-%m-%d").date()
+                        fecha_ent = datetime.strptime(parsed["fecha_entrega"], "%Y-%m-%d").date()
                         if fecha_ent != fecha_ev:
                             datos_entrega = datos_evento.copy()
-                            datos_entrega["fecha"] = datos_parseados["fecha_entrega"]
+                            datos_entrega["fecha"] = parsed["fecha_entrega"]
                             datos_entrega["tipo"] = "📦 Entrega"
-                            datos_entrega["titulo"] = titulo  # mismo título limpio
-                            ok_ent, msg_ent = agregar_evento(datos_entrega, id_unico + "_entrega")
-                            if not ok_ent:
-                                mensajes_fallo.append(f"Error al guardar entrega (ID {id_unico}_entrega): {msg_ent}")
+                            datos_entrega["titulo"] = titulo
+                            agregar_evento(datos_entrega, id_unico + "_entrega")
                         procesadas += 1
-
                     from data_loaders import cargar_todas_ventas
                     cargar_todas_ventas.clear()
-
-                    if procesadas > 0:
-                        st.success(f"✅ {procesadas} líneas procesadas correctamente.")
-                    if fallas > 0:
-                        st.warning(f"⚠️ {fallas} líneas no se pudieron procesar.")
-                        for msg in mensajes_fallo:
-                            st.caption(msg)
+                    if procesadas:
+                        st.success(f"{procesadas} líneas procesadas.")
+                    if fallas:
+                        st.warning(f"{len(fallas)} errores:")
+                        for f in fallas:
+                            st.caption(f)
                     time.sleep(0.5)
                     st.rerun()
