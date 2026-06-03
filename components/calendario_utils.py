@@ -111,53 +111,52 @@ def cargar_eventos_mes(mes, año):
 
 def _sincronizar_canal(id_evento: str, datos: dict, accion: str = "actualizar"):
     origen = datos.get("origen", "manual")
-    if origen in ["Coffee Station", "Noble To Go"]:
-        ws_canal, err_canal = _asegurar_hoja_canal_ventas(origen)
-        if not err_canal and ws_canal:
-            if accion == "eliminar":
-                try:
-                    todos = ws_canal.get_all_values()
-                    for i, fila in enumerate(todos[1:], start=2):
-                        if fila[0] == id_evento:
-                            ws_canal.delete_rows(i)
-                            break
-                except Exception:
-                    pass
-            else:
-                nueva_fila = [
-                    id_evento,
-                    datos.get("fecha", ""),
-                    datos.get("tipo", "Otro"),
-                    datos.get("titulo", ""),
-                    datos.get("cliente", ""),
-                    datos.get("contacto", ""),
-                    datos.get("ubicacion", ""),
-                    datos.get("descripcion", ""),
-                    datos.get("total_cotizado", 0),
-                    datos.get("adeudo", 0),
-                    datos.get("metodo_pago", ""),
-                    datos.get("fecha_contratacion", ""),
-                    datos.get("fecha_entrega", ""),
-                    datos.get("abonos", ""),
-                    datos.get("notas", ""),
-                    datos.get("color", "#4A90D9"),
-                    datos.get("responsable", ""),
-                    datos.get("anticipo", 0),
-                    datos.get("fecha_fin", ""),
-                    origen,
-                ]
-                try:
-                    todos = ws_canal.get_all_values()
-                    encontrado = False
-                    for i, fila in enumerate(todos[1:], start=2):
-                        if fila[0] == id_evento:
-                            ws_canal.update(range_name=f"A{i}:T{i}", values=[nueva_fila])
-                            encontrado = True
-                            break
-                    if not encontrado:
-                        append_rows_con_retry(ws_canal, [nueva_fila])
-                except Exception:
-                    pass
+    if origen not in ["Coffee Station", "Noble To Go"]:
+        return True, ""
+    ws_canal, err_canal = _asegurar_hoja_canal_ventas(origen)
+    if err_canal:
+        return False, str(err_canal)
+    try:
+        if accion == "eliminar":
+            todos = ws_canal.get_all_values()
+            for i, fila in enumerate(todos[1:], start=2):
+                if fila[0] == id_evento:
+                    ws_canal.delete_rows(i)
+                    return True, "Eliminado del canal"
+            return False, "No encontrado en el canal"
+        else:
+            nueva_fila = [
+                id_evento,
+                datos.get("fecha", ""),
+                datos.get("tipo", "Otro"),
+                datos.get("titulo", ""),
+                datos.get("cliente", ""),
+                datos.get("contacto", ""),
+                datos.get("ubicacion", ""),
+                datos.get("descripcion", ""),
+                datos.get("total_cotizado", 0),
+                datos.get("adeudo", 0),
+                datos.get("metodo_pago", ""),
+                datos.get("fecha_contratacion", ""),
+                datos.get("fecha_entrega", ""),
+                datos.get("abonos", ""),
+                datos.get("notas", ""),
+                datos.get("color", "#4A90D9"),
+                datos.get("responsable", ""),
+                datos.get("anticipo", 0),
+                datos.get("fecha_fin", ""),
+                origen,
+            ]
+            todos = ws_canal.get_all_values()
+            for i, fila in enumerate(todos[1:], start=2):
+                if fila[0] == id_evento:
+                    ws_canal.update(range_name=f"A{i}:T{i}", values=[nueva_fila])
+                    return True, "Actualizado en canal"
+            # No existe, agregar
+            ok, msg = append_rows_con_retry(ws_canal, [nueva_fila])
+            return ok, msg
+    except Exception as e:
+        return False, str(e)
 
 def agregar_evento(datos: dict, id_externo: str = None):
     ws, err = _asegurar_hoja_calendario()
@@ -189,9 +188,17 @@ def agregar_evento(datos: dict, id_externo: str = None):
             origen,
         ]
         ok, msg = append_rows_con_retry(ws, [nueva_fila])
-        if ok and origen in ["Coffee Station", "Noble To Go"]:
-            _sincronizar_canal(id_final, datos, "agregar")
-        return ok, msg
+        if not ok:
+            return False, msg
+
+        # Sincronizar con hoja de canal si corresponde
+        if origen in ["Coffee Station", "Noble To Go"]:
+            ok_canal, msg_canal = _sincronizar_canal(id_final, datos, "agregar")
+            if not ok_canal:
+                # La venta se guardó en Calendario pero no en la hoja del canal
+                return False, f"Guardado en Calendario, pero falló la copia a {origen}: {msg_canal}"
+
+        return True, msg
     except Exception as e:
         return False, str(e)
 
