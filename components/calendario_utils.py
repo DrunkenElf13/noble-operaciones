@@ -23,7 +23,7 @@ def _parse_fecha(fecha):
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
-    eventos_anomalos = []
+    eventos_anomalos = []  # para alertar al usuario
     ws_cal, err = _asegurar_hoja_calendario()
     if ws_cal:
         try:
@@ -39,9 +39,10 @@ def cargar_eventos_mes(mes, año):
                     fecha_fin_str = row.get("Fecha_Fin", "")
                     fecha_fin = _parse_fecha(fecha_fin_str) if fecha_fin_str else None
                     id_base = row.get("ID", "")
-                    origen = str(row.get("Origen", "manual")).strip()
+                    origen = str(row.get("Origen", "manual")).strip().lower() or "manual"
                     tipo = row.get("Tipo", "")
                     if fecha_inicio:
+                        # Detectar eventos con rango sospechoso (no vacaciones y >1 día)
                         if fecha_fin and fecha_fin > fecha_inicio and tipo != "Vacaciones":
                             dif = (fecha_fin - fecha_inicio).days
                             if dif > 1:
@@ -49,10 +50,12 @@ def cargar_eventos_mes(mes, año):
                                     f"{tipo}: '{row.get('Título','')}' "
                                     f"({fecha_inicio.strftime('%d/%m/%Y')} → {fecha_fin.strftime('%d/%m/%Y')})"
                                 )
+                        # Mostrar solo si el mes coincide
                         if fecha_inicio.month == mes and fecha_inicio.year == año:
                             titulo = row.get("Título", "")
-                            if origen in ["Coffee Station", "Noble To Go"]:
-                                prefijo = "☕ Evento" if origen == "Coffee Station" else "🥤 Entrega"
+                            # Forzar prefijo para canales
+                            if origen in ["coffee station", "noble to go"]:
+                                prefijo = "☕ Evento" if origen == "coffee station" else "🥤 Entrega"
                                 if not titulo.startswith(prefijo):
                                     titulo = f"{prefijo} - {titulo}"
                                 tipo = prefijo
@@ -76,6 +79,7 @@ def cargar_eventos_mes(mes, año):
 
     st.session_state["eventos_anomalos"] = eventos_anomalos
 
+    # Ventas Noble POS
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:

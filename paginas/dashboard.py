@@ -8,22 +8,7 @@ from inventario import obtener_ultimo_inventario, fecha_max_segura
 from utils import limpiar_valor, ahora_hermosillo
 from auth import tiene_permiso
 from components.calendario_utils import cargar_eventos_mes
-from config import CANALES_VENTA, PALETA_CANALES, COLOR_TARJETA, COLOR_EXITO, COLOR_ERROR, COLOR_SUBTEXTO
-
-def _tarjeta(titulo, valor, delta=None, color=COLOR_TARJETA):
-    delta_html = ""
-    if delta:
-        color_delta = COLOR_EXITO if delta.startswith("+") else COLOR_ERROR
-        delta_html = f"<br><small style='color:{color_delta}'>{delta}</small>"
-    st.markdown(
-        f"""
-        <div style="border-left:4px solid {color}; padding:8px 12px; margin:4px 0; background:{COLOR_TARJETA}; border-radius:4px;">
-            <div style="color:{COLOR_SUBTEXTO}; font-size:0.75rem;">{titulo}</div>
-            <div style="font-size:1.25rem; font-weight:600;">{valor}{delta_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+from config import CANALES_VENTA
 
 def show_dashboard():
     if not tiene_permiso("Dashboard"):
@@ -31,111 +16,126 @@ def show_dashboard():
         st.stop()
 
     df_raw, df_historial = cargar_datos_integrales()
-    st.title("Dashboard Noble")
+    st.title("📊 Dashboard Operativo")
 
     ahora = ahora_hermosillo()
     dias_faltantes = calendar.monthrange(ahora.year, ahora.month)[1] - ahora.day
     if dias_faltantes <= 4:
-        st.info(f"⏳ {dias_faltantes} días para fin de mes. Considera ejecutar el Corte de Mes.")
+        st.info(f"⏳ A {dias_faltantes} días del fin de mes. Recuerda ejecutar el **Corte de Mes**.")
 
-    # ── Ventas del mes ──
-    with st.container(border=True):
-        st.subheader("💰 Ventas del mes")
-        df_v_dash = cargar_todas_ventas()
-        if not df_v_dash.empty:
-            años_disp = sorted(df_v_dash["Año"].apply(limpiar_valor).astype(int).unique(), reverse=True)
-            col_a, col_m = st.columns(2)
-            with col_a:
-                año_sel = st.selectbox("Año", años_disp, index=0, key="dash_año")
-            with col_m:
-                mes_sel = st.selectbox("Mes", list(range(1,13)),
-                                       index=ahora.month-1,
-                                       format_func=lambda m: calendar.month_name[m], key="dash_mes")
+    # ---------- VENTA ACUMULADA DEL MES ----------
+    st.subheader("💰 Venta acumulada del mes")
+    df_v_dash = cargar_todas_ventas()
+    if not df_v_dash.empty:
+        # Selectores de mes y año
+        años_disp = sorted(df_v_dash["Año"].apply(limpiar_valor).astype(int).unique(), reverse=True)
+        año_sel = st.selectbox("Año", años_disp, index=0)
+        mes_sel = st.selectbox("Mes", list(range(1,13)),
+                               index=ahora.month-1,
+                               format_func=lambda m: calendar.month_name[m])
 
-            df_mes = df_v_dash[(df_v_dash["Mes"].apply(limpiar_valor)==mes_sel) &
-                               (df_v_dash["Año"].apply(limpiar_valor)==año_sel)]
-            cobrado = df_mes["Venta_Diaria"].sum()
-            total   = df_mes["Venta_Total"].sum()
-            dias_con_v = int((df_mes["Venta_Diaria"] > 0).sum())
-            ticket_prom = cobrado / max(1, dias_con_v)
+        df_v_mes_dash = df_v_dash[
+            (df_v_dash["Mes"].apply(limpiar_valor) == mes_sel) &
+            (df_v_dash["Año"].apply(limpiar_valor) == año_sel)
+        ]
+        venta_acum_dash = df_v_mes_dash["Venta_Diaria"].sum() if not df_v_mes_dash.empty else 0.0
+        venta_total_dash = df_v_mes_dash["Venta_Total"].sum() if not df_v_mes_dash.empty else 0.0
 
-            c1, c2, c3, c4 = st.columns(4)
-            with c1: _tarjeta("Cobrado", f"${cobrado:,.0f}")
-            with c2: _tarjeta("Total facturado", f"${total:,.0f}")
-            with c3: _tarjeta("Ticket promedio", f"${ticket_prom:,.0f}")
-            with c4: _tarjeta("Días con venta", str(dias_con_v))
+        meta_noble = 145000.0
+        if not df_v_mes_dash.empty and "Meta_Mensual" in df_v_mes_dash.columns:
+            meta_noble = limpiar_valor(df_v_mes_dash["Meta_Mensual"].iloc[-1]) or meta_noble
+        avance_global = (venta_acum_dash / meta_noble * 100) if meta_noble > 0 else 0.0
+        dias_con_venta_dash = int((df_v_mes_dash["Venta_Diaria"] > 0).sum()) if not df_v_mes_dash.empty else 0
+        prom_diario_dash = venta_acum_dash / dias_con_venta_dash if dias_con_venta_dash > 0 else 0.0
 
-            st.caption("Por canal")
-            ventas_canal = df_mes.groupby("Canal")["Venta_Diaria"].sum()
-            cols_c = st.columns(len(CANALES_VENTA))
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Venta cobrada del mes", f"${venta_acum_dash:,.2f}")
+        c2.metric("Venta total del mes", f"${venta_total_dash:,.2f}")
+        c3.metric("Meta mensual (Noble)", f"${meta_noble:,.2f}")
+        c4.metric("Promedio diario", f"${prom_diario_dash:,.2f}")
+
+        # Resumen por canal (Total | Cobrado)
+        st.subheader("📊 Ventas por canal (Total | Cobrado)")
+        if "Canal" in df_v_mes_dash.columns:
+            ventas_por_canal_total = df_v_mes_dash.groupby("Canal")["Venta_Total"].sum()
+            ventas_por_canal_cobrado = df_v_mes_dash.groupby("Canal")["Venta_Diaria"].sum()
+            cols_canales = st.columns(len(CANALES_VENTA))
             for i, canal in enumerate(CANALES_VENTA):
-                monto = ventas_canal.get(canal, 0)
-                with cols_c[i]:
-                    _tarjeta(canal, f"${monto:,.0f}", color=PALETA_CANALES.get(canal, COLOR_TARJETA))
+                total = ventas_por_canal_total.get(canal, 0.0)
+                cobrado = ventas_por_canal_cobrado.get(canal, 0.0)
+                cols_canales[i].metric(
+                    f"🏢 {canal}",
+                    f"${cobrado:,.2f}",
+                    delta=f"Total: ${total:,.2f}"
+                )
+        else:
+            st.info("Los datos históricos aún no tienen canal asignado.")
+    else:
+        st.info("Aún no hay ventas registradas este mes.")
 
-    # ── Adeudos vencidos ──
-    with st.container(border=True):
-        st.subheader("⚠️ Adeudos vencidos")
-        eventos = []
-        for offset in [0, -1, -2]:
-            mes = ahora.month + offset
-            año = ahora.year
-            if mes <= 0:
-                mes += 12
-                año -= 1
-            eventos.extend(cargar_eventos_mes(mes, año))
-        hoy = ahora.date()
-        adeudos = []
-        for e in eventos:
-            adeudo = e.get("adeudo", 0)
-            if adeudo <= 0:
+    # ---------- ALERTAS DE ADEUDO ----------
+    st.divider()
+    st.subheader("⚠️ Adeudos pendientes")
+
+    eventos = []
+    for mes_offset in [0, -1, -2]:
+        mes = ahora.month + mes_offset
+        año = ahora.year
+        if mes <= 0:
+            mes += 12
+            año -= 1
+        eventos.extend(cargar_eventos_mes(mes, año))
+
+    hoy = ahora.date()
+    adeudos = []
+    for ev in eventos:
+        adeudo = ev.get("adeudo", 0)
+        if adeudo <= 0:
+            continue
+        fecha_limite_str = ev.get("fecha_entrega") or ev.get("fecha")
+        if isinstance(fecha_limite_str, str):
+            try:
+                fecha_limite = pd.to_datetime(fecha_limite_str).date()
+            except:
                 continue
-            fecha_limite_str = e.get("fecha_entrega") or e.get("fecha")
-            if isinstance(fecha_limite_str, str):
-                try:
-                    fecha_limite = pd.to_datetime(fecha_limite_str).date()
-                except:
-                    continue
-            else:
-                try:
-                    fecha_limite = fecha_limite_str.date()
-                except:
-                    continue
-            if fecha_limite < hoy:
-                adeudos.append({
-                    "Evento": e.get("titulo", ""),
-                    "Cliente": e.get("cliente", ""),
-                    "Adeudo": f"${adeudo:,.2f}",
-                    "Fecha límite": fecha_limite.strftime("%d/%m/%Y"),
-                })
-        if adeudos:
-            df_adeudos = pd.DataFrame(adeudos)
-            st.dataframe(df_adeudos, hide_index=True, width="stretch")
+        elif hasattr(fecha_limite_str, 'date'):
+            fecha_limite = fecha_limite_str.date()
         else:
-            st.caption("Sin adeudos vencidos")
+            continue
+        if fecha_limite < hoy:
+            adeudos.append({
+                "Evento": ev.get("titulo", ""),
+                "Cliente": ev.get("cliente", ""),
+                "Adeudo": f"${adeudo:,.2f}",
+                "Fecha límite": fecha_limite.strftime("%d/%m/%Y"),
+                "ID": ev.get("id", ""),
+            })
 
-    # ── Compras sugeridas ──
+    if adeudos:
+        df_adeudos = pd.DataFrame(adeudos)
+        st.warning(f"Hay {len(adeudos)} eventos con adeudos vencidos:")
+        st.dataframe(df_adeudos, width="stretch", hide_index=True)
+    else:
+        st.success("✅ No hay adeudos vencidos.")
+
+    # ---------- LISTA DE COMPRAS ----------
     df_actual = obtener_ultimo_inventario(df_historial)
-    with st.container(border=True):
-        st.subheader("🛒 Compras sugeridas")
-        if not df_actual.empty:
-            com = df_actual[df_actual["Necesita Compra"] == True]
-            if not com.empty:
-                st.caption(f"{len(com)} insumos bajo mínimo")
-                cols_compra = ["Unidad de Negocio","Nombre del Insumo","Marca","Proveedor","Grupo",
-                               "Presentación de Compra","Unidad de Medida","Stock Neto Calculado",
-                               "Stock Mínimo"]
-                cols_ok = [c for c in cols_compra if c in com.columns]
-                st.dataframe(com[cols_ok].sort_values(["Unidad de Negocio","Grupo"]),
-                             hide_index=True, width="stretch")
-            else:
-                st.caption("Todo en orden")
+    if not df_actual.empty:
+        st.divider()
+        st.subheader("🛒 Lista de compras (todas las unidades)")
+        com_global = df_actual[df_actual["Necesita Compra"] == True].copy()
+        if not com_global.empty:
+            cols_compra = ["Unidad de Negocio","Nombre del Insumo","Marca","Proveedor","Grupo",
+                           "Presentación de Compra","Unidad de Medida","Stock Neto Calculado",
+                           "Stock Mínimo","Necesita Compra","Responsable","Fecha de Inventario","Observaciones"]
+            cols_compra_ok = [c for c in cols_compra if c in com_global.columns]
+            st.dataframe(com_global[cols_compra_ok].sort_values(["Unidad de Negocio","Grupo"]),
+                         width="stretch", hide_index=True)
         else:
-            st.info("Sin datos de inventario.")
+            st.success("✅ No hay insumos que necesiten compra.")
 
-    # ── Actividad reciente ──
-    with st.container(border=True):
-        st.subheader("🕒 Actividad reciente")
+        st.divider()
+        st.subheader("🕒 Actividad Reciente")
         df_log = df_historial.copy()
         df_log["Fecha de Inventario"] = df_log["Fecha de Inventario"].combine_first(df_log["Fecha de Entrada"])
         cols_log = ["Fecha de Inventario","Responsable","Unidad de Negocio","Nombre del Insumo","Stock Neto","¿Comprar?","Observaciones"]
@@ -144,5 +144,7 @@ def show_dashboard():
             df_log.dropna(subset=["Fecha de Inventario"])
                   .sort_values("Fecha de Inventario", ascending=False)[cols_log_ok]
                   .head(15),
-            hide_index=True, width="stretch"
+            width="stretch"
         )
+    else:
+        st.info("Sin datos históricos. Ejecuta el primer conteo de inventario.")

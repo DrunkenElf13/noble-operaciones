@@ -6,14 +6,54 @@ from components.calendario_utils import (
     cargar_eventos_mes, agregar_evento, actualizar_evento,
     eliminar_evento, registrar_abono, _asegurar_hoja_calendario
 )
-from config import COLS_CALENDARIO, PALETA_EVENTOS, COLOR_TARJETA, COLOR_SUBTEXTO
+from config import CANALES_VENTA, COLS_CALENDARIO
 from sheets import safe_worksheet, sh
 from utils import limpiar_valor
 
+# --------------------------------------------------------------------
+# Constantes para la interfaz
+# --------------------------------------------------------------------
+PALETA_COLORES = {
+    "🔵 Azul": "#4A90D9",
+    "🟣 Morado": "#9B59B6",
+    "🔴 Rojo": "#E24B4A",
+    "🟢 Verde": "#48B065",
+    "🟠 Naranja": "#EF9F27",
+    "🟡 Amarillo": "#F1C40F",
+    "🩵 Turquesa": "#1ABC9C",
+    "⚫ Gris": "#34495E",
+}
+
+COLORES_TIPO = {
+    "☕ Evento": "#4A90D9",
+    "🥤 Entrega": "#9B59B6",
+    "Venta Noble": "#48B065",
+    "Vacaciones": "#33FF57",
+    "Fecha importante": "#3357FF",
+    "Adeudo": "#FF3333",
+    "Otro": "#AAAAAA",
+}
+
+ICONOS_TIPO = {
+    "☕ Evento": "☕",
+    "🥤 Entrega": "🥤",
+    "Vacaciones": "🏖️",
+    "Fecha importante": "📌",
+    "Adeudo": "⚠️",
+}
+
 TIPOS_MANUALES = ["Vacaciones", "Fecha importante", "Adeudo", "Otro"]
 
+CAMPOS_POR_TIPO = {
+    "Vacaciones": ["titulo", "fecha_inicio", "fecha_fin", "color", "notas"],
+    "Fecha importante": ["titulo", "descripcion", "fecha_inicio", "fecha_fin", "color", "notas"],
+    "Adeudo": ["titulo", "cliente", "total_cotizado", "adeudo", "metodo_pago", "fecha_inicio", "fecha_entrega", "color", "notas"],
+    "Otro": ["titulo", "cliente", "contacto", "ubicacion", "descripcion", "total_cotizado", "adeudo", "anticipo", "metodo_pago", "fecha_contratacion", "fecha_inicio", "fecha_entrega", "fecha_fin", "abonos", "notas", "color"],
+}
+
+
 def show_calendario():
-    st.title("Calendario Noble")
+    st.title("📅 Calendario Noble")
 
     hoy = datetime.now()
     if "cal_mes" not in st.session_state:
@@ -24,19 +64,28 @@ def show_calendario():
         st.session_state.dia_seleccionado = hoy.date()
 
     # ---------- Controles de mes ----------
-    col_anio, col_mes, col_btn1, col_btn2 = st.columns([1, 1, 1, 1])
+    col_anio, col_mes, col_btn = st.columns([1, 1, 2])
     with col_anio:
         años_opts = list(range(2024, 2031))
         año_sel = st.selectbox("Año", años_opts,
                                index=años_opts.index(st.session_state.cal_año)
                                if st.session_state.cal_año in años_opts else 0)
     with col_mes:
-        mes_sel = st.selectbox("Mes", list(range(1, 13)),
+        meses_nombres = [calendar.month_name[m] for m in range(1, 13)]
+        mes_sel = st.selectbox("Mes", range(1, 13),
                                index=st.session_state.cal_mes - 1,
                                format_func=lambda m: calendar.month_name[m])
-    with col_btn1:
+    with col_btn:
         st.write("")
         st.write("")
+        if st.button("Ir al mes seleccionado"):
+            st.session_state.cal_mes = mes_sel
+            st.session_state.cal_año = año_sel
+            st.cache_data.clear()
+            st.rerun()
+
+    col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
+    with col1:
         if st.button("◀"):
             if st.session_state.cal_mes == 1:
                 st.session_state.cal_mes = 12
@@ -45,9 +94,9 @@ def show_calendario():
                 st.session_state.cal_mes -= 1
             st.cache_data.clear()
             st.rerun()
-    with col_btn2:
-        st.write("")
-        st.write("")
+    with col2:
+        st.subheader(f"{calendar.month_name[st.session_state.cal_mes]} {st.session_state.cal_año}")
+    with col3:
         if st.button("▶"):
             if st.session_state.cal_mes == 12:
                 st.session_state.cal_mes = 1
@@ -56,14 +105,14 @@ def show_calendario():
                 st.session_state.cal_mes += 1
             st.cache_data.clear()
             st.rerun()
+    with col4:
+        if st.button("Hoy"):
+            st.session_state.cal_mes = hoy.month
+            st.session_state.cal_año = hoy.year
+            st.cache_data.clear()
+            st.rerun()
 
-    if st.button("Hoy", width="stretch"):
-        st.session_state.cal_mes = hoy.month
-        st.session_state.cal_año = hoy.year
-        st.cache_data.clear()
-        st.rerun()
-
-    eventos = cargar_eventos_mes(mes_sel, año_sel)
+    eventos = cargar_eventos_mes(st.session_state.cal_mes, st.session_state.cal_año)
 
     # Alerta de eventos con rango sospechoso
     anomalos = st.session_state.get("eventos_anomalos", [])
@@ -75,22 +124,20 @@ def show_calendario():
 
     # ---------- Calendario ----------
     cal = calendar.Calendar()
-    dias_mes = cal.monthdatescalendar(año_sel, mes_sel)
+    dias_mes = cal.monthdatescalendar(st.session_state.cal_año, st.session_state.cal_mes)
 
-    st.subheader(f"{calendar.month_name[mes_sel]} {año_sel}")
     dias_semana = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
-    cols_header = st.columns(7)
-    for i, d in enumerate(dias_semana):
-        cols_header[i].markdown(f"**{d}**")
+    cols = st.columns(7)
+    for i, dia in enumerate(dias_semana):
+        cols[i].markdown(f"**{dia}**")
 
     for semana in dias_mes:
         cols = st.columns(7)
         for i, dia in enumerate(semana):
-            if dia.month != mes_sel:
+            if dia.month != st.session_state.cal_mes:
                 cols[i].markdown("")
                 continue
 
-            # Botón para seleccionar el día
             if cols[i].button(str(dia.day), key=f"dia_{dia.day}_{dia.month}", help="Ver detalles"):
                 st.session_state.dia_seleccionado = dia
                 st.rerun()
@@ -104,16 +151,21 @@ def show_calendario():
                 meta = ventas_noble[0].get("meta_diaria", 145000 / 26) if ventas_noble else 145000 / 26
                 pct = min(total_noble / meta * 100, 100) if meta > 0 else 0
                 color_bar = "#48B065" if pct >= 100 else ("#EF9F27" if pct >= 50 else "#E24B4A")
+                barra = (
+                    f"<div style='background:#ddd; border-radius:4px; height:6px; width:100%; margin-top:2px;'>"
+                    f"<div style='width:{pct}%; height:6px; border-radius:4px; background:{color_bar};'></div></div>"
+                )
                 cols[i].markdown(
-                    f"<div style='background:#ddd; border-radius:4px; height:4px; width:100%; margin-top:2px;'>"
-                    f"<div style='width:{pct}%; height:4px; border-radius:4px; background:{color_bar};'></div></div>",
+                    f"<div style='background-color:rgba(72,176,101,0.15); padding:2px 4px; border-radius:4px; font-size:11px;'>"
+                    f"💰 ${total_noble:,.0f}{barra}</div>",
                     unsafe_allow_html=True
                 )
 
-            # Etiquetas de eventos con tooltip
             for ev in otros[:2]:
-                color = ev.get("color", "#aaa")
+                color = ev.get("color", "#AAAAAA")
+                icono = ICONOS_TIPO.get(ev["tipo_evento"], "")
                 titulo = ev["titulo"][:22]
+                texto = f"{icono} {titulo}" if icono else titulo
                 tooltip = (
                     f"{ev['tipo_evento']}: {ev['titulo']}\n"
                     f"Cliente: {ev.get('cliente', '')}\n"
@@ -122,30 +174,38 @@ def show_calendario():
                     f"Anticipo: ${ev.get('anticipo', 0):,.2f}"
                 )
                 cols[i].markdown(
-                    f"<div title='{tooltip}' style='border-left:3px solid {color}; padding:0 4px; margin:1px 0; font-size:10px; color:{COLOR_SUBTEXTO};'>{titulo}</div>",
+                    f"<div title='{tooltip}' style='background-color:{color}20; border-left:3px solid {color}; padding:1px 4px; margin:2px 0; font-size:10px;'>{texto}</div>",
                     unsafe_allow_html=True
                 )
             if len(otros) > 2:
-                cols[i].markdown(f"<small style='color:{COLOR_SUBTEXTO}'>+{len(otros) - 2}</small>", unsafe_allow_html=True)
+                cols[i].markdown(f"<small>+{len(otros) - 2} más</small>", unsafe_allow_html=True)
 
-    # ---------- Día seleccionado ----------
     st.divider()
     st.subheader(f"📌 {st.session_state.dia_seleccionado.strftime('%d/%m/%Y')}")
     eventos_dia_sel = [e for e in eventos if e["fecha"].date() == st.session_state.dia_seleccionado]
     if eventos_dia_sel:
         for ev in eventos_dia_sel:
-            with st.container(border=True):
-                st.caption(f"{ev['tipo_evento']} — {ev['titulo']}")
-                if ev.get("cliente"):
-                    st.caption(f"Cliente: {ev['cliente']}")
-                st.caption(f"Total: ${ev['total_cotizado']:,.2f} | Adeudo: ${ev.get('adeudo', 0):,.2f}")
-                if ev.get("notas"):
-                    st.caption(f"Notas: {ev['notas']}")
+            with st.container():
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    st.markdown(
+                        f"<div style='width:20px;height:20px;background-color:{ev.get('color','#AAAAAA')};border-radius:4px;'></div>",
+                        unsafe_allow_html=True)
+                with col2:
+                    st.write(f"**{ev['tipo_evento']}**: {ev['titulo']}")
+                    if ev.get("cliente"):
+                        st.caption(f"Cliente: {ev['cliente']}")
+                    st.caption(f"Total: ${ev['total_cotizado']:,.2f}")
+                    if ev.get("adeudo", 0) > 0:
+                        st.caption(f"Adeudo: ${ev['adeudo']:,.2f}")
+                    if ev.get("notas"):
+                        st.caption(f"Notas: {ev['notas']}")
     else:
         st.info("Sin eventos para este día.")
 
-    # ---------- Lista de eventos del mes ----------
-    with st.expander("Lista de eventos del mes", expanded=False):
+    st.divider()
+    st.subheader("📋 Eventos del mes")
+    if eventos:
         eventos_filtrados = [e for e in eventos if e["tipo_evento"] != "Venta Noble"]
         if eventos_filtrados:
             eventos_unicos = {}
@@ -153,25 +213,95 @@ def show_calendario():
                 id_base = ev["id"].split("_dia_")[0].split("_entrega")[0]
                 if id_base not in eventos_unicos:
                     eventos_unicos[id_base] = ev
-            df = pd.DataFrame(eventos_unicos.values())[["fecha", "tipo_evento", "titulo", "total_cotizado", "adeudo", "anticipo"]]
-            df["fecha"] = df["fecha"].dt.strftime("%d/%m/%Y")
-            st.dataframe(df.sort_values("fecha"), hide_index=True, width="stretch")
+            df_lista = []
+            for ev in eventos_unicos.values():
+                fecha_str = ev["fecha"].strftime("%d/%m/%Y")
+                df_lista.append({
+                    "Fecha": fecha_str,
+                    "Tipo": ev["tipo_evento"],
+                    "Título": ev["titulo"],
+                    "Cliente": ev.get("cliente", ""),
+                    "Total": ev["total_cotizado"],
+                    "Adeudo": ev.get("adeudo", 0),
+                    "Anticipo": ev.get("anticipo", 0),
+                })
+            df_display = pd.DataFrame(df_lista).sort_values("Fecha")
+            st.dataframe(df_display, width="stretch", hide_index=True)
         else:
-            st.caption("Solo ventas regulares este mes.")
+            st.info("Solo ventas regulares este mes.")
+    else:
+        st.info("No hay eventos este mes.")
 
     # ---------- FORMULARIO MANUAL ----------
-    with st.expander("Nuevo evento manual", expanded=False):
-        with st.form("f_evento_manual"):
-            tipo_ev = st.selectbox("Tipo de evento", TIPOS_MANUALES)
-            fecha_ev = st.date_input("Fecha inicio", value=hoy.date())
-            titulo_ev = st.text_input("Título")
-            es_rango = st.toggle("Evento de varios días", value=False)
-            fecha_fin = fecha_ev
-            if es_rango:
-                fecha_fin = st.date_input("Fecha fin", value=fecha_ev, min_value=fecha_ev)
-            color_nombre = st.selectbox("Color", list(PALETA_EVENTOS.keys()), format_func=lambda x: f"● {x}")
-            notas_ev = st.text_area("Notas")
-            if st.form_submit_button("Guardar evento", width="stretch"):
+    st.divider()
+    with st.expander("➕ Nuevo evento manual", expanded=False):
+        with st.form("f_evento_manual", clear_on_submit=True):
+            tipo_ev = st.selectbox("Tipo de evento", TIPOS_MANUALES, key="tipo_manual")
+            campos = CAMPOS_POR_TIPO.get(tipo_ev, [])
+            col1, col2 = st.columns(2)
+            with col1:
+                fecha_ev = st.date_input("Fecha inicio", value=hoy.date(), key="fecha_manual")
+                es_rango = st.toggle("Evento de varios días", value=False, key="rango_manual")
+                if es_rango:
+                    fecha_fin_ev = st.date_input("Fecha fin", value=fecha_ev, min_value=fecha_ev, key="fecha_fin_manual")
+                else:
+                    fecha_fin_ev = fecha_ev
+                titulo_ev = st.text_input("Título", key="titulo_manual")
+                if "cliente" in campos:
+                    cliente_ev = st.text_input("Cliente", key="cliente_manual")
+                else:
+                    cliente_ev = ""
+                if "contacto" in campos:
+                    contacto_ev = st.text_input("Contacto", key="contacto_manual")
+                else:
+                    contacto_ev = ""
+                if "ubicacion" in campos:
+                    ubicacion_ev = st.text_input("Ubicación", key="ubicacion_manual")
+                else:
+                    ubicacion_ev = ""
+                if "descripcion" in campos:
+                    descripcion_ev = st.text_area("Descripción", key="descripcion_manual")
+                else:
+                    descripcion_ev = ""
+            with col2:
+                if "total_cotizado" in campos:
+                    total_ev = st.number_input("Total cotizado ($)", min_value=0.0, step=10.0, value=0.0, key="total_manual")
+                else:
+                    total_ev = 0.0
+                if "adeudo" in campos:
+                    adeudo_ev = st.number_input("Adeudo ($)", min_value=0.0, step=10.0, value=0.0, key="adeudo_manual")
+                else:
+                    adeudo_ev = 0.0
+                if "anticipo" in campos:
+                    anticipo_ev = st.number_input("Anticipo ($)", min_value=0.0, step=10.0, value=0.0, key="anticipo_manual")
+                else:
+                    anticipo_ev = 0.0
+                if "metodo_pago" in campos:
+                    metodo_ev = st.text_input("Método de pago", key="metodo_manual")
+                else:
+                    metodo_ev = ""
+                if "fecha_contratacion" in campos:
+                    fecha_contr_ev = st.date_input("Fecha contratación", value=hoy.date(), key="fecha_contr_manual")
+                else:
+                    fecha_contr_ev = hoy.date()
+                if "fecha_entrega" in campos:
+                    fecha_entr_ev = st.date_input("Fecha entrega/evento", value=hoy.date(), key="fecha_entr_manual")
+                else:
+                    fecha_entr_ev = hoy.date()
+                if "abonos" in campos:
+                    abonos_ev = st.text_area("Abonos", key="abonos_manual")
+                else:
+                    abonos_ev = ""
+                if "notas" in campos:
+                    notas_ev = st.text_area("Notas", key="notas_manual")
+                else:
+                    notas_ev = ""
+                color_nombre = st.selectbox("Color", list(PALETA_COLORES.keys()), key="color_manual")
+                color_ev = PALETA_COLORES[color_nombre]
+                st.markdown(
+                    f"<div style='width:30px;height:30px;background-color:{color_ev};border-radius:4px;'></div>",
+                    unsafe_allow_html=True)
+            if st.form_submit_button("💾 Guardar evento"):
                 if not titulo_ev.strip():
                     st.error("El título es obligatorio.")
                 else:
@@ -179,14 +309,22 @@ def show_calendario():
                         "fecha": fecha_ev.strftime("%Y-%m-%d"),
                         "tipo": tipo_ev,
                         "titulo": titulo_ev.strip(),
-                        "color": PALETA_EVENTOS[color_nombre],
-                        "origen": "manual",
-                        "total_cotizado": 0, "adeudo": 0, "anticipo": 0,
-                        "fecha_fin": fecha_fin.strftime("%Y-%m-%d") if es_rango and fecha_fin != fecha_ev else "",
-                        "notas": notas_ev,
+                        "cliente": cliente_ev.strip() if isinstance(cliente_ev, str) else "",
+                        "contacto": contacto_ev.strip() if isinstance(contacto_ev, str) else "",
+                        "ubicacion": ubicacion_ev.strip() if isinstance(ubicacion_ev, str) else "",
+                        "descripcion": descripcion_ev.strip() if isinstance(descripcion_ev, str) else "",
+                        "total_cotizado": total_ev,
+                        "adeudo": adeudo_ev,
+                        "metodo_pago": metodo_ev.strip() if isinstance(metodo_ev, str) else "",
+                        "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d") if hasattr(fecha_contr_ev, 'strftime') else "",
+                        "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d") if hasattr(fecha_entr_ev, 'strftime') else "",
+                        "abonos": abonos_ev.strip() if isinstance(abonos_ev, str) else "",
+                        "notas": notas_ev.strip() if isinstance(notas_ev, str) else "",
+                        "color": color_ev,
                         "responsable": st.session_state.current_user,
-                        "cliente": "", "contacto": "", "ubicacion": "", "descripcion": "",
-                        "metodo_pago": "", "fecha_contratacion": "", "fecha_entrega": "", "abonos": ""
+                        "anticipo": anticipo_ev,
+                        "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if es_rango and fecha_fin_ev != fecha_ev else "",
+                        "origen": "manual",
                     }
                     ok, msg = agregar_evento(datos)
                     if ok:
@@ -196,75 +334,101 @@ def show_calendario():
                     else:
                         st.error(msg)
 
-    # ---------- EDICIÓN DE EVENTO ----------
+    # ---------- EDICIÓN ----------
     if "editando_evento" in st.session_state and st.session_state["editando_evento"] is not None:
         ev = st.session_state["editando_evento"]
-        with st.expander(f"Editando: {ev['titulo']}", expanded=True):
-            with st.form("f_edit_evento"):
-                tipo_ev = st.selectbox("Tipo", list(PALETA_EVENTOS.keys()),
-                                       index=list(PALETA_EVENTOS.keys()).index(ev["tipo_evento"])
-                                       if ev["tipo_evento"] in PALETA_EVENTOS else 0)
-                fecha_ev = st.date_input("Fecha inicio", value=ev["fecha"].date() if hasattr(ev["fecha"], 'date') else ev["fecha"])
+        st.subheader(f"Editando: {ev['titulo']}")
+        with st.form("f_edit_evento", clear_on_submit=False):
+            tipo_ev = st.selectbox("Tipo", list(COLORES_TIPO.keys()),
+                                   index=list(COLORES_TIPO.keys()).index(ev["tipo_evento"])
+                                   if ev["tipo_evento"] in COLORES_TIPO else 0,
+                                   key="tipo_editar")
+            col1, col2 = st.columns(2)
+            with col1:
+                fecha_ev = st.date_input("Fecha inicio",
+                                         value=ev["fecha"].date() if hasattr(ev["fecha"], 'date') else ev["fecha"],
+                                         key="fecha_editar")
                 fecha_fin_val = ev.get("fecha_fin", "")
-                fecha_fin = fecha_ev
                 if fecha_fin_val:
-                    fecha_fin = st.date_input("Fecha fin", value=pd.to_datetime(fecha_fin_val).date())
-                titulo_ev = st.text_input("Título", value=ev["titulo"])
-                total_ev = st.number_input("Total cotizado", value=ev.get("total_cotizado", 0.0))
-                adeudo_ev = st.number_input("Adeudo", value=ev.get("adeudo", 0.0))
-                anticipo_ev = st.number_input("Anticipo", value=ev.get("anticipo", 0.0))
-                notas_ev = st.text_area("Notas", value=ev.get("notas", ""))
-                color_nombre_actual = [k for k, v in PALETA_EVENTOS.items() if v == ev.get("color", "#4A90D9")]
-                color_nombre = st.selectbox("Color", list(PALETA_EVENTOS.keys()),
-                                            index=list(PALETA_EVENTOS.keys()).index(color_nombre_actual[0])
-                                            if color_nombre_actual else 0,
-                                            format_func=lambda x: f"● {x}")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.form_submit_button("Actualizar", width="stretch"):
-                        datos = {
-                            "fecha": fecha_ev.strftime("%Y-%m-%d"),
-                            "tipo": tipo_ev,
-                            "titulo": titulo_ev.strip(),
-                            "total_cotizado": total_ev,
-                            "adeudo": adeudo_ev,
-                            "anticipo": anticipo_ev,
-                            "fecha_fin": fecha_fin.strftime("%Y-%m-%d") if fecha_fin != fecha_ev else "",
-                            "notas": notas_ev,
-                            "color": PALETA_EVENTOS[color_nombre],
-                            "origen": ev.get("origen", "manual"),
-                            "responsable": st.session_state.current_user,
-                            "cliente": ev.get("cliente", ""),
-                            "contacto": ev.get("contacto", ""),
-                            "ubicacion": ev.get("ubicacion", ""),
-                            "descripcion": ev.get("descripcion", ""),
-                            "metodo_pago": ev.get("metodo_pago", ""),
-                            "fecha_contratacion": ev.get("fecha_contratacion", ""),
-                            "fecha_entrega": ev.get("fecha_entrega", ""),
-                            "abonos": ev.get("abonos", "")
-                        }
-                        ok, msg = actualizar_evento(ev["id"], datos)
-                        if ok:
-                            st.cache_data.clear()
-                            del st.session_state["editando_evento"]
-                            st.success("Evento actualizado.")
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                with col2:
-                    if st.form_submit_button("Cancelar", width="stretch"):
+                    fecha_fin_ev = st.date_input("Fecha fin", value=pd.to_datetime(fecha_fin_val).date(), key="fecha_fin_editar")
+                else:
+                    fecha_fin_ev = fecha_ev
+                titulo_ev = st.text_input("Título", value=ev["titulo"], key="titulo_editar")
+                cliente_ev = st.text_input("Cliente", value=ev.get("cliente", ""), key="cliente_editar")
+                contacto_ev = st.text_input("Contacto", value=ev.get("contacto", ""), key="contacto_editar")
+                ubicacion_ev = st.text_input("Ubicación", value=ev.get("ubicacion", ""), key="ubicacion_editar")
+                descripcion_ev = st.text_area("Descripción", value=ev.get("descripcion", ""), key="descripcion_editar")
+            with col2:
+                total_ev = st.number_input("Total cotizado", min_value=0.0, step=10.0,
+                                           value=ev.get("total_cotizado", 0.0), key="total_editar")
+                adeudo_ev = st.number_input("Adeudo", min_value=0.0, step=10.0,
+                                            value=ev.get("adeudo", 0.0), key="adeudo_editar")
+                anticipo_ev = st.number_input("Anticipo", min_value=0.0, step=10.0,
+                                              value=ev.get("anticipo", 0.0), key="anticipo_editar")
+                metodo_ev = st.text_input("Método de pago", value=ev.get("metodo_pago", ""), key="metodo_editar")
+                fecha_contr_ev = st.date_input("Fecha contratación",
+                                               value=pd.to_datetime(ev.get("fecha_contratacion")).date()
+                                               if ev.get("fecha_contratacion") else hoy.date(),
+                                               key="fecha_contr_editar")
+                fecha_entr_ev = st.date_input("Fecha entrega",
+                                              value=pd.to_datetime(ev.get("fecha_entrega")).date()
+                                              if ev.get("fecha_entrega") else hoy.date(),
+                                              key="fecha_entr_editar")
+                abonos_ev = st.text_area("Abonos", value=ev.get("abonos", ""), key="abonos_editar")
+                notas_ev = st.text_area("Notas", value=ev.get("notas", ""), key="notas_editar")
+                color_nombre_actual = [k for k, v in PALETA_COLORES.items() if v == ev.get("color", "#4A90D9")]
+                color_nombre = st.selectbox("Color", list(PALETA_COLORES.keys()),
+                                           index=list(PALETA_COLORES.keys()).index(color_nombre_actual[0])
+                                           if color_nombre_actual else 0,
+                                           key="color_editar")
+                color_ev = PALETA_COLORES[color_nombre]
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.form_submit_button("💾 Actualizar"):
+                    datos = {
+                        "fecha": fecha_ev.strftime("%Y-%m-%d"),
+                        "tipo": tipo_ev,
+                        "titulo": titulo_ev.strip(),
+                        "cliente": cliente_ev.strip(),
+                        "contacto": contacto_ev.strip(),
+                        "ubicacion": ubicacion_ev.strip(),
+                        "descripcion": descripcion_ev.strip(),
+                        "total_cotizado": total_ev,
+                        "adeudo": adeudo_ev,
+                        "metodo_pago": metodo_ev.strip(),
+                        "fecha_contratacion": fecha_contr_ev.strftime("%Y-%m-%d"),
+                        "fecha_entrega": fecha_entr_ev.strftime("%Y-%m-%d"),
+                        "abonos": abonos_ev.strip(),
+                        "notas": notas_ev.strip(),
+                        "color": color_ev,
+                        "responsable": st.session_state.current_user,
+                        "anticipo": anticipo_ev,
+                        "fecha_fin": fecha_fin_ev.strftime("%Y-%m-%d") if fecha_fin_ev != fecha_ev else "",
+                        "origen": ev.get("origen", "manual"),
+                    }
+                    ok, msg = actualizar_evento(ev["id"], datos)
+                    if ok:
+                        st.cache_data.clear()
+                        st.success("Evento actualizado.")
                         del st.session_state["editando_evento"]
                         st.rerun()
+                    else:
+                        st.error(msg)
+            with col_btn2:
+                if st.form_submit_button("❌ Cancelar"):
+                    del st.session_state["editando_evento"]
+                    st.rerun()
 
     # ---------- ABONOS ----------
-    st.divider()
-    with st.expander("Registrar abono"):
+    st.subheader("💵 Registrar abono")
+    with st.expander("Añadir abono a evento con adeudo"):
         ws_cal, _ = _asegurar_hoja_calendario()
         eventos_adeudo = []
         if ws_cal:
             datos = ws_cal.get_all_values()
             if len(datos) > 1:
-                df = pd.DataFrame(datos[1:], columns=datos[0])
+                cols = datos[0]
+                df = pd.DataFrame(datos[1:], columns=cols)
                 if "Adeudo" in df.columns:
                     df["Adeudo_num"] = df["Adeudo"].apply(limpiar_valor)
                     df = df[df["Adeudo_num"] > 0]
@@ -275,21 +439,27 @@ def show_calendario():
                                 "fecha": row["Fecha"],
                                 "titulo": row.get("Título", ""),
                                 "cliente": row.get("Cliente", ""),
-                                "adeudo": limpiar_valor(row["Adeudo"])
+                                "adeudo": limpiar_valor(row["Adeudo"]),
                             })
+
         if eventos_adeudo:
-            cliente_busqueda = st.text_input("Filtrar por cliente")
+            cliente_busqueda = st.text_input("Filtrar por cliente", key="abono_cliente")
             if cliente_busqueda:
-                eventos_adeudo = [e for e in eventos_adeudo if cliente_busqueda.lower() in e["cliente"].lower()]
-            if eventos_adeudo:
-                opciones = {f"{e['fecha']} - {e['titulo']} (${e['adeudo']:,.2f})": e for e in eventos_adeudo}
+                eventos_adeudo = [e for e in eventos_adeudo
+                                  if cliente_busqueda.lower() in e["cliente"].lower()]
+
+            if not eventos_adeudo:
+                st.info("Ningún evento coincide con el filtro.")
+            else:
+                opciones = {f"{e['fecha']} - {e['titulo']} (${e['adeudo']:,.2f})": e
+                            for e in eventos_adeudo}
                 sel = st.selectbox("Evento", list(opciones.keys()))
                 if sel:
                     ev_abono = opciones[sel]
-                    monto = st.number_input("Monto del abono ($)", min_value=0.0, step=10.0)
-                    if st.button("Registrar abono", width="stretch"):
+                    monto = st.number_input("Monto del abono ($)", min_value=0.0, step=10.0, value=0.0)
+                    if st.button("Registrar abono"):
                         if monto <= 0:
-                            st.error("Monto mayor a cero.")
+                            st.error("El monto debe ser mayor a cero.")
                         else:
                             ok, msg = registrar_abono(ev_abono["id"], monto)
                             if ok:
@@ -298,19 +468,21 @@ def show_calendario():
                                 st.rerun()
                             else:
                                 st.error(msg)
-            else:
-                st.caption("Sin resultados.")
         else:
-            st.caption("No hay eventos con adeudo pendiente.")
+            st.info("No hay eventos con adeudo pendiente en el sistema.")
 
-    # ── Panel de detalle de Coffee Station y Noble To Go ──
+    # ─────────────────────────────────────────────
+    # Panel de detalle de Coffee Station y Noble To Go
+    # ─────────────────────────────────────────────
     st.divider()
     with st.expander("📋 Detalle de Coffee Station y Noble To Go", expanded=False):
+        st.markdown("Filtra y consulta todos los registros de estos canales.")
+
         tab_cs, tab_ntg = st.tabs(["☕ Coffee Station", "🥤 Noble To Go"])
 
         @st.cache_data(ttl=120)
-        def cargar_detalle(hoja):
-            ws, _ = safe_worksheet(sh, hoja)
+        def cargar_detalle_canal(nombre_hoja):
+            ws, err = safe_worksheet(sh, nombre_hoja)
             if ws:
                 datos = ws.get_all_values()
                 if len(datos) > 1:
@@ -318,50 +490,74 @@ def show_calendario():
                     for col in COLS_CALENDARIO:
                         if col not in df.columns:
                             df[col] = ""
-                    df["_fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+                    if "Fecha" in df.columns:
+                        df["_fecha_dt"] = pd.to_datetime(df["Fecha"], errors="coerce")
+                    if "Fecha_Entrega" in df.columns:
+                        df["_fecha_entr_dt"] = pd.to_datetime(df["Fecha_Entrega"], errors="coerce")
                     return df
             return pd.DataFrame()
 
-        for hoja, tab, prefijo in [("Coffee Station", tab_cs, "☕ Evento"), ("Noble To Go", tab_ntg, "🥤 Entrega")]:
+        for nombre_hoja, tab, prefijo in [
+            ("Coffee Station", tab_cs, "☕ Evento"),
+            ("Noble To Go", tab_ntg, "🥤 Entrega"),
+        ]:
             with tab:
-                df = cargar_detalle(hoja)
+                df = cargar_detalle_canal(nombre_hoja)
                 if df.empty:
-                    st.info("Sin datos.")
+                    st.info(f"No hay registros en {nombre_hoja}.")
                     continue
+
+                # Excluir IDs de entrega antiguos
                 if "ID" in df.columns:
                     df = df[~df["ID"].astype(str).str.contains("_entrega", na=False)]
 
-                # Filtros
-                col_a, col_m, col_c, col_ad = st.columns(4)
-                with col_a:
-                    años_d = sorted(df["_fecha"].dt.year.dropna().unique().astype(int), reverse=True)
-                    año_f = st.selectbox("Año", ["Todos"] + [str(a) for a in años_d], key=f"año_{hoja}")
-                with col_m:
-                    mes_f = st.selectbox("Mes", ["Todos"] + [calendar.month_name[m] for m in range(1, 13)], key=f"mes_{hoja}")
-                with col_c:
-                    cliente_f = st.text_input("Cliente", key=f"cliente_{hoja}")
-                with col_ad:
-                    adeudo_f = st.selectbox("Adeudo", ["Todos", "Con adeudo", "Sin adeudo"], key=f"adeudo_{hoja}")
+                # ---------- Filtros (mes y año separados) ----------
+                with st.container():
+                    st.caption(f"**{len(df)} registros encontrados**")
+                    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+                    with col_f1:
+                        años_disponibles = sorted(df["_fecha_dt"].dropna().dt.year.unique().astype(int), reverse=True)
+                        año_filtro = st.selectbox("Año", ["Todos"] + [str(a) for a in años_disponibles],
+                                                  key=f"año_{nombre_hoja}")
+                    with col_f2:
+                        mes_filtro = st.selectbox("Mes", ["Todos"] + [calendar.month_name[m] for m in range(1, 13)],
+                                                  key=f"mes_{nombre_hoja}")
+                    with col_f3:
+                        cliente_filtro = st.text_input("Buscar cliente", key=f"cliente_{nombre_hoja}")
+                    with col_f4:
+                        adeudo_filtro = st.selectbox("Adeudo", ["Todos", "Con adeudo", "Sin adeudo"],
+                                                     key=f"adeudo_{nombre_hoja}")
 
-                if año_f != "Todos":
-                    df = df[df["_fecha"].dt.year == int(año_f)]
-                if mes_f != "Todos":
-                    mes_num = list(calendar.month_name).index(mes_f)
-                    df = df[df["_fecha"].dt.month == mes_num]
-                if cliente_f.strip():
-                    df = df[df["Cliente"].astype(str).str.contains(cliente_f.strip(), case=False, na=False)]
-                if adeudo_f == "Con adeudo":
+                # Aplicar filtros
+                if año_filtro != "Todos":
+                    df = df[df["_fecha_dt"].dt.year == int(año_filtro)]
+                if mes_filtro != "Todos":
+                    try:
+                        mes_num = list(calendar.month_name).index(mes_filtro)
+                        if 1 <= mes_num <= 12:
+                            df = df[df["_fecha_dt"].dt.month == mes_num]
+                    except ValueError:
+                        pass
+                if cliente_filtro.strip():
+                    df = df[df["Cliente"].astype(str).str.contains(cliente_filtro.strip(), case=False, na=False)]
+                if adeudo_filtro == "Con adeudo":
                     df = df[df["Adeudo"].apply(limpiar_valor) > 0]
-                elif adeudo_f == "Sin adeudo":
+                elif adeudo_filtro == "Sin adeudo":
                     df = df[df["Adeudo"].apply(limpiar_valor) == 0]
 
-                st.caption(f"{len(df)} resultados")
-                ver_tabla = st.toggle("Vista tabla", key=f"tabla_{hoja}")
+                st.caption(f"**{len(df)} resultados**")
+
+                ver_tabla = st.toggle("Ver como tabla", key=f"tabla_{nombre_hoja}")
                 if ver_tabla:
-                    st.dataframe(df.drop(columns=["_fecha"], errors="ignore"), hide_index=True, width="stretch")
+                    columnas_mostrar = [
+                        "Fecha", "Título", "Cliente", "Total_Cotizado",
+                        "Adeudo", "Anticipo", "Metodo_Pago", "Notas"
+                    ]
+                    st.dataframe(df[columnas_mostrar].sort_values("Fecha", ascending=False),
+                                 hide_index=True, width="stretch")
                 else:
                     if df.empty:
-                        st.info("Sin resultados.")
+                        st.info("Ningún registro coincide con los filtros.")
                     else:
                         df = df.sort_values("Fecha", ascending=False)
                         for i in range(0, len(df), 2):
@@ -372,18 +568,42 @@ def show_calendario():
                                     break
                                 row = df.iloc[idx]
                                 with cols[j]:
-                                    color = row.get("Color", "#4A90D9") or "#4A90D9"
-                                    st.markdown(
-                                        f"""
-                                        <div style="border-left:4px solid {color}; padding:8px 12px; margin:4px 0; background:{COLOR_TARJETA}; border-radius:4px;">
-                                            <b>{prefijo} - {row.get('Cliente', 'Sin cliente')}</b><br>
-                                            <small style='color:{COLOR_SUBTEXTO}'>{row.get('Fecha', '')}</small>
-                                            <hr style='margin:4px 0;'>
-                                            <small>Total: ${limpiar_valor(row.get('Total_Cotizado', 0)):,.2f}</small><br>
-                                            <small>Adeudo: ${limpiar_valor(row.get('Adeudo', 0)):,.2f} | Anticipo: ${limpiar_valor(row.get('Anticipo', 0)):,.2f}</small><br>
-                                            <small>Método: {row.get('Metodo_Pago', '')} | Contacto: {row.get('Contacto', '')}</small><br>
-                                            <small>Notas: {row.get('Notas', '')}</small>
-                                        </div>
-                                        """,
-                                        unsafe_allow_html=True
-                                    )
+                                    color = row.get("Color", "#4A90D9")
+                                    if not color or pd.isna(color):
+                                        color = "#4A90D9"
+                                    with st.container():
+                                        st.markdown(
+                                            f"""
+                                            <div style="
+                                                border-left: 5px solid {color};
+                                                border-radius: 8px;
+                                                padding: 12px;
+                                                margin-bottom: 12px;
+                                                background-color: rgba(255,255,255,0.05);
+                                            ">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <span style="font-weight: bold; font-size: 1rem;">{prefijo} - {row.get('Cliente', 'Sin cliente')}</span>
+                                                    <span style="color: #888; font-size: 0.8rem;">{row.get('Fecha', '')}</span>
+                                                </div>
+                                                <hr style="margin: 6px 0;">
+                                                <p style="margin: 2px 0;"><strong>Título:</strong> {row.get('Título', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Total cotizado:</strong> ${limpiar_valor(row.get('Total_Cotizado', 0)):,.2f}</p>
+                                                <p style="margin: 2px 0;"><strong>Adeudo:</strong> ${limpiar_valor(row.get('Adeudo', 0)):,.2f}</p>
+                                                <p style="margin: 2px 0;"><strong>Anticipo:</strong> ${limpiar_valor(row.get('Anticipo', 0)):,.2f}</p>
+                                                <p style="margin: 2px 0;"><strong>Método de pago:</strong> {row.get('Metodo_Pago', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Contacto:</strong> {row.get('Contacto', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Ubicación:</strong> {row.get('Ubicacion', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Descripción:</strong> {row.get('Descripcion', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Fecha contratación:</strong> {row.get('Fecha_Contratacion', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Fecha entrega:</strong> {row.get('Fecha_Entrega', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Notas:</strong> {row.get('Notas', '')}</p>
+                                                <p style="margin: 2px 0;"><strong>Responsable:</strong> {row.get('Responsable', '')}</p>
+                                                <p style="margin: 2px 0; color: #888; font-size: 0.75rem;">ID: {row.get('ID', '')}</p>
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True
+                                        )
+
+        if st.button("🔄 Refrescar datos", width="stretch"):
+            st.cache_data.clear()
+            st.rerun()
