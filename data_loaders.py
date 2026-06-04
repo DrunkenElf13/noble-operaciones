@@ -22,7 +22,7 @@ def _safe_get_all_values(ws, retries=3, delay=2):
             raise
     return []
 
-@st.cache_data(ttl=120)  # ← Aumentado a 2 minutos
+@st.cache_data(ttl=120)
 def cargar_datos_integrales():
     if sh is None:
         return pd.DataFrame(), pd.DataFrame()
@@ -291,23 +291,28 @@ def cargar_todas_ventas():
                 df["Anticipo"] = 0.0
             df["Adeudo"] = adeudo
 
-            if "Fecha" in df.columns:
-                fechas_raw = df["Fecha"].astype(str).str.strip()
-                fechas_dt = pd.to_datetime(fechas_raw, errors="coerce")
-                mask_na = fechas_dt.isna()
-                if mask_na.any():
-                    extracted = fechas_raw[mask_na].str.extract(r'(\d{4})-(\d{2})-(\d{2})')
-                    for idx, row in extracted.iterrows():
-                        try:
-                            y, m, d = int(row[0]), int(row[1]), int(row[2])
-                            fechas_dt.at[idx] = datetime(y, m, d)
-                        except:
-                            pass
-                df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
-                df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
+            # Usar Fecha_Contratacion para Mes y Año; si no existe o está vacía, usar Fecha
+            if "Fecha_Contratacion" in df.columns:
+                fecha_ref = df["Fecha_Contratacion"].astype(str).str.strip()
+                mask_empty = (fecha_ref == "") | (fecha_ref.isna())
+                if mask_empty.any():
+                    fecha_ref.loc[mask_empty] = df.loc[mask_empty, "Fecha"].astype(str).str.strip()
             else:
-                df["Mes"] = "0"
-                df["Año"] = "0"
+                fecha_ref = df["Fecha"].astype(str).str.strip()
+
+            fechas_dt = pd.to_datetime(fecha_ref, errors="coerce")
+            mask_na = fechas_dt.isna()
+            if mask_na.any():
+                # Intento extraer con regex las fechas fallidas desde la misma referencia
+                extracted = fecha_ref[mask_na].str.extract(r'(\d{4})-(\d{2})-(\d{2})')
+                for idx, row in extracted.iterrows():
+                    try:
+                        y, m, d = int(row[0]), int(row[1]), int(row[2])
+                        fechas_dt.at[idx] = datetime(y, m, d)
+                    except:
+                        pass
+            df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
+            df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
 
             for col in COLS_VENTAS:
                 if col not in df.columns:
