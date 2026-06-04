@@ -283,8 +283,20 @@ def cargar_todas_ventas():
         if hoja in ["Coffee Station", "Noble To Go"]:
             total_cotizado = df["Total_Cotizado"].apply(limpiar_valor) if "Total_Cotizado" in df.columns else 0.0
             adeudo = df["Adeudo"].apply(limpiar_valor) if "Adeudo" in df.columns else 0.0
-            df["Venta_Diaria"] = (total_cotizado - adeudo).clip(lower=0.0)
-            df["Venta_Total"] = total_cotizado
+
+            # Detectar filas de abono (tipo "💰 Abono") para que se consideren como ingreso directo
+            if "Tipo" in df.columns:
+                mask_abono = df["Tipo"].astype(str).str.strip() == "💰 Abono"
+                # Para abonos, Venta_Diaria = Venta_Total = Total_Cotizado (que es el monto del abono)
+                df.loc[mask_abono, "Venta_Diaria"] = total_cotizado[mask_abono]
+                df.loc[mask_abono, "Venta_Total"] = total_cotizado[mask_abono]
+                # Para las demás filas, se calcula normalmente
+                df.loc[~mask_abono, "Venta_Diaria"] = (total_cotizado[~mask_abono] - adeudo[~mask_abono]).clip(lower=0.0)
+                df.loc[~mask_abono, "Venta_Total"] = total_cotizado[~mask_abono]
+            else:
+                df["Venta_Diaria"] = (total_cotizado - adeudo).clip(lower=0.0)
+                df["Venta_Total"] = total_cotizado
+
             if "Anticipo" in df.columns:
                 df["Anticipo"] = df["Anticipo"].apply(limpiar_valor)
             else:
@@ -303,7 +315,6 @@ def cargar_todas_ventas():
             fechas_dt = pd.to_datetime(fecha_ref, errors="coerce")
             mask_na = fechas_dt.isna()
             if mask_na.any():
-                # Intento extraer con regex las fechas fallidas desde la misma referencia
                 extracted = fecha_ref[mask_na].str.extract(r'(\d{4})-(\d{2})-(\d{2})')
                 for idx, row in extracted.iterrows():
                     try:
