@@ -62,6 +62,9 @@ def show_calendario():
         st.session_state.cal_año = hoy.year
     if "dia_seleccionado" not in st.session_state:
         st.session_state.dia_seleccionado = hoy.date()
+    # Estado para el toggle de varios días
+    if "rango_manual" not in st.session_state:
+        st.session_state.rango_manual = False
 
     # ---------- Controles de mes ----------
     col_anio, col_mes, col_btn = st.columns([1, 1, 2])
@@ -241,11 +244,12 @@ def show_calendario():
             col1, col2 = st.columns(2)
             with col1:
                 fecha_ev = st.date_input("Fecha inicio", value=hoy.date(), key="fecha_manual")
-                es_rango = st.toggle("Evento de varios días", value=False, key="rango_manual")
+                # Toggle con estado persistente
+                es_rango = st.toggle("Evento de varios días", value=st.session_state.rango_manual, key="rango_manual_toggle")
+                st.session_state.rango_manual = es_rango
+                fecha_fin_ev = fecha_ev
                 if es_rango:
                     fecha_fin_ev = st.date_input("Fecha fin", value=fecha_ev, min_value=fecha_ev, key="fecha_fin_manual")
-                else:
-                    fecha_fin_ev = fecha_ev
                 titulo_ev = st.text_input("Título", key="titulo_manual")
                 if "cliente" in campos:
                     cliente_ev = st.text_input("Cliente", key="cliente_manual")
