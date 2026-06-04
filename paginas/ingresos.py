@@ -50,11 +50,34 @@ def show_ingresos():
             bulk_data.append({"Insumo":nom,
                               "Stock Alm":limpiar_valor(prev["Alm"]) if prev is not None else 0.0,
                               "Stock Barra":limpiar_valor(prev["Barra"]) if prev is not None else 0.0,
-                              "+ Ingreso":0.0})
+                              "+ Ingreso":0.0,
+                              "Tara": limpiar_valor(r.get("Tara", 0)),  # Tara del catálogo, editable
+                              "Nuevo Neto":0.0})
         df_edit   = pd.DataFrame(bulk_data)
-        edited_df = st.data_editor(df_edit[["Insumo","Stock Alm","Stock Barra","+ Ingreso"]],
-                                   hide_index=True, width="stretch",
-                                   disabled=["Insumo","Stock Alm","Stock Barra"])
+        edited_df = st.data_editor(
+            df_edit[["Insumo","Stock Alm","Stock Barra","+ Ingreso","Tara","Nuevo Neto"]],
+            column_config={
+                "Insumo": st.column_config.TextColumn(disabled=True),
+                "Stock Alm": st.column_config.NumberColumn(disabled=True),
+                "Stock Barra": st.column_config.NumberColumn(disabled=True),
+                "+ Ingreso": st.column_config.NumberColumn(min_value=0.0, step=1.0),
+                "Tara": st.column_config.NumberColumn(min_value=0.0, step=0.1),
+                "Nuevo Neto": st.column_config.NumberColumn(disabled=True),
+            },
+            hide_index=True,
+            width="stretch",
+            disabled=["Insumo","Stock Alm","Stock Barra","Nuevo Neto"],
+            key="ingreso_bulk_editor"
+        )
+        # Calcular el nuevo neto en tiempo real
+        for idx in range(len(edited_df)):
+            ingreso = limpiar_valor(edited_df.at[idx, "+ Ingreso"])
+            tara = limpiar_valor(edited_df.at[idx, "Tara"])
+            alm_anterior = limpiar_valor(bulk_data[idx]["Stock Alm"])
+            bar_anterior = limpiar_valor(bulk_data[idx]["Stock Barra"])
+            nuevo_alm = alm_anterior + max(0.0, ingreso - tara)
+            nuevo_neto = nuevo_alm + bar_anterior
+            edited_df.at[idx, "Nuevo Neto"] = nuevo_neto
         proc_bulk = st.session_state.get("_procesando_bulk", False)
         btn_bulk  = st.button("📦 EJECUTAR INGRESO BULK", type="primary", disabled=proc_bulk)
         if btn_bulk and not proc_bulk:
@@ -76,8 +99,8 @@ def show_ingresos():
                     if row_matches.empty: continue
                     row_ins = row_matches.iloc[0]
                     v_min   = limpiar_valor(row_ins.get("Stock Mínimo",0))
-                    tara_bulk = limpiar_valor(row_ins.get("Tara",0))
-                    nuevo_a   = orig["Stock Alm"] + ingreso
+                    tara_usuario = limpiar_valor(r_ed["Tara"])
+                    nuevo_a   = orig["Stock Alm"] + max(0.0, ingreso - tara_usuario)
                     nuevo_n   = nuevo_a + orig["Stock Barra"]
                     filas_bulk.append(construir_fila_historial(
                         unidad=u_sel, nombre=nom, marca=row_ins.get("Marca",""),
@@ -86,7 +109,7 @@ def show_ingresos():
                         unidad_medida=row_ins.get("Unidad de Medida","pz"), alm=nuevo_a,
                         barra=orig["Stock Barra"], stock_neto=nuevo_n, stock_minimo=v_min,
                         comprar=nuevo_n < v_min, responsable=r_sel, fecha_inventario="",
-                        tara=tara_bulk, observaciones="",
+                        tara=tara_usuario, observaciones="",
                     ))
                 st.session_state["_procesando_bulk"] = False
                 if not filas_bulk:
@@ -117,6 +140,7 @@ def show_ingresos():
                 v_a_prev = limpiar_valor(prev["Alm"])   if prev is not None else 0.0
                 v_b_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
                 v_min    = limpiar_valor(row_ins.get("Stock Mínimo",0))
+                v_tara_cat = limpiar_valor(row_ins.get("Tara",0))
                 c1,c2,c3,c4,c5 = st.columns([3,2,1.5,1.5,2])
                 with c1:
                     st.write(f"**{nom}**")
@@ -129,9 +153,8 @@ def show_ingresos():
                                                    key=f"ing_{i}", label_visibility="collapsed", placeholder="0")
                     cant_ingreso = cant_ingreso if cant_ingreso is not None else 0.0
                 with c4:
-                    tara_ingreso = st.number_input("Tara", min_value=0.0, step=0.1, value=None,
+                    tara_ingreso = st.number_input("Tara", min_value=0.0, step=0.1, value=v_tara_cat,
                                                    key=f"tara_ing_{i}", label_visibility="collapsed", placeholder="tara")
-                    tara_ingreso = tara_ingreso if tara_ingreso is not None else 0.0
                 with c5:
                     cant_neta  = max(0.0, cant_ingreso - tara_ingreso)
                     nuevo_alm  = v_a_prev + cant_neta
