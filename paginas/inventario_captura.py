@@ -80,7 +80,8 @@ def show_inventario():
                 v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
                 v_ud_med = str(row.get("Unidad de Medida","pz")).lower()
                 v_comp_prev = bool(prev.get("Necesita Compra",False)) if prev is not None else False
-                anterior_neto = v_alm_prev + max(0.0, v_bar_prev - v_tara_init)
+                # CORRECCIÓN: Barra ya es neta, no se descuenta tara de nuevo
+                anterior_neto = v_alm_prev + v_bar_prev
                 bulk_data.append({
                     "Insumo": nom,
                     "Almacén": v_alm_prev,
@@ -233,7 +234,6 @@ def show_inventario():
                     if tara_key not in st.session_state: st.session_state[tara_key] = v_tara_init
                     v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1,
                                                     key=tara_key, label_visibility="collapsed")
-                    # Aviso visual cuando la tara cambia respecto al catálogo
                     if v_tara_manual != v_tara_cat and v_tara_manual > 0:
                         st.caption(f"⚠️ Catálogo: {v_tara_cat}")
                 with c6:
