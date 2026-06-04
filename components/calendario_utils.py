@@ -23,7 +23,7 @@ def _parse_fecha(fecha):
 def cargar_eventos_mes(mes, año):
     eventos = []
     ids_vistos = set()
-    eventos_anomalos = []  # para alertar al usuario
+    eventos_anomalos = []
     ws_cal, err = _asegurar_hoja_calendario()
     if ws_cal:
         try:
@@ -42,7 +42,6 @@ def cargar_eventos_mes(mes, año):
                     origen = str(row.get("Origen", "manual")).strip().lower() or "manual"
                     tipo = row.get("Tipo", "")
                     if fecha_inicio:
-                        # Detectar eventos con rango sospechoso (no vacaciones y >1 día)
                         if fecha_fin and fecha_fin > fecha_inicio and tipo != "Vacaciones":
                             dif = (fecha_fin - fecha_inicio).days
                             if dif > 1:
@@ -50,10 +49,8 @@ def cargar_eventos_mes(mes, año):
                                     f"{tipo}: '{row.get('Título','')}' "
                                     f"({fecha_inicio.strftime('%d/%m/%Y')} → {fecha_fin.strftime('%d/%m/%Y')})"
                                 )
-                        # Mostrar solo si el mes coincide
                         if fecha_inicio.month == mes and fecha_inicio.year == año:
                             titulo = row.get("Título", "")
-                            # Forzar prefijo para canales
                             if origen in ["coffee station", "noble to go"]:
                                 prefijo = "☕ Evento" if origen == "coffee station" else "🥤 Entrega"
                                 if not titulo.startswith(prefijo):
@@ -79,7 +76,6 @@ def cargar_eventos_mes(mes, año):
 
     st.session_state["eventos_anomalos"] = eventos_anomalos
 
-    # Ventas Noble POS
     try:
         df_ventas = cargar_todas_ventas()
         if not df_ventas.empty:
@@ -152,7 +148,6 @@ def _sincronizar_canal(id_evento: str, datos: dict, accion: str = "actualizar"):
                 if fila[0] == id_evento:
                     ws_canal.update(range_name=f"A{i}:T{i}", values=[nueva_fila])
                     return True, "Actualizado en canal"
-            # No existe, agregar
             ok, msg = append_rows_con_retry(ws_canal, [nueva_fila])
             return ok, msg
     except Exception as e:
@@ -191,11 +186,9 @@ def agregar_evento(datos: dict, id_externo: str = None):
         if not ok:
             return False, msg
 
-        # Sincronizar con hoja de canal si corresponde
         if origen in ["Coffee Station", "Noble To Go"]:
             ok_canal, msg_canal = _sincronizar_canal(id_final, datos, "agregar")
             if not ok_canal:
-                # La venta se guardó en Calendario pero no en la hoja del canal
                 return False, f"Guardado en Calendario, pero falló la copia a {origen}: {msg_canal}"
 
         return True, msg
@@ -293,17 +286,67 @@ def registrar_abono(id_evento: str, monto: float):
                 fecha_hoy = datetime.now().strftime("%Y-%m-%d")
                 nuevo_abono = f"{abonos_previos}; {fecha_hoy}: ${monto:,.2f}" if abonos_previos else f"{fecha_hoy}: ${monto:,.2f}"
                 ws.update(range_name=f"N{i}", values=[[nuevo_abono]])
+                
+                origen = ""
                 if len(fila) > 19:
                     origen = str(fila[19]).strip()
-                    if origen in ["Coffee Station", "Noble To Go"]:
-                        ws_canal, _ = _asegurar_hoja_canal_ventas(origen)
-                        if ws_canal:
-                            todos_canal = ws_canal.get_all_values()
-                            for j, f_canal in enumerate(todos_canal[1:], start=2):
-                                if f_canal[0] == id_evento:
-                                    ws_canal.update(range_name=f"J{j}", values=[[nuevo_adeudo]])
-                                    ws_canal.update(range_name=f"N{j}", values=[[nuevo_abono]])
-                                    break
+                
+                # Sincronizar con hoja de canal (actualizar adeudo del evento original)
+                if origen in ["Coffee Station", "Noble To Go"]:
+                    ws_canal, _ = _asegurar_hoja_canal_ventas(origen)
+                    if ws_canal:
+                        todos_canal = ws_canal.get_all_values()
+                        for j, f_canal in enumerate(todos_canal[1:], start=2):
+                            if f_canal[0] == id_evento:
+                                ws_canal.update(range_name=f"J{j}", values=[[nuevo_adeudo]])
+                                ws_canal.update(range_name=f"N{j}", values=[[nuevo_abono]])
+                                break
+                
+                # Crear nuevo registro de ingreso por el abono en la hoja del canal
+                if origen in ["Coffee Station", "Noble To Go"]:
+                    try:
+                        ws_canal_ing, _ = _asegurar_hoja_canal_ventas(origen)
+                        if ws_canal_ing:
+                            # Obtener datos del evento original para copiar cliente, responsable, etc.
+                            datos_evento = {
+                                "cliente": fila[4] if len(fila) > 4 else "",
+                                "contacto": fila[5] if len(fila) > 5 else "",
+                                "ubicacion": fila[6] if len(fila) > 6 else "",
+                                "descripcion": fila[7] if len(fila) > 7 else "",
+                                "metodo_pago": fila[10] if len(fila) > 10 else "",
+                                "color": fila[15] if len(fila) > 15 else "#4A90D9",
+                                "responsable": st.session_state.get("current_user", ""),
+                                "notas": f"Abono de ${monto:,.2f} del evento {fila[3] if len(fila) > 3 else id_evento}",
+                            }
+                            # Crear un ID único para la línea de abono
+                            id_abono = f"abono_{uuid.uuid4().hex[:8]}"
+                            fila_abono = [
+                                id_abono,
+                                fecha_hoy,                # Fecha en que se recibe el dinero
+                                "💰 Abono",              # Tipo
+                                f"Abono - {datos_evento['cliente']}" if datos_evento['cliente'] else f"Abono - {id_evento}",
+                                datos_evento['cliente'],
+                                datos_evento['contacto'],
+                                datos_evento['ubicacion'],
+                                datos_evento['descripcion'],
+                                monto,                    # Total_Cotizado = monto del abono
+                                0,                        # Adeudo 0
+                                datos_evento['metodo_pago'],
+                                fecha_hoy,                # Fecha_Contratacion = fecha actual
+                                "",                       # Fecha_Entrega vacía
+                                "",                       # Abonos vacío
+                                datos_evento['notas'],
+                                datos_evento['color'],
+                                datos_evento['responsable'],
+                                0,                        # Anticipo 0
+                                "",                       # Fecha_Fin vacía
+                                origen,
+                            ]
+                            append_rows_con_retry(ws_canal_ing, [fila_abono])
+                    except Exception as e:
+                        # Si falla la creación del ingreso, aún así la actualización del adeudo fue exitosa
+                        return True, f"Abono de ${monto:,.2f} registrado. Adeudo actualizado, pero no se pudo crear la línea de ingreso: {str(e)}"
+                
                 return True, f"Abono de ${monto:,.2f} registrado. Nuevo adeudo: ${nuevo_adeudo:,.2f}"
         return False, "Evento no encontrado"
     except Exception as e:
