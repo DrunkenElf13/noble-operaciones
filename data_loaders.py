@@ -22,7 +22,7 @@ def _safe_get_all_values(ws, retries=3, delay=2):
             raise
     return []
 
-@st.cache_data(ttl=120)  # ← Aumentado a 2 minutos
+@st.cache_data(ttl=120)
 def cargar_datos_integrales():
     if sh is None:
         return pd.DataFrame(), pd.DataFrame()
@@ -283,32 +283,51 @@ def cargar_todas_ventas():
         if hoja in ["Coffee Station", "Noble To Go"]:
             total_cotizado = df["Total_Cotizado"].apply(limpiar_valor) if "Total_Cotizado" in df.columns else 0.0
             adeudo = df["Adeudo"].apply(limpiar_valor) if "Adeudo" in df.columns else 0.0
-            df["Venta_Diaria"] = (total_cotizado - adeudo).clip(lower=0.0)
-            df["Venta_Total"] = total_cotizado
+            anticipo = df["Anticipo"].apply(limpiar_valor) if "Anticipo" in df.columns else 0.0
+
+            # Detectar filas de abono (tipo "💰 Abono")
+            if "Tipo" in df.columns:
+                mask_abono = df["Tipo"].astype(str).str.strip() == "💰 Abono"
+                # Para abonos, Venta_Diaria = Total_Cotizado (el monto pagado en esa fecha)
+                df.loc[mask_abono, "Venta_Diaria"] = total_cotizado[mask_abono]
+                df.loc[mask_abono, "Venta_Total"] = total_cotizado[mask_abono]
+                # Para eventos, Venta_Diaria = Anticipo (lo cobrado al contratar)
+                df.loc[~mask_abono, "Venta_Diaria"] = anticipo[~mask_abono]
+                df.loc[~mask_abono, "Venta_Total"] = total_cotizado[~mask_abono]
+            else:
+                df["Venta_Diaria"] = anticipo
+                df["Venta_Total"] = total_cotizado
+
+            # Conservar columnas de adeudo y anticipo
             if "Anticipo" in df.columns:
                 df["Anticipo"] = df["Anticipo"].apply(limpiar_valor)
             else:
                 df["Anticipo"] = 0.0
             df["Adeudo"] = adeudo
 
-            if "Fecha" in df.columns:
-                fechas_raw = df["Fecha"].astype(str).str.strip()
-                fechas_dt = pd.to_datetime(fechas_raw, errors="coerce")
-                mask_na = fechas_dt.isna()
-                if mask_na.any():
-                    extracted = fechas_raw[mask_na].str.extract(r'(\d{4})-(\d{2})-(\d{2})')
-                    for idx, row in extracted.iterrows():
-                        try:
-                            y, m, d = int(row[0]), int(row[1]), int(row[2])
-                            fechas_dt.at[idx] = datetime(y, m, d)
-                        except:
-                            pass
-                df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
-                df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
+            # Mes y Año desde Fecha_Contratacion (o Fecha si está vacía)
+            if "Fecha_Contratacion" in df.columns:
+                fecha_ref = df["Fecha_Contratacion"].astype(str).str.strip()
+                mask_empty = (fecha_ref == "") | (fecha_ref.isna())
+                if mask_empty.any():
+                    fecha_ref.loc[mask_empty] = df.loc[mask_empty, "Fecha"].astype(str).str.strip()
             else:
-                df["Mes"] = "0"
-                df["Año"] = "0"
+                fecha_ref = df["Fecha"].astype(str).str.strip()
 
+            fechas_dt = pd.to_datetime(fecha_ref, errors="coerce")
+            mask_na = fechas_dt.isna()
+            if mask_na.any():
+                extracted = fecha_ref[mask_na].str.extract(r'(\d{4})-(\d{2})-(\d{2})')
+                for idx, row in extracted.iterrows():
+                    try:
+                        y, m, d = int(row[0]), int(row[1]), int(row[2])
+                        fechas_dt.at[idx] = datetime(y, m, d)
+                    except:
+                        pass
+            df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
+            df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
+
+            # Rellenar columnas faltantes
             for col in COLS_VENTAS:
                 if col not in df.columns:
                     if col in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi",
