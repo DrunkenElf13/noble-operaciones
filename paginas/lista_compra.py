@@ -35,12 +35,16 @@ def show_lista_compra():
                 ("", "divider"),
             ]
             for _, r in com.iterrows():
-                lineas_pdf.append((f"* {str(r['Nombre del Insumo'])[:22]}", "bold"))
-                lineas_pdf.append((f"  Stock:{r['Stock Neto Calculado']} Min:{r['Stock Mínimo']}", "small"))
-                lineas_pdf.append(("", "divider"))
+                nombre = str(r['Nombre del Insumo'])[:22]
+                stock = r['Stock Neto Calculado']
+                minimo = r['Stock Mínimo']
+                lineas_pdf.append((f"{nombre} (S:{stock} M:{minimo})", "normal"))
             prev_txt = f"{'='*28}\n* COMPRAS {u_opcion.upper() if u_opcion!='Todas' else 'GLOBAL'} *\nFecha: {ahora_hermosillo().strftime('%d/%m/%Y')}\n{'-'*28}\n"
             for _, r in com.iterrows():
-                prev_txt += f"• {str(r['Nombre del Insumo'])[:22]}\n  Stock: {r['Stock Neto Calculado']} / Min: {r['Stock Mínimo']}\n{'-'*28}\n"
+                nombre = str(r['Nombre del Insumo'])[:22]
+                stock = r['Stock Neto Calculado']
+                minimo = r['Stock Mínimo']
+                prev_txt += f"• {nombre} (S:{stock} M:{minimo})\n"
             st.code(prev_txt, language=None)
             from paginas.impresion import generar_pdf_58mm
             pdf_bytes = generar_pdf_58mm(f"Compras {u_opcion}", lineas_pdf)
