@@ -13,10 +13,10 @@ def generar_pdf_58mm(titulo: str, lineas: list) -> bytes:
     ANCHO_MM   = 58
     MARGEN_MM  = 3
     LINEA_H_MM = 3.8
-    FUENTE_NORMAL = 6.0
-    FUENTE_BOLD   = 7.0
-    FUENTE_SMALL  = 5.5
-    FUENTE_TITLE  = 7.5
+    FUENTE_NORMAL = 8.0
+    FUENTE_BOLD   = 8.5
+    FUENTE_SMALL  = 7.0
+    FUENTE_TITLE  = 9.5
 
     # Altura fija de página (≈190 mm, equivale a 50 líneas)
     ALTO_PAGINA_MM = 190
