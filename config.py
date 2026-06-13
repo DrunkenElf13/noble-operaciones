@@ -9,6 +9,7 @@ COLS_HISTORIAL = [
     "Fecha de Entrada", "Presentación de Compra", "Unidad de Medida",
     "Alm", "Barra", "Stock Neto", "Stock Mínimo", "¿Comprar?",
     "Responsable", "Fecha de Inventario", "Tara", "Observaciones",
+    "Cantidad Ingresada",
 ]
 COLS_ACCESOS = ["Clave", "Nombre", "Rol"]
 COLS_AVISOS  = ["ID", "Título", "Mensaje", "Tipo", "Activo", "Fecha", "Autor", "Pagina"]
@@ -51,7 +52,7 @@ COLS_CALENDARIO = [
     "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
     "Metodo_Pago", "Fecha_Contratacion", "Fecha_Entrega",
     "Abonos", "Notas", "Color", "Responsable", "Anticipo", "Fecha_Fin",
-    "Origen",          # ← NUEVA COLUMNA: "manual", "Coffee Station", "Noble To Go", "Venta Noble"
+    "Origen",
 ]
 COLS_PERMISOS = ["Rol", "Pagina"]
 
