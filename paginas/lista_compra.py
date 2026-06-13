@@ -1,4 +1,5 @@
 import streamlit as st
+import base64
 from data_loaders import cargar_datos_integrales
 from inventario import obtener_ultimo_inventario
 from utils import ahora_hermosillo
@@ -28,7 +29,7 @@ def show_lista_compra():
         cols_compra_ok = [c for c in cols_compra if c in com.columns]
         st.dataframe(com[cols_compra_ok].sort_values(["Unidad de Negocio","Grupo"]),
                      width="stretch", hide_index=True)
-        with st.expander("🖨️ Descargar PDF (58mm)"):
+        with st.expander("🖨️ Descargar / Imprimir PDF (58mm)"):
             lineas_pdf = [
                 (f"* COMPRAS {u_opcion.upper() if u_opcion!='Todas' else 'GLOBAL'} *", "title"),
                 (f"Fecha: {ahora_hermosillo().strftime('%d/%m/%Y')}", "small"),
@@ -48,6 +49,27 @@ def show_lista_compra():
             st.code(prev_txt, language=None)
             from paginas.impresion import generar_pdf_58mm
             pdf_bytes = generar_pdf_58mm(f"Compras {u_opcion}", lineas_pdf)
+            # Botón para abrir en nueva ventana (sin descargar) usando JavaScript
+            b64_pdf = base64.b64encode(pdf_bytes).decode()
+            js_code = f"""
+            <script>
+            function abrirPDF() {{
+                var byteChars = atob("{b64_pdf}");
+                var byteNums = new Array(byteChars.length);
+                for (var i = 0; i < byteChars.length; i++) {{
+                    byteNums[i] = byteChars.charCodeAt(i);
+                }}
+                var byteArr = new Uint8Array(byteNums);
+                var blob = new Blob([byteArr], {{type: 'application/pdf'}});
+                var url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+            }}
+            </script>
+            <button onclick="abrirPDF()" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ccc;background:#f0f0f0;cursor:pointer;">
+            🖨️ Abrir para imprimir
+            </button>
+            """
+            st.components.v1.html(js_code, height=50)
             st.download_button(
                 label="📄 Descargar PDF 58mm", data=pdf_bytes,
                 file_name=f"compras_{u_opcion.replace(' ','_')}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.pdf",
