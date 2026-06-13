@@ -72,9 +72,7 @@ def show_impresion():
             if grupo != gr_actual:
                 lineas_pdf.append((f">> GRUPO {grupo} <<", "bold"))
                 gr_actual = grupo
-            lineas_pdf.append((str(r['Nombre del Insumo'])[:22], "normal"))
-            lineas_pdf.append(("[    ] Alm   [    ] Bar", "small"))
-            lineas_pdf.append(("", "divider"))
+            lineas_pdf.append((f"{str(r['Nombre del Insumo'])[:22]}  ________", "normal"))
         with st.expander("👁️ Vista previa del contenido", expanded=True):
             prev_txt = f"{'='*28}\n* CONTEO {u_sel.upper()} *\nFecha: {ahora_hermosillo().strftime('%d/%m/%Y')}\n{'-'*28}\n"
             gr_actual_p = ""
@@ -83,7 +81,7 @@ def show_impresion():
                 if grupo != gr_actual_p:
                     prev_txt += f"\n>> GRUPO {grupo} <<\n"
                     gr_actual_p = grupo
-                prev_txt += f" {str(r['Nombre del Insumo'])[:22]}\n [    ] Alm   [    ] Bar\n{'-'*28}\n"
+                prev_txt += f" {str(r['Nombre del Insumo'])[:22]}  ________\n"
             st.code(prev_txt, language=None)
         pdf_bytes = generar_pdf_58mm(f"Conteo {u_sel}", lineas_pdf)
         st.download_button(
