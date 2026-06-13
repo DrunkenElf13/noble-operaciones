@@ -6,18 +6,17 @@ from utils import ahora_hermosillo
 from config import UNIDADES
 from auth import tiene_permiso
 
-# La función generar_pdf_58mm es demasiado larga para duplicar; la colocamos en utils o en un módulo aparte.
-# Para simplificar, la definimos aquí (es un helper estático).
 def generar_pdf_58mm(titulo: str, lineas: list) -> bytes:
     from reportlab.lib.pagesizes import landscape
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.units import mm
     ANCHO_MM   = 58
     MARGEN_MM  = 3
-    LINEA_H_MM = 4.2
-    FUENTE_NORMAL = 7.5
-    FUENTE_BOLD   = 8
-    FUENTE_SMALL  = 6.5
+    LINEA_H_MM = 3.8
+    FUENTE_NORMAL = 6.0     # ← reducida para permitir 35 caracteres
+    FUENTE_BOLD   = 7.0
+    FUENTE_SMALL  = 5.5
+    FUENTE_TITLE  = 7.5
     alto_mm  = max(20 + len(lineas) * LINEA_H_MM + 10, 40)
     ancho_pts = ANCHO_MM * mm
     alto_pts  = alto_mm  * mm
@@ -25,6 +24,8 @@ def generar_pdf_58mm(titulo: str, lineas: list) -> bytes:
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(ancho_pts, alto_pts))
     y = alto_pts - (5 * mm)
+    # Máximo de caracteres por línea con fuente normal
+    max_chars = int((ANCHO_MM - MARGEN_MM * 2) / (FUENTE_NORMAL * 0.35))
     for linea in lineas:
         texto, estilo = linea if isinstance(linea, tuple) else (linea, 'normal')
         if estilo == 'divider':
@@ -32,16 +33,16 @@ def generar_pdf_58mm(titulo: str, lineas: list) -> bytes:
             c.drawString(margen_pts, y, "-" * 30)
         elif estilo == 'bold':
             c.setFont("Courier-Bold", FUENTE_BOLD)
-            c.drawString(margen_pts, y, str(texto)[:int((ANCHO_MM - MARGEN_MM*2)/(FUENTE_NORMAL*0.6))])
+            c.drawString(margen_pts, y, str(texto)[:max_chars])
         elif estilo == 'small':
             c.setFont("Courier", FUENTE_SMALL)
-            c.drawString(margen_pts, y, str(texto)[:int((ANCHO_MM - MARGEN_MM*2)/(FUENTE_NORMAL*0.6))])
+            c.drawString(margen_pts, y, str(texto)[:max_chars])
         elif estilo == 'title':
-            c.setFont("Courier-Bold", FUENTE_BOLD + 1)
-            c.drawString(margen_pts, y, str(texto)[:int((ANCHO_MM - MARGEN_MM*2)/(FUENTE_NORMAL*0.6))])
+            c.setFont("Courier-Bold", FUENTE_TITLE)
+            c.drawString(margen_pts, y, str(texto)[:max_chars])
         else:
             c.setFont("Courier", FUENTE_NORMAL)
-            c.drawString(margen_pts, y, str(texto)[:int((ANCHO_MM - MARGEN_MM*2)/(FUENTE_NORMAL*0.6))])
+            c.drawString(margen_pts, y, str(texto)[:max_chars])
         y -= LINEA_H_MM * mm
         if y < (5 * mm):
             c.showPage()
@@ -73,7 +74,8 @@ def show_impresion():
             if grupo != gr_actual:
                 lineas_pdf.append((f">> GRUPO {grupo} <<", "bold"))
                 gr_actual = grupo
-            lineas_pdf.append((f"{str(r['Nombre del Insumo'])[:22]}  ________", "normal"))
+            # Nombre completo, sin truncar
+            lineas_pdf.append((f"{str(r['Nombre del Insumo'])}  ________", "normal"))
         with st.expander("👁️ Vista previa del contenido", expanded=True):
             prev_txt = f"{'='*28}\n* CONTEO {u_sel.upper()} *\nFecha: {ahora_hermosillo().strftime('%d/%m/%Y')}\n{'-'*28}\n"
             gr_actual_p = ""
@@ -82,7 +84,7 @@ def show_impresion():
                 if grupo != gr_actual_p:
                     prev_txt += f"\n>> GRUPO {grupo} <<\n"
                     gr_actual_p = grupo
-                prev_txt += f" {str(r['Nombre del Insumo'])[:22]}  ________\n"
+                prev_txt += f" {str(r['Nombre del Insumo'])}  ________\n"
             st.code(prev_txt, language=None)
         pdf_bytes = generar_pdf_58mm(f"Conteo {u_sel}", lineas_pdf)
         # Botón para abrir en nueva ventana (sin descargar) usando JavaScript
