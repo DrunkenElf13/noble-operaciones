@@ -85,14 +85,27 @@ def show_impresion():
                 prev_txt += f" {str(r['Nombre del Insumo'])[:22]}  ________\n"
             st.code(prev_txt, language=None)
         pdf_bytes = generar_pdf_58mm(f"Conteo {u_sel}", lineas_pdf)
-        # Botón para abrir en nueva pestaña (sin descargar)
+        # Botón para abrir en nueva ventana (sin descargar) usando JavaScript
         b64_pdf = base64.b64encode(pdf_bytes).decode()
-        st.markdown(
-            f'<a href="data:application/pdf;base64,{b64_pdf}" target="_blank">'
-            f'<button style="width:100%;padding:8px;border-radius:4px;border:1px solid #ccc;background:#f0f0f0;cursor:pointer;">'
-            f'🖨️ Abrir para imprimir</button></a>',
-            unsafe_allow_html=True
-        )
+        js_code = f"""
+        <script>
+        function abrirPDF() {{
+            var byteChars = atob("{b64_pdf}");
+            var byteNums = new Array(byteChars.length);
+            for (var i = 0; i < byteChars.length; i++) {{
+                byteNums[i] = byteChars.charCodeAt(i);
+            }}
+            var byteArr = new Uint8Array(byteNums);
+            var blob = new Blob([byteArr], {{type: 'application/pdf'}});
+            var url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        }}
+        </script>
+        <button onclick="abrirPDF()" style="width:100%;padding:8px;border-radius:4px;border:1px solid #ccc;background:#f0f0f0;cursor:pointer;">
+        🖨️ Abrir para imprimir
+        </button>
+        """
+        st.components.v1.html(js_code, height=50)
         st.download_button(
             label="📄 Descargar PDF 58mm", data=pdf_bytes,
             file_name=f"conteo_{u_sel.replace(' ','_')}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.pdf",
