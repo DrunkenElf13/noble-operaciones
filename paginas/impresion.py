@@ -13,10 +13,10 @@ def generar_pdf_58mm(titulo: str, lineas: list) -> bytes:
     ANCHO_MM   = 58
     MARGEN_MM  = 3
     LINEA_H_MM = 3.8
-    FUENTE_NORMAL = 8.0
-    FUENTE_BOLD   = 8.5
-    FUENTE_SMALL  = 7.0
-    FUENTE_TITLE  = 9.5
+    FUENTE_NORMAL = 7.0
+    FUENTE_BOLD   = 7.5
+    FUENTE_SMALL  = 6.5
+    FUENTE_TITLE  = 8.0
 
     # Altura fija de página (≈190 mm, equivale a 50 líneas)
     ALTO_PAGINA_MM = 190
@@ -82,7 +82,7 @@ def show_impresion():
             if grupo != gr_actual:
                 lineas_pdf.append((f">> GRUPO {grupo} <<", "bold"))
                 gr_actual = grupo
-            lineas_pdf.append((f"{str(r['Nombre del Insumo'])}  ________", "normal"))
+            lineas_pdf.append((f"{str(r['Nombre del Insumo'])}  =", "normal"))
 
         with st.expander("👁️ Vista previa del contenido", expanded=True):
             prev_txt = f"{'='*28}\n* CONTEO {u_sel.upper()} *\nFecha: {ahora_hermosillo().strftime('%d/%m/%Y')}\n{'-'*28}\n"
@@ -92,7 +92,7 @@ def show_impresion():
                 if grupo != gr_actual_p:
                     prev_txt += f"\n>> GRUPO {grupo} <<\n"
                     gr_actual_p = grupo
-                prev_txt += f" {str(r['Nombre del Insumo'])}  ________\n"
+                prev_txt += f" {str(r['Nombre del Insumo'])}  =\n"
             st.code(prev_txt, language=None)
 
         pdf_bytes = generar_pdf_58mm(f"Conteo {u_sel}", lineas_pdf)
