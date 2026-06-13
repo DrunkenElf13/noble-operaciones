@@ -13,21 +13,30 @@ def generar_pdf_58mm(titulo: str, lineas: list) -> bytes:
     ANCHO_MM   = 58
     MARGEN_MM  = 3
     LINEA_H_MM = 3.8
-    FUENTE_NORMAL = 6.0     # ← reducida para permitir 35 caracteres
+    FUENTE_NORMAL = 6.0
     FUENTE_BOLD   = 7.0
     FUENTE_SMALL  = 5.5
     FUENTE_TITLE  = 7.5
-    alto_mm  = max(20 + len(lineas) * LINEA_H_MM + 10, 40)
+
+    # Altura fija de página (≈190 mm, equivale a 50 líneas)
+    ALTO_PAGINA_MM = 190
     ancho_pts = ANCHO_MM * mm
-    alto_pts  = alto_mm  * mm
+    alto_pts  = ALTO_PAGINA_MM * mm
     margen_pts = MARGEN_MM * mm
+
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=(ancho_pts, alto_pts))
-    y = alto_pts - (5 * mm)
-    # Máximo de caracteres por línea con fuente normal
+    y = alto_pts - (5 * mm)                   # inicio en la primera página
     max_chars = int((ANCHO_MM - MARGEN_MM * 2) / (FUENTE_NORMAL * 0.35))
+
     for linea in lineas:
         texto, estilo = linea if isinstance(linea, tuple) else (linea, 'normal')
+
+        # salto de página si ya no cabe esta línea
+        if y < (5 * mm):
+            c.showPage()
+            y = alto_pts - (5 * mm)
+
         if estilo == 'divider':
             c.setFont("Courier", FUENTE_SMALL)
             c.drawString(margen_pts, y, "-" * 30)
@@ -43,10 +52,9 @@ def generar_pdf_58mm(titulo: str, lineas: list) -> bytes:
         else:
             c.setFont("Courier", FUENTE_NORMAL)
             c.drawString(margen_pts, y, str(texto)[:max_chars])
+
         y -= LINEA_H_MM * mm
-        if y < (5 * mm):
-            c.showPage()
-            y = alto_pts - (5 * mm)
+
     c.save()
     buf.seek(0)
     return buf.read()
@@ -74,8 +82,8 @@ def show_impresion():
             if grupo != gr_actual:
                 lineas_pdf.append((f">> GRUPO {grupo} <<", "bold"))
                 gr_actual = grupo
-            # Nombre completo, sin truncar
             lineas_pdf.append((f"{str(r['Nombre del Insumo'])}  ________", "normal"))
+
         with st.expander("👁️ Vista previa del contenido", expanded=True):
             prev_txt = f"{'='*28}\n* CONTEO {u_sel.upper()} *\nFecha: {ahora_hermosillo().strftime('%d/%m/%Y')}\n{'-'*28}\n"
             gr_actual_p = ""
@@ -86,8 +94,8 @@ def show_impresion():
                     gr_actual_p = grupo
                 prev_txt += f" {str(r['Nombre del Insumo'])}  ________\n"
             st.code(prev_txt, language=None)
+
         pdf_bytes = generar_pdf_58mm(f"Conteo {u_sel}", lineas_pdf)
-        # Botón para abrir en nueva ventana (sin descargar) usando JavaScript
         b64_pdf = base64.b64encode(pdf_bytes).decode()
         js_code = f"""
         <script>
