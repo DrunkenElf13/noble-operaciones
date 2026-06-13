@@ -1,5 +1,6 @@
 import streamlit as st
 import io
+import base64
 from data_loaders import cargar_datos_integrales
 from utils import ahora_hermosillo
 from config import UNIDADES
@@ -84,6 +85,14 @@ def show_impresion():
                 prev_txt += f" {str(r['Nombre del Insumo'])[:22]}  ________\n"
             st.code(prev_txt, language=None)
         pdf_bytes = generar_pdf_58mm(f"Conteo {u_sel}", lineas_pdf)
+        # Botón para abrir en nueva pestaña (sin descargar)
+        b64_pdf = base64.b64encode(pdf_bytes).decode()
+        st.markdown(
+            f'<a href="data:application/pdf;base64,{b64_pdf}" target="_blank">'
+            f'<button style="width:100%;padding:8px;border-radius:4px;border:1px solid #ccc;background:#f0f0f0;cursor:pointer;">'
+            f'🖨️ Abrir para imprimir</button></a>',
+            unsafe_allow_html=True
+        )
         st.download_button(
             label="📄 Descargar PDF 58mm", data=pdf_bytes,
             file_name=f"conteo_{u_sel.replace(' ','_')}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.pdf",
