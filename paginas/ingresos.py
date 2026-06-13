@@ -87,6 +87,7 @@ def show_ingresos():
                         barra=orig["Stock Barra"], stock_neto=nuevo_n, stock_minimo=v_min,
                         comprar=nuevo_n < v_min, responsable=r_sel, fecha_inventario="",
                         tara=tara_bulk, observaciones="",
+                        cantidad_ingresada=ingreso,
                     ))
                 st.session_state["_procesando_bulk"] = False
                 if not filas_bulk:
@@ -137,7 +138,7 @@ def show_ingresos():
                     nuevo_alm  = v_a_prev + cant_neta
                     nuevo_neto = nuevo_alm + v_b_prev
                     st.success(f"**{nuevo_neto:.1f}**")
-                regs_ingreso[nom] = {"nuevo_a":nuevo_alm,"b":v_b_prev,"nuevo_n":nuevo_neto,"row":row_ins,"min":v_min,"tara":tara_ingreso}
+                regs_ingreso[nom] = {"nuevo_a":nuevo_alm,"b":v_b_prev,"nuevo_n":nuevo_neto,"row":row_ins,"min":v_min,"tara":tara_ingreso,"cant_ingreso":cant_ingreso}
                 st.divider()
             proc_ing = st.session_state.get("_procesando_ingreso", False)
             btn_ing  = st.button("📦 EJECUTAR INGRESO", width="stretch", type="primary", disabled=proc_ing)
@@ -160,6 +161,7 @@ def show_ingresos():
                             alm=info["nuevo_a"], barra=info["b"], stock_neto=info["nuevo_n"],
                             stock_minimo=info["min"], comprar=info["nuevo_n"] < info["min"],
                             responsable=r_sel, fecha_inventario="", tara=info["tara"], observaciones="",
+                            cantidad_ingresada=info["cant_ingreso"],
                         ))
                     ok, msg = append_rows_con_retry(ws_his, filas)
                     st.session_state["_procesando_ingreso"] = False
