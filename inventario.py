@@ -19,6 +19,7 @@ def obtener_ultimo_inventario(df_hist: pd.DataFrame, unidad: str = None) -> pd.D
     for col in ["Alm","Barra","Stock Neto","Stock Mínimo"]:
         df_actual[col] = df_actual[col].apply(limpiar_valor)
     df_actual["Tara"] = df_actual["Tara"].apply(limpiar_valor) if "Tara" in df_actual.columns else 0.0
+    df_actual["Cantidad Ingresada"] = df_actual["Cantidad Ingresada"].apply(limpiar_valor) if "Cantidad Ingresada" in df_actual.columns else 0.0
     df_actual["Stock Neto Calculado"] = df_actual["Alm"] + df_actual["Barra"]
     if "¿Comprar?" in df_actual.columns:
         df_actual["Necesita Compra"] = df_actual["¿Comprar?"].astype(str).str.strip().str.upper() == "TRUE"
@@ -41,6 +42,7 @@ def construir_fila_historial(
     unidad, nombre, marca, proveedor, grupo, fecha_entrada,
     presentacion, unidad_medida, alm, barra, stock_neto,
     stock_minimo, comprar, responsable, fecha_inventario, tara, observaciones,
+    cantidad_ingresada=0.0,
 ) -> list:
     def _s(v):
         if v is None: return ""
@@ -56,6 +58,7 @@ def construir_fila_historial(
         "TRUE" if comprar else "FALSE",
         _s(responsable), _s(fecha_inventario),
         max(0.0, _n(tara)), _s(observaciones),
+        _n(cantidad_ingresada),
     ]
 
 def fecha_max_segura(serie: pd.Series) -> str:
