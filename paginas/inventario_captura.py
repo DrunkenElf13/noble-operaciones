@@ -182,6 +182,10 @@ def show_inventario():
         if "inv_bulk_data" in st.session_state:
             st.session_state.inv_bulk_data = None
 
+        # Inicializar control de vista previa
+        if "mostrar_vista_previa" not in st.session_state:
+            st.session_state.mostrar_vista_previa = False
+
         with st.form("form_inventario", clear_on_submit=False):
             h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
             for col, label in zip([h1,h2,h3,h4,h5,h6,h7,h8],
@@ -232,7 +236,6 @@ def show_inventario():
                     tara_key = f"tara_{safe_nom}"
                     if tara_key not in st.session_state: st.session_state[tara_key] = v_tara_init
                     v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1,
-                                                    value=st.session_state[tara_key],
                                                     key=tara_key, label_visibility="collapsed")
                     if v_tara_manual != v_tara_cat and v_tara_manual > 0:
                         st.caption(f"⚠️ Catálogo: {v_tara_cat}")
@@ -256,6 +259,46 @@ def show_inventario():
                     v_c = st.text_input("Obs", key=f"c_{safe_nom}", label_visibility="collapsed", placeholder="Opcional")
                 regs_form[nom] = {"a":v_a,"b":v_b_neto,"n":v_n_display,"u":v_u,"p":v_p,"c":v_c,"tara":v_tara_manual,"row":row}
 
+            # ─────────────────────────────────────────────
+            # NUEVO: Vista previa antes de enviar
+            # ─────────────────────────────────────────────
+            revisar = st.form_submit_button("🔍 Revisar captura", width="stretch")
+            if revisar:
+                st.session_state.mostrar_vista_previa = True
+                st.rerun()
+
+            if st.session_state.mostrar_vista_previa:
+                st.divider()
+                st.subheader("📋 Resumen de captura")
+                filas_vp = []
+                for n, info in regs_form.items():
+                    anterior = info["row"].get("Stock Neto Calculado", 0) if "Stock Neto Calculado" in info["row"] else 0
+                    nuevo = info["n"]
+                    if anterior > 0 and nuevo > 0:
+                        diff_pct = (nuevo - anterior) / anterior * 100
+                    else:
+                        diff_pct = 0
+                    if diff_pct > 20:
+                        color = "🔴"
+                    elif diff_pct > 10:
+                        color = "🟡"
+                    else:
+                        color = "⚪"
+                    filas_vp.append({
+                        "Insumo": n,
+                        "Anterior": f"{anterior:.1f}",
+                        "Nuevo": f"{nuevo:.1f}",
+                        "Dif. %": f"{diff_pct:+.1f}%",
+                        "Alerta": color
+                    })
+                df_vp = pd.DataFrame(filas_vp)
+                st.dataframe(df_vp, hide_index=True, width="stretch")
+                st.caption("🔴 >20% de diferencia  |  🟡 >10%  |  ⚪ ≤10%")
+
+            # ─────────────────────────────────────────────
+            # FIN DE LA VISTA PREVIA
+            # ─────────────────────────────────────────────
+
             if diferencias_grandes:
                 st.error("🚨 Se detectaron diferencias mayores al 100%:")
                 for s in lista_sospechosos:
@@ -266,28 +309,29 @@ def show_inventario():
 
             btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", width="stretch", type="primary", disabled=(not confirmar))
 
-        if btn_inv:
-            ws_his, err = safe_worksheet(sh, "Historial")
-            if err:
-                st.error(err)
-            else:
-                fh    = ts_hermosillo()
-                filas = []
-                for n, info in regs_form.items():
-                    dm = info["row"]
-                    filas.append(construir_fila_historial(
-                        unidad=u_sel, nombre=n, marca=dm.get("Marca",""),
-                        proveedor=dm.get("Proveedor",""), grupo=dm.get("Grupo",""),
-                        fecha_entrada="", presentacion=dm.get("Presentación de Compra",""),
-                        unidad_medida=info["u"], alm=info["a"], barra=info["b"],
-                        stock_neto=info["n"], stock_minimo=dm.get("Stock Mínimo",0),
-                        comprar=info["p"], responsable=r_sel, fecha_inventario=fh,
-                        tara=info["tara"], observaciones=info["c"],
-                    ))
-                ok, msg = append_rows_con_retry(ws_his, filas)
-                if ok:
-                    dl.cargar_datos_integrales.clear()
-                    st.session_state.inventario_guardado = True
-                    st.rerun()
+            if btn_inv:
+                ws_his, err = safe_worksheet(sh, "Historial")
+                if err:
+                    st.error(err)
                 else:
-                    st.error(msg)
+                    fh    = ts_hermosillo()
+                    filas = []
+                    for n, info in regs_form.items():
+                        dm = info["row"]
+                        filas.append(construir_fila_historial(
+                            unidad=u_sel, nombre=n, marca=dm.get("Marca",""),
+                            proveedor=dm.get("Proveedor",""), grupo=dm.get("Grupo",""),
+                            fecha_entrada="", presentacion=dm.get("Presentación de Compra",""),
+                            unidad_medida=info["u"], alm=info["a"], barra=info["b"],
+                            stock_neto=info["n"], stock_minimo=dm.get("Stock Mínimo",0),
+                            comprar=info["p"], responsable=r_sel, fecha_inventario=fh,
+                            tara=info["tara"], observaciones=info["c"],
+                        ))
+                    ok, msg = append_rows_con_retry(ws_his, filas)
+                    if ok:
+                        dl.cargar_datos_integrales.clear()
+                        st.session_state.inventario_guardado = True
+                        st.session_state.mostrar_vista_previa = False
+                        st.rerun()
+                    else:
+                        st.error(msg)
