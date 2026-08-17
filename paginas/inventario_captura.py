@@ -131,15 +131,39 @@ def show_inventario():
 
         st.session_state.inv_bulk_data = edited_df.to_dict(orient="records")
 
-        if diferencias_grandes:
-            st.error("🚨 Se detectaron diferencias mayores al 100% en los siguientes insumos:")
+        # ── Tabla de diferencias sin bloquear ──
+        if lista_sospechosos:
+            st.divider()
+            st.subheader("📋 Insumos con diferencias grandes")
+            st.caption("Revisa estos valores antes de procesar. No se bloquea el guardado.")
+            filas_diff = []
             for s in lista_sospechosos:
-                st.write(f"• {s}")
-            confirmar_bulk = st.checkbox("✅ Confirmo que quiero guardar estas diferencias grandes")
+                # Se asume formato: "nombre: anterior X, nuevo Y (+Z%)"
+                try:
+                    partes = s.split(": ")
+                    nombre_diff = partes[0]
+                    resto = partes[1]
+                    anterior_diff = float(resto.split("anterior ")[1].split(",")[0])
+                    nuevo_diff = float(resto.split("nuevo ")[1].split(" ")[0])
+                    pct_diff = float(resto.split("+")[1].rstrip("%)"))
+                except Exception:
+                    continue
+                color_diff = "🔴" if pct_diff > 100 else "🟡"
+                filas_diff.append({
+                    "Insumo": nombre_diff,
+                    "Anterior": f"{anterior_diff:.1f}",
+                    "Nuevo": f"{nuevo_diff:.1f}",
+                    "Dif. %": f"+{pct_diff:.1f}%",
+                    "Alerta": color_diff
+                })
+            if filas_diff:
+                df_diff = pd.DataFrame(filas_diff)
+                st.dataframe(df_diff, hide_index=True, width="stretch")
         else:
-            confirmar_bulk = True
+            st.success("No se detectaron diferencias mayores al 50%.")
 
-        if st.button("📥 PROCESAR INVENTARIO BULK", type="primary", width="stretch", disabled=(not confirmar_bulk)):
+        # ── Procesar ──
+        if st.button("📥 PROCESAR INVENTARIO BULK", type="primary", width="stretch"):
             ws_his, err = safe_worksheet(sh, "Historial")
             if err:
                 st.error(err)
@@ -188,9 +212,21 @@ def show_inventario():
 
         with st.form("form_inventario", clear_on_submit=False):
             h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
-            for col, label in zip([h1,h2,h3,h4,h5,h6,h7,h8],
-                                  ["Insumo / Ref","Almacén","Barra (bruto)","Medida","Tara (gr)","Neto*","¿Pedir?","Observaciones"]):
-                col.write(f"**{label}**")
+            for col, label, help_text in zip(
+                [h1,h2,h3,h4,h5,h6,h7,h8],
+                ["Insumo / Ref","Almacén","Barra (bruto)","Medida","Tara (gr)","Neto*","¿Pedir?","Observaciones"],
+                [
+                    "Nombre del insumo y su unidad esperada.",
+                    "Cantidad de producto cerrado. Se registra en la unidad definida para este insumo. Ej. 3 pz.",
+                    "Peso bruto del producto abierto en uso. Aquí se descuenta la tara. Ej. 250 gr.",
+                    "Unidad en la que se está capturando este valor: pz, gr, ml, kg o lt. Debe coincidir con la unidad del catálogo.",
+                    "Peso del envase/empaque que se descuenta de la Barra. Si no hay tara, dejar en 0.",
+                    "Resultado automático: Almacén + (Barra − Tara). No se escribe manualmente.",
+                    "Actívalo si el insumo necesita reabastecimiento. Se reflejará en la Lista de Compra.",
+                    "Cualquier nota adicional para este conteo."
+                ]
+            ):
+                col.write(f"**{label}**", help=help_text)
             st.markdown("*Neto = Alm + (Barra − Tara). La Tara se descuenta solo de Barra.")
             st.divider()
             regs_form = {}
@@ -206,9 +242,11 @@ def show_inventario():
                 v_tara_cat  = limpiar_valor(row.get("Tara",0))
                 v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
                 ud_cat = str(row.get("Unidad de Medida","pz")).lower()
+
                 c1,c2,c3,c4,c5,c6,c7,c8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
                 with c1:
-                    st.write(f"**{nom}**")
+                    # Opción 1: mostrar unidad esperada junto al nombre
+                    st.write(f"**{nom}** *({ud_cat})*")
                     st.caption(f"Marca: {row.get('Marca','-')} | Prov: {row.get('Proveedor','-')}")
                     diff  = v_prev - v_min
                     color = "green" if diff >= 0 else "red"
@@ -220,25 +258,35 @@ def show_inventario():
                 with c2:
                     alm_key = f"a_{safe_nom}"
                     if alm_key not in st.session_state: st.session_state[alm_key] = v_alm_prev
-                    v_a = st.number_input("Alm", min_value=0.0, step=1.0, key=alm_key, label_visibility="collapsed")
+                    v_a = st.number_input("Alm", min_value=0.0, step=1.0, key=alm_key,
+                                          label_visibility="collapsed",
+                                          placeholder=f"en {ud_cat}",
+                                          help=f"Unidad esperada: {ud_cat}")
                 with c3:
                     bar_key = f"b_{safe_nom}"
                     if bar_key not in st.session_state: st.session_state[bar_key] = v_bar_prev
-                    v_b = st.number_input("Bar", min_value=0.0, step=1.0, key=bar_key, label_visibility="collapsed")
+                    v_b = st.number_input("Bar", min_value=0.0, step=1.0, key=bar_key,
+                                          label_visibility="collapsed",
+                                          placeholder=f"en {ud_cat}",
+                                          help=f"Unidad esperada: {ud_cat}")
                 with c4:
                     u_act = str(row.get("Unidad de Medida","pz")).lower()
                     v_u = st.selectbox("U", UNIDADES_MED,
                                        index=UNIDADES_MED.index(u_act) if u_act in UNIDADES_MED else 0,
-                                       key=f"u_{safe_nom}", label_visibility="collapsed")
+                                       key=f"u_{safe_nom}", label_visibility="collapsed",
+                                       help=f"Unidad esperada: {ud_cat}")
                     if v_u != ud_cat:
-                        st.warning(f"⚠️ Unidad del catálogo: {ud_cat}")
+                        # Opción 4: advertencia más clara
+                        st.warning(f"⚠️ Unidad del catálogo para {nom}: {ud_cat}. Estás usando {v_u}.")
                 with c5:
                     tara_key = f"tara_{safe_nom}"
                     if tara_key not in st.session_state: st.session_state[tara_key] = v_tara_init
                     v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1,
-                                                    key=tara_key, label_visibility="collapsed")
-                    if v_tara_manual != v_tara_cat and v_tara_manual > 0:
-                        st.caption(f"⚠️ Catálogo: {v_tara_cat}")
+                                                    key=tara_key, label_visibility="collapsed",
+                                                    help="Peso del envase/empaque que se descuenta de la Barra.",
+                                                    placeholder="en gr")
+                    if v_tara_manual != v_tara_cat and v_tara_cat > 0:
+                        st.caption(f"⚠️ Tara en catálogo: {v_tara_cat}")
                 with c6:
                     v_b_neto    = max(0.0, v_b - v_tara_manual)
                     v_n_display = v_a + v_b_neto
@@ -254,14 +302,15 @@ def show_inventario():
                     v_comprar_prev = bool(prev.get("Necesita Compra",False)) if prev is not None else False
                     ck_key = f"p_{safe_nom}"
                     if ck_key not in st.session_state: st.session_state[ck_key] = v_comprar_prev
-                    v_p = st.checkbox("🛒", key=ck_key)
+                    v_p = st.checkbox("🛒", key=ck_key, help="Actívalo si el insumo necesita reabastecimiento.")
                 with c8:
-                    v_c = st.text_input("Obs", key=f"c_{safe_nom}", label_visibility="collapsed", placeholder="Opcional")
-                regs_form[nom] = {"a":v_a,"b":v_b_neto,"n":v_n_display,"u":v_u,"p":v_p,"c":v_c,"tara":v_tara_manual,"row":row}
+                    v_c = st.text_input("Obs", key=f"c_{safe_nom}", label_visibility="collapsed",
+                                        placeholder="Opcional", help="Cualquier nota adicional para este conteo.")
 
-            # ─────────────────────────────────────────────
-            # NUEVO: Vista previa antes de enviar
-            # ─────────────────────────────────────────────
+                regs_form[nom] = {"a":v_a,"b":v_b_neto,"n":v_n_display,"u":v_u,"p":v_p,"c":v_c,
+                                  "tara":v_tara_manual,"row":row,"anterior":v_prev}
+
+            # ── Vista previa ──
             revisar = st.form_submit_button("🔍 Revisar captura", width="stretch")
             if revisar:
                 st.session_state.mostrar_vista_previa = True
@@ -272,7 +321,7 @@ def show_inventario():
                 st.subheader("📋 Resumen de captura")
                 filas_vp = []
                 for n, info in regs_form.items():
-                    anterior = info["row"].get("Stock Neto Calculado", 0) if "Stock Neto Calculado" in info["row"] else 0
+                    anterior = info.get("anterior", 0.0)
                     nuevo = info["n"]
                     if anterior > 0 and nuevo > 0:
                         diff_pct = (nuevo - anterior) / anterior * 100
@@ -295,19 +344,15 @@ def show_inventario():
                 st.dataframe(df_vp, hide_index=True, width="stretch")
                 st.caption("🔴 >20% de diferencia  |  🟡 >10%  |  ⚪ ≤10%")
 
-            # ─────────────────────────────────────────────
-            # FIN DE LA VISTA PREVIA
-            # ─────────────────────────────────────────────
+            # ── Fin vista previa ──
 
+            # Ya no hay bloqueo, solo se muestran advertencias
             if diferencias_grandes:
                 st.error("🚨 Se detectaron diferencias mayores al 100%:")
                 for s in lista_sospechosos:
                     st.write(f"• {s}")
-                confirmar = st.checkbox("✅ Confirmo que quiero guardar estas diferencias grandes")
-            else:
-                confirmar = True
 
-            btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", width="stretch", type="primary", disabled=(not confirmar))
+            btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", width="stretch", type="primary")
 
             if btn_inv:
                 ws_his, err = safe_worksheet(sh, "Historial")
