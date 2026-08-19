@@ -1,9 +1,11 @@
 import streamlit as st
+import pandas as pd
 from data_loaders import cargar_datos_integrales
 from inventario import obtener_ultimo_inventario
 from utils import limpiar_valor, ahora_hermosillo
 from config import UNIDADES
 from auth import tiene_permiso
+from sheets import safe_worksheet, sh
 
 def show_consulta():
     if not tiene_permiso("Consulta"):
@@ -11,48 +13,221 @@ def show_consulta():
         st.stop()
     df_raw, df_historial = cargar_datos_integrales()
     st.title("📦 Inventario actual")
-    u_sel     = st.selectbox("🏢 Unidad:", UNIDADES)
+    u_sel = st.selectbox("🏢 Unidad:", UNIDADES)
     df_actual = obtener_ultimo_inventario(df_historial, u_sel)
     if df_actual.empty:
         st.warning("No hay registros en la base de datos para esta unidad.")
         st.stop()
+
+    # ------------------------------------------------------------------
+    # INVENTARIO ACTUAL (vista existente)
+    # ------------------------------------------------------------------
     bajo_min = df_actual[df_actual["Necesita Compra"] == True]
-    m1,m2,m3 = st.columns(3)
+    m1, m2, m3 = st.columns(3)
     m1.metric("Total Referencias", len(df_actual))
     m2.metric("Alertas de Compra", len(bajo_min), delta=-len(bajo_min), delta_color="inverse")
-    m3.metric("Volumen Global",    f"{df_actual['Stock Neto Calculado'].sum():,.1f}")
+    m3.metric("Volumen Global", f"{df_actual['Stock Neto Calculado'].sum():,.1f}")
+
     st.divider()
-    col_s, col_p = st.columns([2,1])
+    col_s, col_p = st.columns([2, 1])
     with col_s:
         busqueda = st.text_input("🔍 Búsqueda rápida:")
     with col_p:
         col_prov = "Proveedor" if "Proveedor" in df_actual.columns else None
         if col_prov:
-            provs    = ["Todos"] + sorted(df_actual[col_prov].dropna().unique().tolist())
+            provs = ["Todos"] + sorted(df_actual[col_prov].dropna().unique().tolist())
             prov_sel = st.selectbox("🚛 Filtro Proveedor:", provs)
         else:
             prov_sel = "Todos"
+
     df_display = df_actual.copy()
     if busqueda:
         df_display = df_display[df_display["Nombre del Insumo"].astype(str).str.contains(busqueda, case=False, na=False)]
     if prov_sel != "Todos" and col_prov:
         df_display = df_display[df_display[col_prov] == prov_sel]
+
     col_map = {
-        "Grupo":"Grupo","Nombre del Insumo":"Insumo","Marca":"Marca","Proveedor":"Proveedor",
-        "Alm":"Almacén","Barra":"Barra","Stock Neto Calculado":"Stock Total","Tara":"Tara",
-        "Unidad de Medida":"Medida","Stock Mínimo":"Mínimo","Necesita Compra":"¿Comprar?",
-        "Responsable":"Responsable","Fecha de Inventario":"Último Corte","Observaciones":"Observaciones",
+        "Grupo": "Grupo", "Nombre del Insumo": "Insumo", "Marca": "Marca", "Proveedor": "Proveedor",
+        "Alm": "Almacén", "Barra": "Barra", "Stock Neto Calculado": "Stock Total", "Tara": "Tara",
+        "Unidad de Medida": "Medida", "Stock Mínimo": "Mínimo", "Necesita Compra": "¿Comprar?",
+        "Responsable": "Responsable", "Fecha de Inventario": "Último Corte", "Observaciones": "Observaciones",
     }
-    cols_ok  = [c for c in col_map if c in df_display.columns]
+    cols_ok = [c for c in col_map if c in df_display.columns]
     df_final = df_display[cols_ok].rename(columns=col_map)
+
     def highlight_low(row):
-        total  = row.get("Stock Total",9999)
-        minimo = row.get("Mínimo",0)
-        color  = "background-color: rgba(255, 75, 75, 0.2)" if total < minimo else ""
+        total = row.get("Stock Total", 9999)
+        minimo = row.get("Mínimo", 0)
+        color = "background-color: rgba(255, 75, 75, 0.2)" if total < minimo else ""
         return [color] * len(row)
+
     st.dataframe(df_final.style.apply(highlight_low, axis=1), width="stretch", hide_index=True)
+
     st.divider()
     csv = df_final.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Descargar Reporte (CSV)", data=csv,
-                       file_name=f"Inventario_{u_sel}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.csv",
-                       mime="text/csv", width="stretch")
+    st.download_button(
+        "📥 Descargar Reporte (CSV)", data=csv,
+        file_name=f"Inventario_{u_sel}_{ahora_hermosillo().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv", width="stretch"
+    )
+
+    # ------------------------------------------------------------------
+    # HISTORIAL DE INSUMO CON FILTRO + EDITOR
+    # ------------------------------------------------------------------
+    st.divider()
+    st.subheader("📜 Historial de insumo")
+
+    nombres_actuales = sorted(df_actual["Nombre del Insumo"].dropna().unique().tolist())
+    if not nombres_actuales:
+        st.info("No hay insumos para mostrar historial.")
+    else:
+        insumo_sel = st.selectbox("Selecciona un insumo:", nombres_actuales)
+
+        df_hist_filtrado = df_historial[
+            (df_historial["Unidad de Negocio"] == u_sel) &
+            (df_historial["Nombre del Insumo"] == insumo_sel)
+        ].copy()
+
+        if df_hist_filtrado.empty:
+            st.info("Sin historial para este insumo.")
+        else:
+            df_hist_filtrado["_fecha_efectiva"] = df_hist_filtrado["Fecha de Inventario"].combine_first(
+                df_hist_filtrado["Fecha de Entrada"]
+            )
+            def _tipo_registro(row):
+                if pd.notna(row.get("Fecha de Entrada", None)) and row.get("Fecha de Entrada") != "":
+                    return "Entrada"
+                return "Inventario"
+
+            df_hist_filtrado["_tipo"] = df_hist_filtrado.apply(_tipo_registro, axis=1)
+
+            filtro_tipo = st.radio(
+                "Mostrar:", ["Todos", "Entradas", "Inventarios"],
+                horizontal=True, key="filtro_tipo"
+            )
+
+            if filtro_tipo == "Entradas":
+                df_hist_filtrado = df_hist_filtrado[df_hist_filtrado["_tipo"] == "Entrada"]
+            elif filtro_tipo == "Inventarios":
+                df_hist_filtrado = df_hist_filtrado[df_hist_filtrado["_tipo"] == "Inventario"]
+
+            if df_hist_filtrado.empty:
+                st.info(f"No hay registros de tipo '{filtro_tipo}' para este insumo.")
+            else:
+                df_hist_filtrado = df_hist_filtrado.sort_values("_fecha_efectiva", ascending=False).head(5)
+
+                cols_hist = [
+                    "_fecha_efectiva", "_tipo", "Responsable", "Unidad de Medida",
+                    "Alm", "Barra", "Stock Neto", "Tara", "¿Comprar?", "Observaciones"
+                ]
+                cols_hist_ok = [c for c in cols_hist if c in df_hist_filtrado.columns]
+                df_hist_mostrar = df_hist_filtrado[cols_hist_ok].rename(columns={
+                    "_fecha_efectiva": "Fecha",
+                    "_tipo": "Tipo",
+                    "Alm": "Almacén",
+                    "Barra": "Barra",
+                    "Stock Neto": "Stock Neto",
+                    "Tara": "Tara",
+                    "¿Comprar?": "¿Pedir?",
+                    "Unidad de Medida": "Medida",
+                })
+
+                st.dataframe(df_hist_mostrar, hide_index=True, width="stretch")
+
+                st.markdown("#### ✏️ Editar un registro")
+
+                opciones_edicion = {}
+                for _, fila in df_hist_filtrado.iterrows():
+                    fecha_str = str(fila.get("_fecha_efectiva", ""))[:16] if fila.get("_fecha_efectiva", "") else ""
+                    tipo = fila.get("_tipo", "")
+                    responsable = str(fila.get("Responsable", ""))
+                    etiqueta = f"{fecha_str} | {tipo} | {responsable}"
+                    opciones_edicion[etiqueta] = fila
+
+                if not opciones_edicion:
+                    st.info("No hay registros para editar.")
+                else:
+                    sel_editar = st.selectbox("Registro a editar:", list(opciones_edicion.keys()))
+                    registro = opciones_edicion[sel_editar]
+
+                    with st.form("f_editar_registro"):
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            nuevo_alm = st.number_input(
+                                "Almacén", min_value=0.0, step=1.0,
+                                value=limpiar_valor(registro.get("Alm", 0.0)),
+                                key="edit_alm"
+                            )
+                        with c2:
+                            nuevo_bar = st.number_input(
+                                "Barra (bruta)", min_value=0.0, step=1.0,
+                                value=limpiar_valor(registro.get("Barra", 0.0)),
+                                key="edit_bar"
+                            )
+                        with c3:
+                            nueva_tara = st.number_input(
+                                "Tara", min_value=0.0, step=0.1,
+                                value=limpiar_valor(registro.get("Tara", 0.0)),
+                                key="edit_tara"
+                            )
+                        with c4:
+                            unidades_lista = ["pz", "ml", "gr", "kg", "lt"]
+                            unidad_actual = str(registro.get("Unidad de Medida", "pz")).lower()
+                            idx_unidad = unidades_lista.index(unidad_actual) if unidad_actual in unidades_lista else 0
+                            nueva_medida = st.selectbox(
+                                "Medida", unidades_lista, index=idx_unidad, key="edit_unidad"
+                            )
+
+                        col5, col6 = st.columns(2)
+                        with col5:
+                            nueva_observacion = st.text_input(
+                                "Observaciones", value=str(registro.get("Observaciones", "")),
+                                key="edit_obs"
+                            )
+                        with col6:
+                            nuevo_pedir = st.checkbox(
+                                "¿Pedir?",
+                                value=bool(str(registro.get("¿Comprar?", "FALSE")).strip().upper() == "TRUE"),
+                                key="edit_pedir"
+                            )
+
+                        nuevo_neto = nuevo_alm + max(0.0, nuevo_bar - nueva_tara)
+
+                        if st.form_submit_button("💾 Guardar cambios"):
+                            ws_hist, err_hist = safe_worksheet(sh, "Historial")
+                            if err_hist:
+                                st.error(err_hist)
+                            else:
+                                datos_crudos = ws_hist.get_all_values()
+                                tipo_registro = registro.get("_tipo", "")
+                                fecha_inv = str(registro.get("Fecha de Inventario", ""))
+                                fecha_ent = str(registro.get("Fecha de Entrada", ""))
+                                responsable = str(registro.get("Responsable", ""))
+
+                                fila_encontrada = None
+                                for i, fila in enumerate(datos_crudos[1:], start=2):
+                                    if fila[0] != u_sel or fila[1] != insumo_sel:
+                                        continue
+                                    if tipo_registro == "Entrada":
+                                        if fila[5] == fecha_ent and fila[13] == responsable:
+                                            fila_encontrada = i
+                                            break
+                                    else:
+                                        if fila[14] == fecha_inv and fila[13] == responsable:
+                                            fila_encontrada = i
+                                            break
+
+                                if fila_encontrada is None:
+                                    st.error("No se pudo localizar el registro en Google Sheets.")
+                                else:
+                                    ws_hist.update(
+                                        range_name=f"H{fila_encontrada}:K{fila_encontrada}",
+                                        values=[[nueva_medida, nuevo_alm, max(0.0, nuevo_bar - nueva_tara), nuevo_neto]]
+                                    )
+                                    ws_hist.update(range_name=f"M{fila_encontrada}", values=[["TRUE" if nuevo_pedir else "FALSE"]])
+                                    ws_hist.update(range_name=f"Q{fila_encontrada}", values=[[nueva_tara]])
+                                    ws_hist.update(range_name=f"R{fila_encontrada}", values=[[nueva_observacion]])
+
+                                    cargar_datos_integrales.clear()
+                                    st.success("✅ Registro actualizado correctamente.")
+                                    st.rerun()
