@@ -83,7 +83,6 @@ def show_consulta():
     else:
         insumo_sel = st.selectbox("Selecciona un insumo:", nombres_actuales)
 
-        # Filtrar historial para la unidad y el insumo seleccionado
         df_hist_filtrado = df_historial[
             (df_historial["Unidad de Negocio"] == u_sel) &
             (df_historial["Nombre del Insumo"] == insumo_sel)
@@ -92,7 +91,6 @@ def show_consulta():
         if df_hist_filtrado.empty:
             st.info("Sin historial para este insumo.")
         else:
-            # Crear fecha efectiva y tipo de registro
             df_hist_filtrado["_fecha_efectiva"] = df_hist_filtrado["Fecha de Inventario"].combine_first(
                 df_hist_filtrado["Fecha de Entrada"]
             )
@@ -103,7 +101,6 @@ def show_consulta():
 
             df_hist_filtrado["_tipo"] = df_hist_filtrado.apply(_tipo_registro, axis=1)
 
-            # Filtro por tipo
             filtro_tipo = st.radio(
                 "Mostrar:", ["Todos", "Entradas", "Inventarios"],
                 horizontal=True, key="filtro_tipo"
@@ -119,7 +116,6 @@ def show_consulta():
             else:
                 df_hist_filtrado = df_hist_filtrado.sort_values("_fecha_efectiva", ascending=False).head(5)
 
-                # Columnas a mostrar
                 cols_hist = [
                     "_fecha_efectiva", "_tipo", "Responsable", "Unidad de Medida",
                     "Alm", "Barra", "Stock Neto", "Tara", "¿Comprar?", "Observaciones"
@@ -138,13 +134,11 @@ def show_consulta():
 
                 st.dataframe(df_hist_mostrar, hide_index=True, width="stretch")
 
-                # ---------- EDITOR DE REGISTROS ----------
                 st.markdown("#### ✏️ Editar un registro")
 
                 opciones_edicion = {}
                 for _, fila in df_hist_filtrado.iterrows():
-                    fecha_str = fila.get("_fecha_efectiva", "")
-                    fecha_str = str(fecha_str)[:16] if fecha_str else ""
+                    fecha_str = str(fila.get("_fecha_efectiva", ""))[:16] if fila.get("_fecha_efectiva", "") else ""
                     tipo = fila.get("_tipo", "")
                     responsable = str(fila.get("Responsable", ""))
                     etiqueta = f"{fecha_str} | {tipo} | {responsable}"
@@ -197,7 +191,6 @@ def show_consulta():
                                 key="edit_pedir"
                             )
 
-                        # Calcular el nuevo stock neto
                         nuevo_neto = nuevo_alm + max(0.0, nuevo_bar - nueva_tara)
 
                         if st.form_submit_button("💾 Guardar cambios"):
@@ -213,14 +206,13 @@ def show_consulta():
 
                                 fila_encontrada = None
                                 for i, fila in enumerate(datos_crudos[1:], start=2):
-                                    # Columnas: 0: Unidad, 1: Nombre, 5: Fecha Entrada, 13: Responsable, 14: Fecha Inventario
                                     if fila[0] != u_sel or fila[1] != insumo_sel:
                                         continue
                                     if tipo_registro == "Entrada":
                                         if fila[5] == fecha_ent and fila[13] == responsable:
                                             fila_encontrada = i
                                             break
-                                    else:  # Inventario
+                                    else:
                                         if fila[14] == fecha_inv and fila[13] == responsable:
                                             fila_encontrada = i
                                             break
@@ -228,9 +220,6 @@ def show_consulta():
                                 if fila_encontrada is None:
                                     st.error("No se pudo localizar el registro en Google Sheets.")
                                 else:
-                                    # Actualizar celdas específicas:
-                                    # H: Unidad de Medida (col 7), I: Alm (8), J: Barra (9), K: Stock Neto (10)
-                                    # M: ¿Comprar? (12), Q: Tara (15), R: Observaciones (16)
                                     ws_hist.update(
                                         range_name=f"H{fila_encontrada}:K{fila_encontrada}",
                                         values=[[nueva_medida, nuevo_alm, max(0.0, nuevo_bar - nueva_tara), nuevo_neto]]
@@ -239,7 +228,6 @@ def show_consulta():
                                     ws_hist.update(range_name=f"Q{fila_encontrada}", values=[[nueva_tara]])
                                     ws_hist.update(range_name=f"R{fila_encontrada}", values=[[nueva_observacion]])
 
-                                    from data_loaders import cargar_datos_integrales
                                     cargar_datos_integrales.clear()
                                     st.success("✅ Registro actualizado correctamente.")
                                     st.rerun()
