@@ -3,7 +3,7 @@ import pandas as pd
 from data_loaders import cargar_datos_integrales
 from inventario import obtener_ultimo_inventario
 from utils import limpiar_valor, ahora_hermosillo
-from config import UNIDADES, COLS_HISTORIAL
+from config import UNIDADES
 from auth import tiene_permiso
 from sheets import safe_worksheet, sh
 
@@ -72,7 +72,7 @@ def show_consulta():
     )
 
     # ------------------------------------------------------------------
-    # HISTORIAL DE INSUMO (incluye Archivo_Historial)
+    # HISTORIAL DE INSUMO CON FILTRO + EDITOR
     # ------------------------------------------------------------------
     st.divider()
     st.subheader("📜 Historial de insumo")
@@ -83,35 +83,16 @@ def show_consulta():
     else:
         insumo_sel = st.selectbox("Selecciona un insumo:", nombres_actuales)
 
-        # Historial reciente (hoja Historial + Cierres)
+        # Filtrar historial para la unidad y el insumo seleccionado
         df_hist_filtrado = df_historial[
             (df_historial["Unidad de Negocio"] == u_sel) &
             (df_historial["Nombre del Insumo"] == insumo_sel)
         ].copy()
 
-        # Historial archivado (Archivo_Historial)
-        ws_arch, err_arch = safe_worksheet(sh, "Archivo_Historial")
-        df_archivo = pd.DataFrame()
-        if ws_arch:
-            datos_arch = ws_arch.get_all_values()
-            if len(datos_arch) > 1:
-                df_archivo = pd.DataFrame(datos_arch[1:], columns=datos_arch[0])
-                for col in COLS_HISTORIAL:
-                    if col not in df_archivo.columns:
-                        df_archivo[col] = ""
-                df_archivo = df_archivo[
-                    (df_archivo["Unidad de Negocio"] == u_sel) &
-                    (df_archivo["Nombre del Insumo"] == insumo_sel)
-                ].copy()
-
-        # Unir ambas fuentes
-        if not df_archivo.empty:
-            df_hist_filtrado = pd.concat([df_hist_filtrado, df_archivo], ignore_index=True)
-
         if df_hist_filtrado.empty:
             st.info("Sin historial para este insumo.")
         else:
-            # Calcular fecha efectiva y tipo
+            # Crear fecha efectiva y tipo de registro
             df_hist_filtrado["_fecha_efectiva"] = df_hist_filtrado["Fecha de Inventario"].combine_first(
                 df_hist_filtrado["Fecha de Entrada"]
             )
@@ -121,12 +102,8 @@ def show_consulta():
                 return "Inventario"
 
             df_hist_filtrado["_tipo"] = df_hist_filtrado.apply(_tipo_registro, axis=1)
-            # Marcar origen para saber qué registros son editables
-            df_hist_filtrado["_origen"] = "historial"
-            if not df_archivo.empty:
-                # Los últimos registros concatenados corresponden al archivo
-                df_hist_filtrado.loc[len(df_hist_filtrado)-len(df_archivo):, "_origen"] = "archivo"
 
+            # Filtro por tipo
             filtro_tipo = st.radio(
                 "Mostrar:", ["Todos", "Entradas", "Inventarios"],
                 horizontal=True, key="filtro_tipo"
@@ -142,6 +119,7 @@ def show_consulta():
             else:
                 df_hist_filtrado = df_hist_filtrado.sort_values("_fecha_efectiva", ascending=False).head(5)
 
+                # Columnas a mostrar
                 cols_hist = [
                     "_fecha_efectiva", "_tipo", "Responsable", "Unidad de Medida",
                     "Alm", "Barra", "Stock Neto", "Tara", "¿Comprar?", "Observaciones"
@@ -160,11 +138,13 @@ def show_consulta():
 
                 st.dataframe(df_hist_mostrar, hide_index=True, width="stretch")
 
-                # ---------- EDITOR (solo registros recientes) ----------
+                # ---------- EDITOR DE REGISTROS ----------
                 st.markdown("#### ✏️ Editar un registro")
 
                 opciones_edicion = {}
                 for _, fila in df_hist_filtrado.iterrows():
+                    fecha_str = fila.get("_fecha_efectiva", "")
+                    fecha_str = str(fecha_str)[:16] if fecha_str else ""
                     fecha_str = str(fila.get("_fecha_efectiva", ""))[:16] if fila.get("_fecha_efectiva", "") else ""
                     tipo = fila.get("_tipo", "")
                     responsable = str(fila.get("Responsable", ""))
@@ -177,87 +157,91 @@ def show_consulta():
                     sel_editar = st.selectbox("Registro a editar:", list(opciones_edicion.keys()))
                     registro = opciones_edicion[sel_editar]
 
-                    if registro.get("_origen", "") == "archivo":
-                        st.warning("Este registro pertenece al archivo histórico y no puede editarse aquí.")
-                    else:
-                        with st.form("f_editar_registro"):
-                            c1, c2, c3, c4 = st.columns(4)
-                            with c1:
-                                nuevo_alm = st.number_input(
-                                    "Almacén", min_value=0.0, step=1.0,
-                                    value=limpiar_valor(registro.get("Alm", 0.0)),
-                                    key="edit_alm"
-                                )
-                            with c2:
-                                nuevo_bar = st.number_input(
-                                    "Barra (bruta)", min_value=0.0, step=1.0,
-                                    value=limpiar_valor(registro.get("Barra", 0.0)),
-                                    key="edit_bar"
-                                )
-                            with c3:
-                                nueva_tara = st.number_input(
-                                    "Tara", min_value=0.0, step=0.1,
-                                    value=limpiar_valor(registro.get("Tara", 0.0)),
-                                    key="edit_tara"
-                                )
-                            with c4:
-                                unidades_lista = ["pz", "ml", "gr", "kg", "lt"]
-                                unidad_actual = str(registro.get("Unidad de Medida", "pz")).lower()
-                                idx_unidad = unidades_lista.index(unidad_actual) if unidad_actual in unidades_lista else 0
-                                nueva_medida = st.selectbox(
-                                    "Medida", unidades_lista, index=idx_unidad, key="edit_unidad"
-                                )
+                    with st.form("f_editar_registro"):
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            nuevo_alm = st.number_input(
+                                "Almacén", min_value=0.0, step=1.0,
+                                value=limpiar_valor(registro.get("Alm", 0.0)),
+                                key="edit_alm"
+                            )
+                        with c2:
+                            nuevo_bar = st.number_input(
+                                "Barra (bruta)", min_value=0.0, step=1.0,
+                                value=limpiar_valor(registro.get("Barra", 0.0)),
+                                key="edit_bar"
+                            )
+                        with c3:
+                            nueva_tara = st.number_input(
+                                "Tara", min_value=0.0, step=0.1,
+                                value=limpiar_valor(registro.get("Tara", 0.0)),
+                                key="edit_tara"
+                            )
+                        with c4:
+                            unidades_lista = ["pz", "ml", "gr", "kg", "lt"]
+                            unidad_actual = str(registro.get("Unidad de Medida", "pz")).lower()
+                            idx_unidad = unidades_lista.index(unidad_actual) if unidad_actual in unidades_lista else 0
+                            nueva_medida = st.selectbox(
+                                "Medida", unidades_lista, index=idx_unidad, key="edit_unidad"
+                            )
 
-                            col5, col6 = st.columns(2)
-                            with col5:
-                                nueva_observacion = st.text_input(
-                                    "Observaciones", value=str(registro.get("Observaciones", "")),
-                                    key="edit_obs"
-                                )
-                            with col6:
-                                nuevo_pedir = st.checkbox(
-                                    "¿Pedir?",
-                                    value=bool(str(registro.get("¿Comprar?", "FALSE")).strip().upper() == "TRUE"),
-                                    key="edit_pedir"
-                                )
+                        col5, col6 = st.columns(2)
+                        with col5:
+                            nueva_observacion = st.text_input(
+                                "Observaciones", value=str(registro.get("Observaciones", "")),
+                                key="edit_obs"
+                            )
+                        with col6:
+                            nuevo_pedir = st.checkbox(
+                                "¿Pedir?",
+                                value=bool(str(registro.get("¿Comprar?", "FALSE")).strip().upper() == "TRUE"),
+                                key="edit_pedir"
+                            )
 
-                            nuevo_neto = nuevo_alm + max(0.0, nuevo_bar - nueva_tara)
+                        # Calcular el nuevo stock neto
+                        nuevo_neto = nuevo_alm + max(0.0, nuevo_bar - nueva_tara)
 
-                            if st.form_submit_button("💾 Guardar cambios"):
-                                ws_hist, err_hist = safe_worksheet(sh, "Historial")
-                                if err_hist:
-                                    st.error(err_hist)
-                                else:
-                                    datos_crudos = ws_hist.get_all_values()
-                                    tipo_registro = registro.get("_tipo", "")
-                                    fecha_inv = str(registro.get("Fecha de Inventario", ""))
-                                    fecha_ent = str(registro.get("Fecha de Entrada", ""))
-                                    responsable = str(registro.get("Responsable", ""))
+                        if st.form_submit_button("💾 Guardar cambios"):
+                            ws_hist, err_hist = safe_worksheet(sh, "Historial")
+                            if err_hist:
+                                st.error(err_hist)
+                            else:
+                                datos_crudos = ws_hist.get_all_values()
+                                tipo_registro = registro.get("_tipo", "")
+                                fecha_inv = str(registro.get("Fecha de Inventario", ""))
+                                fecha_ent = str(registro.get("Fecha de Entrada", ""))
+                                responsable = str(registro.get("Responsable", ""))
 
-                                    fila_encontrada = None
-                                    for i, fila in enumerate(datos_crudos[1:], start=2):
-                                        if fila[0] != u_sel or fila[1] != insumo_sel:
-                                            continue
-                                        if tipo_registro == "Entrada":
-                                            if fila[5] == fecha_ent and fila[13] == responsable:
-                                                fila_encontrada = i
-                                                break
-                                        else:
-                                            if fila[14] == fecha_inv and fila[13] == responsable:
-                                                fila_encontrada = i
-                                                break
-
-                                    if fila_encontrada is None:
-                                        st.error("No se pudo localizar el registro en Google Sheets.")
+                                fila_encontrada = None
+                                for i, fila in enumerate(datos_crudos[1:], start=2):
+                                    # Columnas: 0: Unidad, 1: Nombre, 5: Fecha Entrada, 13: Responsable, 14: Fecha Inventario
+                                    if fila[0] != u_sel or fila[1] != insumo_sel:
+                                        continue
+                                    if tipo_registro == "Entrada":
+                                        if fila[5] == fecha_ent and fila[13] == responsable:
+                                            fila_encontrada = i
+                                            break
+                                    else:  # Inventario
                                     else:
-                                        ws_hist.update(
-                                            range_name=f"H{fila_encontrada}:K{fila_encontrada}",
-                                            values=[[nueva_medida, nuevo_alm, max(0.0, nuevo_bar - nueva_tara), nuevo_neto]]
-                                        )
-                                        ws_hist.update(range_name=f"M{fila_encontrada}", values=[["TRUE" if nuevo_pedir else "FALSE"]])
-                                        ws_hist.update(range_name=f"Q{fila_encontrada}", values=[[nueva_tara]])
-                                        ws_hist.update(range_name=f"R{fila_encontrada}", values=[[nueva_observacion]])
+                                        if fila[14] == fecha_inv and fila[13] == responsable:
+                                            fila_encontrada = i
+                                            break
 
-                                        cargar_datos_integrales.clear()
-                                        st.success("✅ Registro actualizado correctamente.")
-                                        st.rerun()
+                                if fila_encontrada is None:
+                                    st.error("No se pudo localizar el registro en Google Sheets.")
+                                else:
+                                    # Actualizar celdas específicas:
+                                    # H: Unidad de Medida (col 7), I: Alm (8), J: Barra (9), K: Stock Neto (10)
+                                    # M: ¿Comprar? (12), Q: Tara (15), R: Observaciones (16)
+                                    ws_hist.update(
+                                        range_name=f"H{fila_encontrada}:K{fila_encontrada}",
+                                        values=[[nueva_medida, nuevo_alm, max(0.0, nuevo_bar - nueva_tara), nuevo_neto]]
+                                    )
+                                    ws_hist.update(range_name=f"M{fila_encontrada}", values=[["TRUE" if nuevo_pedir else "FALSE"]])
+                                    ws_hist.update(range_name=f"Q{fila_encontrada}", values=[[nueva_tara]])
+                                    ws_hist.update(range_name=f"R{fila_encontrada}", values=[[nueva_observacion]])
+
+                                    from data_loaders import cargar_datos_integrales
+                                    cargar_datos_integrales.clear()
+                                    st.success("✅ Registro actualizado correctamente.")
+                                    st.rerun()
