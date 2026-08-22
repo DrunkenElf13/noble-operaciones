@@ -120,7 +120,7 @@ def show_ingresos():
                 "Stock Barra": limpiar_valor(prev["Barra"]) if prev is not None else 0.0,
                 "+ Ingreso": 0.0,
                 "Costo Presentación": 0.0,
-                "Unidad Base": "pz",          # valor por defecto editable
+                "Unidad Base": str(r.get("Unidad de Medida", "pz")).lower(),
                 "Contenido Base": 0.0,
                 "row": r,
                 "prev": prev,
@@ -144,11 +144,11 @@ def show_ingresos():
                 ),
                 "Unidad Base": st.column_config.SelectboxColumn(
                     options=UNIDADES_MED,
-                    help="Unidad que usarás en recetas (ml, gr, pz, etc.)"
+                    help="Unidad que usarás en recetas (ml, gr, pieza, paquete, etc.)"
                 ),
                 "Contenido Base": st.column_config.NumberColumn(
                     min_value=0.0, step=1.0,
-                    help="Cuántas unidades base hay en 1 unidad de inventario. Ej: 1 pz de leche = 1000 ml"
+                    help="Cuántas unidades base hay en 1 unidad de inventario. Ej: 1 paquete = 100 piezas"
                 )
             }
         )
@@ -205,7 +205,7 @@ def show_ingresos():
                             "cantidad_neta": ingreso,
                             "costo_presentacion": costo_presentacion_bulk,
                             "costo_unitario": 0.0,  # se calculará automáticamente
-                            "unidad_base": r_ed.get("Unidad Base", "pz"),
+                            "unidad_base": r_ed.get("Unidad Base", row_ins.get("Unidad de Medida", "pz")),
                             "contenido_base_por_unidad": limpiar_valor(r_ed.get("Contenido Base", 0.0)),
                             "costo_base_unitario": 0.0,  # se calculará automáticamente
                         })
@@ -305,30 +305,32 @@ def show_ingresos():
                 if registrar_costo:
                     col_costo2 = st.columns([1, 1, 1, 1])
                     with col_costo2[0]:
+                        # Unidad base por defecto = unidad de inventario del catálogo
+                        unidad_inv = str(row_ins.get("Unidad de Medida", "pz")).lower()
                         unidad_base = st.selectbox(
                             "Unidad base para recetas",
                             UNIDADES_MED,
-                            index=UNIDADES_MED.index("ml") if "ml" in UNIDADES_MED else 0,
+                            index=UNIDADES_MED.index(unidad_inv) if unidad_inv in UNIDADES_MED else 0,
                             key=f"unidad_base_{i}",
-                            help="Unidad en la que usarás el insumo en recetas (ml, gr, pz, etc.)"
+                            help="Unidad en la que usarás el insumo en recetas (ml, gr, pieza, paquete, etc.)"
                         )
                     with col_costo2[1]:
                         contenido_base = st.number_input(
                             f"Contenido en {unidad_base} por unidad",
                             min_value=0.0, step=1.0, value=0.0,
                             key=f"contenido_base_{i}",
-                            help=f"Cuántas unidades de {unidad_base} hay en 1 unidad de inventario. Ej: 1 pz de leche = 1000 ml"
+                            help=f"Cuántas unidades de {unidad_base} hay en 1 unidad de inventario. Ej: 1 paquete = 100 piezas"
                         )
                     with col_costo2[2]:
                         costo_base_manual = st.number_input(
-                            "Costo base unitario (opcional)",
+                            f"Costo base unitario ($/{unidad_base}) (opcional)",
                             min_value=0.0, step=0.0001, value=0.0,
                             key=f"costo_base_{i}",
                             format="%.6f",
                             help="Si dejas 0, se calculará automáticamente."
                         )
                 else:
-                    unidad_base = "pz"
+                    unidad_base = str(row_ins.get("Unidad de Medida", "pz")).lower()
                     contenido_base = 0.0
                     costo_base_manual = 0.0
 
