@@ -114,13 +114,24 @@ def show_ingresos():
         for _, r in df_u.iterrows():
             nom = r["Nombre del Insumo"]
             prev = buscar_insumo_en_actual(df_actual, nom)
+            # Sugerencia automática de unidad base según unidad de inventario
+            unidad_inv = str(r.get("Unidad de Medida", "pz")).lower()
+            if unidad_inv in ["pz", "paquete"]:
+                default_base = "pieza"
+            elif unidad_inv == "kg":
+                default_base = "gr"
+            elif unidad_inv == "lt":
+                default_base = "ml"
+            else:
+                default_base = unidad_inv
+
             bulk_data.append({
                 "Insumo": nom,
                 "Stock Alm": limpiar_valor(prev["Alm"]) if prev is not None else 0.0,
                 "Stock Barra": limpiar_valor(prev["Barra"]) if prev is not None else 0.0,
                 "+ Ingreso": 0.0,
                 "Costo Presentación": 0.0,
-                "Unidad Base": str(r.get("Unidad de Medida", "pz")).lower(),
+                "Unidad Base": default_base,
                 "Contenido Base": 0.0,
                 "row": r,
                 "prev": prev,
@@ -205,7 +216,7 @@ def show_ingresos():
                             "cantidad_neta": ingreso,
                             "costo_presentacion": costo_presentacion_bulk,
                             "costo_unitario": 0.0,  # se calculará automáticamente
-                            "unidad_base": r_ed.get("Unidad Base", row_ins.get("Unidad de Medida", "pz")),
+                            "unidad_base": r_ed.get("Unidad Base", default_base),
                             "contenido_base_por_unidad": limpiar_valor(r_ed.get("Contenido Base", 0.0)),
                             "costo_base_unitario": 0.0,  # se calculará automáticamente
                         })
@@ -305,12 +316,21 @@ def show_ingresos():
                 if registrar_costo:
                     col_costo2 = st.columns([1, 1, 1, 1])
                     with col_costo2[0]:
-                        # Unidad base por defecto = unidad de inventario del catálogo
+                        # Sugerencia automática de unidad base
                         unidad_inv = str(row_ins.get("Unidad de Medida", "pz")).lower()
+                        if unidad_inv in ["pz", "paquete"]:
+                            default_base = "pieza"
+                        elif unidad_inv == "kg":
+                            default_base = "gr"
+                        elif unidad_inv == "lt":
+                            default_base = "ml"
+                        else:
+                            default_base = unidad_inv
+
                         unidad_base = st.selectbox(
                             "Unidad base para recetas",
                             UNIDADES_MED,
-                            index=UNIDADES_MED.index(unidad_inv) if unidad_inv in UNIDADES_MED else 0,
+                            index=UNIDADES_MED.index(default_base) if default_base in UNIDADES_MED else 0,
                             key=f"unidad_base_{i}",
                             help="Unidad en la que usarás el insumo en recetas (ml, gr, pieza, paquete, etc.)"
                         )
