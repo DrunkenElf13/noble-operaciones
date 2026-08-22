@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import uuid
+import pandas as pd
 from data_loaders import cargar_merma, cargar_costos_insumos
 from sheets import _asegurar_hoja_merma, append_rows_con_retry
 from utils import limpiar_valor, ahora_hermosillo
@@ -46,7 +47,13 @@ def show_merma():
                 df_bc_ingr_m = df_bc_m[mask_ingr_m].copy()
                 df_bc_ingr_m["Fecha_Captura"] = pd.to_datetime(df_bc_ingr_m["Fecha_Captura"], errors="coerce")
                 ultimo_costo_m = df_bc_ingr_m.sort_values("Fecha_Captura").iloc[-1]
-                costo_unit_m   = limpiar_valor(ultimo_costo_m.get("Costo_Unitario", 0))
+                # Preferir costo base si la unidad de merma coincide con la unidad base
+                unidad_m_lower = str(unidad_m).lower()
+                unidad_base = str(ultimo_costo_m.get("Unidad_Base", "")).lower()
+                if unidad_base and unidad_base == unidad_m_lower and "Costo_Base_Unitario" in ultimo_costo_m:
+                    costo_unit_m = limpiar_valor(ultimo_costo_m.get("Costo_Base_Unitario", 0))
+                else:
+                    costo_unit_m = limpiar_valor(ultimo_costo_m.get("Costo_Unitario", 0))
                 costo_total_m  = round(cantidad_m * costo_unit_m, 4)
                 if costo_unit_m > 0:
                     st.info(f"💵 Costo estimado: **${costo_total_m:,.4f}** ({cantidad_m} × ${costo_unit_m}/unidad)")
