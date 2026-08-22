@@ -4,7 +4,7 @@ import time
 from data_loaders import cargar_costos_insumos, cargar_recetas, cargar_datos_integrales
 from sheets import _asegurar_hoja_costos_insumos, _asegurar_hoja_recetas, append_rows_con_retry
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
-from config import UNIDADES_MED
+from config import UNIDADES_MED, COLS_RECETAS
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
@@ -42,7 +42,10 @@ def procesar_importacion_recetas(archivo, mapeo_ingredientes, precio_default=0.0
             st.error("No hay costos de insumos registrados. Registra al menos un costo antes de importar.")
             return None
         ultimos_costos = df_costos.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
-        costo_dict = dict(zip(ultimos_costos["Nombre_Insumo"], ultimos_costos["Costo_Unitario"]))
+        if "Costo_Base_Unitario" in ultimos_costos.columns:
+            costo_dict = dict(zip(ultimos_costos["Nombre_Insumo"], ultimos_costos["Costo_Base_Unitario"]))
+        else:
+            costo_dict = dict(zip(ultimos_costos["Nombre_Insumo"], ultimos_costos["Costo_Unitario"]))
         df_cat = cargar_datos_integrales()[0]
         unidad_dict = {}
         if not df_cat.empty:
@@ -69,7 +72,6 @@ def procesar_importacion_recetas(archivo, mapeo_ingredientes, precio_default=0.0
                 ts_hermosillo(),
                 st.session_state.current_user
             ])
-        from config import COLS_RECETAS
         return pd.DataFrame(filas, columns=COLS_RECETAS)
     except Exception as e:
         st.error(f"Error al procesar el archivo: {e}")
@@ -118,7 +120,7 @@ def show_base_costos():
                         if err:
                             st.error(err)
                         else:
-                            fila_ci = [insumo_sel, marca_ci, prov_ci, um_ci, pres_ci, costo_pres, costo_unit, unidad_costo, ts_hermosillo(), resp_ci]
+                            fila_ci = [insumo_sel, marca_ci, prov_ci, um_ci, pres_ci, costo_pres, costo_unit, unidad_costo, "", 0.0, 0.0, ts_hermosillo(), resp_ci]
                             ok, msg = append_rows_con_retry(ws_ci, [fila_ci])
                             if ok:
                                 cargar_costos_insumos.clear()
@@ -234,7 +236,11 @@ def show_base_costos():
                             if not df_ci2.empty:
                                 mask = df_ci2["Nombre_Insumo"] == row["Ingrediente"]
                                 if mask.any():
-                                    costo_unit = limpiar_valor(df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]["Costo_Unitario"])
+                                    ultimo = df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]
+                                    if "Costo_Base_Unitario" in ultimo and limpiar_valor(ultimo.get("Costo_Base_Unitario", 0)) > 0:
+                                        costo_unit = limpiar_valor(ultimo["Costo_Base_Unitario"])
+                                    else:
+                                        costo_unit = limpiar_valor(ultimo["Costo_Unitario"])
                             nuevos_ingredientes.append({
                                 "insumo": row["Ingrediente"],
                                 "cantidad": limpiar_valor(row["Cantidad"]),
@@ -282,8 +288,12 @@ def show_base_costos():
                     mask = df_ci2["Nombre_Insumo"] == insumo_add
                     if mask.any():
                         ultimo = df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]
-                        costo_uni_add = limpiar_valor(ultimo["Costo_Unitario"])
-                        unidad_add = str(ultimo.get("Unidad_Medida", "pz"))
+                        if "Costo_Base_Unitario" in ultimo and limpiar_valor(ultimo.get("Costo_Base_Unitario", 0)) > 0:
+                            costo_uni_add = limpiar_valor(ultimo["Costo_Base_Unitario"])
+                            unidad_add = str(ultimo.get("Unidad_Base", "pz"))
+                        else:
+                            costo_uni_add = limpiar_valor(ultimo["Costo_Unitario"])
+                            unidad_add = str(ultimo.get("Unidad_Medida", "pz"))
                 else:
                     unidad_add = str(df_cat2[df_cat2["Nombre del Insumo"]==insumo_add].iloc[0].get("Unidad de Medida","pz")) if not df_cat2.empty else "pz"
                 with col_i3:
