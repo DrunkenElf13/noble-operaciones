@@ -63,7 +63,7 @@ COLS_CRITICAS_HISTORIAL = {"Nombre del Insumo", "Alm", "Barra", "Fecha de Invent
 
 GRUPOS       = ["A", "B", "C", "D", "E", "F", "G"]
 UNIDADES     = ["Noble", "Coffee Station"]
-UNIDADES_MED = ["pz", "ml", "gr", "kg", "lt"]
+UNIDADES_MED = ["pz", "ml", "gr", "kg", "lt", "pieza", "paquete"]
 
 CANALES_VENTA = ["Noble", "Coffee Station", "Noble To Go"]
 
