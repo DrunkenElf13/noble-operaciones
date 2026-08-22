@@ -119,10 +119,12 @@ def show_base_costos():
                         help="Unidad en la que controlas el inventario de este insumo (ej. pz, paquete, gr, lt)."
                     )
                 with col_d:
+                    # MODIFICACIÓN: Presentación inicia vacía, no se precarga desde catálogo
                     pres_ci  = st.text_input(
                         "Presentación:",
-                        value=str(info_cat.get("Presentación de Compra","")),
-                        help="Cantidad de unidades de inventario que contiene la presentación que compras (ej. 12 paquetes por caja)."
+                        value="",
+                        placeholder="Ej: 1, 12, 100",
+                        help="Cantidad de unidades de inventario que contiene la presentación que compras (ej. 1 paquete, 12 pz por caja)."
                     )
 
                 col_e, col_f = st.columns(2)
@@ -141,14 +143,23 @@ def show_base_costos():
 
                 st.markdown("---")
                 st.write("**Conversión para recetas / food cost**")
+
+                # Sugerencia automática de unidad base según unidad de inventario
+                if um_ci in ["pz", "paquete"]:
+                    default_base = "pieza"
+                elif um_ci == "kg":
+                    default_base = "gr"
+                elif um_ci == "lt":
+                    default_base = "ml"
+                else:
+                    default_base = um_ci
+
                 col_g, col_h = st.columns(2)
                 with col_g:
-                    # Unidad base por defecto = misma que unidad de inventario
-                    idx_default_base = UNIDADES_MED.index(um_ci) if um_ci in UNIDADES_MED else 0
                     unidad_base_ci = st.selectbox(
                         "Unidad base para recetas:",
                         UNIDADES_MED,
-                        index=idx_default_base,
+                        index=UNIDADES_MED.index(default_base) if default_base in UNIDADES_MED else 0,
                         help="Unidad en la que usarás el insumo en recetas (ml, gr, pieza, paquete, etc.)."
                     )
                 with col_h:
