@@ -143,11 +143,13 @@ def show_base_costos():
                 st.write("**Conversión para recetas / food cost**")
                 col_g, col_h = st.columns(2)
                 with col_g:
+                    # Unidad base por defecto = misma que unidad de inventario
+                    idx_default_base = UNIDADES_MED.index(um_ci) if um_ci in UNIDADES_MED else 0
                     unidad_base_ci = st.selectbox(
                         "Unidad base para recetas:",
                         UNIDADES_MED,
-                        index=UNIDADES_MED.index("ml") if "ml" in UNIDADES_MED else 0,
-                        help="Unidad en la que usarás el insumo en recetas (ml, gr, pieza, etc.)."
+                        index=idx_default_base,
+                        help="Unidad en la que usarás el insumo en recetas (ml, gr, pieza, paquete, etc.)."
                     )
                 with col_h:
                     contenido_base_ci = st.number_input(
