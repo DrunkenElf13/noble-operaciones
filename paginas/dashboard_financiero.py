@@ -63,7 +63,7 @@ def show_dashboard_financiero():
         "📋 Tablas Comparativas",
     ])
 
-    # ==================== TAB COMPARATIVO (restaurado con agrupación) ====================
+    # ==================== TAB COMPARATIVO ====================
     with tab_comp:
         st.subheader("📊 Ventas vs Gastos por Período")
         periodo_comp = st.radio("Agrupar por:", ["Mes","Trimestre","Cuatrimestre","Año"], horizontal=True)
@@ -80,7 +80,6 @@ def show_dashboard_financiero():
                  Rappi=("Rappi","sum"))
             .reset_index()
         )
-        # Ventas por canal principal
         if "Canal" in df_vm.columns:
             ventas_por_canal = (
                 df_vm.groupby(["Año_num","Mes_num","Canal"])["Venta_Diaria"]
@@ -161,13 +160,11 @@ def show_dashboard_financiero():
 
         st.subheader("📋 Tabla de datos")
         st.dataframe(df_agrup, hide_index=True, width="stretch")
-
-    # ==================== TAB PROYECCIONES (selectores separados) ====================
+    # ==================== TAB PROYECCIONES ====================
     with tab_proy:
         st.subheader("🔮 Proyecciones de Ventas por Canal")
         hoy_pr        = ahora_hermosillo().date()
         dias_en_mes_pr = calendar.monthrange(hoy_pr.year, hoy_pr.month)[1]
-        # Selectores
         años_pr = sorted(df_vf["Año"].apply(limpiar_valor).astype(int).unique(), reverse=True)
         año_pr = st.selectbox("Año", años_pr, key="año_proy")
         mes_pr = st.selectbox("Mes", list(range(1,13)),
@@ -239,8 +236,7 @@ def show_dashboard_financiero():
             ga2.metric("Presupuesto anual",     f"${ppto_anual_pr:,.2f}")
         else:
             st.info("Configura el presupuesto anual en '📋 Presupuesto Anual' para ver el velocímetro anual.")
-
-    # ==================== TAB FOOD COST (sin cambios) ====================
+    # ==================== TAB FOOD COST ====================
     with tab_fc:
         st.subheader("🍽️ Food Cost & Margen por Producto")
         if df_bcf.empty:
@@ -280,8 +276,11 @@ def show_dashboard_financiero():
                 )
                 df_por_prod = df_bcf_latest[["Nombre_Insumo"]].copy()
                 df_por_prod["Producto"] = df_por_prod["Nombre_Insumo"]
-                df_por_prod["Costo_Receta"] = df_bcf_latest["Costo_Presentacion"]
-                df_por_prod["Precio_Venta"] = df_bcf_latest["Costo_Presentacion"] * 2
+                if "Costo_Base_Unitario" in df_bcf_latest.columns:
+                    df_por_prod["Costo_Receta"] = df_bcf_latest["Costo_Base_Unitario"]
+                else:
+                    df_por_prod["Costo_Receta"] = df_bcf_latest["Costo_Presentacion"]
+                df_por_prod["Precio_Venta"] = df_por_prod["Costo_Receta"] * 2
                 df_por_prod["Food_Cost_Pct"] = 50.0
                 df_por_prod["Margen_Bruto"] = df_por_prod["Precio_Venta"] - df_por_prod["Costo_Receta"]
                 df_por_prod["Margen_Pct"] = 50.0
@@ -320,8 +319,7 @@ def show_dashboard_financiero():
                 df_por_prod.style.apply(_color_fc_prod, axis=1),
                 hide_index=True, width="stretch"
             )
-
-    # ==================== TAB MERMA (selectores separados) ====================
+    # ==================== TAB MERMA ====================
     with tab_merma_d:
         st.subheader("📉 Análisis de Merma")
         if df_mermaf.empty:
@@ -385,7 +383,7 @@ def show_dashboard_financiero():
             cols_md_ok   = [c for c in cols_md_show if c in df_md_fil.columns]
             st.dataframe(df_md_fil[cols_md_ok].sort_values("Fecha", ascending=False), hide_index=True, width="stretch")
 
-    # ==================== TAB PUNTO DE EQUILIBRIO (selectores separados) ====================
+    # ==================== TAB PUNTO DE EQUILIBRIO ====================
     with tab_pe:
         st.subheader("⚖️ Punto de Equilibrio Mensual")
         hoy_pe     = ahora_hermosillo().date()
@@ -488,7 +486,7 @@ def show_dashboard_financiero():
             else:
                 st.info("Sin gastos registrados para este período en el módulo de Gastos.")
 
-    # ==================== TABLAS COMPARATIVAS (completa) ====================
+    # ==================== TAB TABLAS COMPARATIVAS ====================
     with tab_tablas:
         st.subheader("📋 Tablas Comparativas por Canal")
 
