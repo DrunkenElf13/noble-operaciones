@@ -194,7 +194,8 @@ def cargar_costos_insumos():
         for col in COLS_COSTOS_INSUMOS:
             if col not in df.columns:
                 df[col] = ""
-        for col in ["Costo_Presentacion","Costo_Unitario"]:
+        # Columnas numéricas a limpiar
+        for col in ["Costo_Presentacion","Costo_Unitario","Contenido_Base_por_Unidad","Costo_Base_Unitario"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
         return df
