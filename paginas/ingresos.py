@@ -6,7 +6,7 @@ import data_loaders as dl
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
 from sheets import safe_worksheet, sh, append_rows_con_retry, _asegurar_hoja_costos_insumos
 from utils import limpiar_valor, ts_hermosillo
-from config import UNIDADES
+from config import UNIDADES, UNIDADES_MED
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
@@ -14,6 +14,10 @@ from auth import tiene_permiso
 def _guardar_costos(filas_costos: list, r_sel: str):
     """
     Registra costos en la hoja CostosInsumos.
+    filas_costos: lista de dicts con:
+        nombre, marca, proveedor, unidad_medida, presentacion,
+        costo_presentacion, costo_unitario, unidad_base,
+        contenido_base_por_unidad, costo_base_unitario
     Devuelve (ok, mensaje).
     """
     if not filas_costos:
@@ -28,15 +32,21 @@ def _guardar_costos(filas_costos: list, r_sel: str):
         filas_listas = []
         for costo in filas_costos:
             nombre = costo.get("nombre", "")
-            cantidad_neta = costo.get("cantidad_neta", 0.0)
             costo_presentacion = costo.get("costo_presentacion", 0.0)
             costo_unitario = costo.get("costo_unitario", 0.0)
+            unidad_medida = costo.get("unidad_medida", "pz")
+            unidad_base = costo.get("unidad_base", unidad_medida)
+            contenido_base = costo.get("contenido_base_por_unidad", 0.0)
+            costo_base = costo.get("costo_base_unitario", 0.0)
 
             # Si no se proporcionó costo unitario manual, se calcula automáticamente
-            if costo_unitario <= 0 and cantidad_neta > 0:
-                costo_unitario = round(costo_presentacion / cantidad_neta, 4)
+            if costo_unitario <= 0 and costo_presentacion > 0 and costo.get("cantidad_neta", 0) > 0:
+                costo_unitario = round(costo_presentacion / costo["cantidad_neta"], 4)
 
-            unidad_medida = costo.get("unidad_medida", "pz")
+            # Si no se proporcionó costo base manual, se calcula a partir del costo unitario y contenido base
+            if costo_base <= 0 and costo_unitario > 0 and contenido_base > 0:
+                costo_base = round(costo_unitario / contenido_base, 6)
+
             unidad_costo = f"$/{unidad_medida}"
 
             filas_listas.append([
@@ -48,6 +58,9 @@ def _guardar_costos(filas_costos: list, r_sel: str):
                 costo_presentacion,
                 costo_unitario,
                 unidad_costo,
+                unidad_base,
+                contenido_base,
+                costo_base,
                 fecha_captura,
                 r_sel
             ])
@@ -107,13 +120,16 @@ def show_ingresos():
                 "Stock Barra": limpiar_valor(prev["Barra"]) if prev is not None else 0.0,
                 "+ Ingreso": 0.0,
                 "Costo Presentación": 0.0,
+                "Unidad Base": "pz",          # valor por defecto editable
+                "Contenido Base": 0.0,
                 "row": r,
                 "prev": prev,
             })
 
-        df_edit   = pd.DataFrame(bulk_data)
+        df_edit = pd.DataFrame(bulk_data)
         edited_df = st.data_editor(
-            df_edit[["Insumo", "Stock Alm", "Stock Barra", "+ Ingreso", "Costo Presentación"]],
+            df_edit[["Insumo", "Stock Alm", "Stock Barra", "+ Ingreso",
+                     "Costo Presentación", "Unidad Base", "Contenido Base"]],
             hide_index=True,
             width="stretch",
             disabled=["Insumo", "Stock Alm", "Stock Barra"],
@@ -122,8 +138,18 @@ def show_ingresos():
                 "Stock Alm": st.column_config.NumberColumn(disabled=True),
                 "Stock Barra": st.column_config.NumberColumn(disabled=True),
                 "+ Ingreso": st.column_config.NumberColumn(min_value=0.0, step=1.0),
-                "Costo Presentación": st.column_config.NumberColumn(min_value=0.0, step=0.5,
-                                                                     help="Costo total pagado por la presentación recibida. Deja en 0 para omitir costo.")
+                "Costo Presentación": st.column_config.NumberColumn(
+                    min_value=0.0, step=0.5,
+                    help="Costo total pagado por la presentación recibida. Deja en 0 para omitir costo."
+                ),
+                "Unidad Base": st.column_config.SelectboxColumn(
+                    options=UNIDADES_MED,
+                    help="Unidad que usarás en recetas (ml, gr, pz, etc.)"
+                ),
+                "Contenido Base": st.column_config.NumberColumn(
+                    min_value=0.0, step=1.0,
+                    help="Cuántas unidades base hay en 1 unidad de inventario. Ej: 1 pz de leche = 1000 ml"
+                )
             }
         )
 
@@ -179,6 +205,9 @@ def show_ingresos():
                             "cantidad_neta": ingreso,
                             "costo_presentacion": costo_presentacion_bulk,
                             "costo_unitario": 0.0,  # se calculará automáticamente
+                            "unidad_base": r_ed.get("Unidad Base", "pz"),
+                            "contenido_base_por_unidad": limpiar_valor(r_ed.get("Contenido Base", 0.0)),
+                            "costo_base_unitario": 0.0,  # se calculará automáticamente
                         })
 
                 st.session_state["_procesando_bulk"] = False
@@ -191,7 +220,6 @@ def show_ingresos():
                         dl.cargar_datos_integrales.clear()
                         mensaje_final = f"Ingreso masivo registrado: {len(filas_bulk)} refs. {msg}"
 
-                        # Guardar costos si hay
                         if filas_costos_bulk:
                             ok_costos, msg_costos = _guardar_costos(filas_costos_bulk, r_sel)
                             if ok_costos:
@@ -274,6 +302,36 @@ def show_ingresos():
                         help="Si dejas 0, se calculará automáticamente con la cantidad neta recibida."
                     )
 
+                if registrar_costo:
+                    col_costo2 = st.columns([1, 1, 1, 1])
+                    with col_costo2[0]:
+                        unidad_base = st.selectbox(
+                            "Unidad base para recetas",
+                            UNIDADES_MED,
+                            index=UNIDADES_MED.index("ml") if "ml" in UNIDADES_MED else 0,
+                            key=f"unidad_base_{i}",
+                            help="Unidad en la que usarás el insumo en recetas (ml, gr, pz, etc.)"
+                        )
+                    with col_costo2[1]:
+                        contenido_base = st.number_input(
+                            f"Contenido en {unidad_base} por unidad",
+                            min_value=0.0, step=1.0, value=0.0,
+                            key=f"contenido_base_{i}",
+                            help=f"Cuántas unidades de {unidad_base} hay en 1 unidad de inventario. Ej: 1 pz de leche = 1000 ml"
+                        )
+                    with col_costo2[2]:
+                        costo_base_manual = st.number_input(
+                            "Costo base unitario (opcional)",
+                            min_value=0.0, step=0.0001, value=0.0,
+                            key=f"costo_base_{i}",
+                            format="%.6f",
+                            help="Si dejas 0, se calculará automáticamente."
+                        )
+                else:
+                    unidad_base = "pz"
+                    contenido_base = 0.0
+                    costo_base_manual = 0.0
+
                 regs_ingreso[nom] = {
                     "nuevo_a": nuevo_alm,
                     "b": v_b_prev,
@@ -286,6 +344,9 @@ def show_ingresos():
                     "registrar_costo": registrar_costo,
                     "costo_presentacion": costo_presentacion,
                     "costo_unitario_manual": costo_unitario_manual,
+                    "unidad_base": unidad_base,
+                    "contenido_base": contenido_base,
+                    "costo_base_manual": costo_base_manual,
                 }
                 st.divider()
 
@@ -326,6 +387,9 @@ def show_ingresos():
                                 "cantidad_neta": info["cant_neta"],
                                 "costo_presentacion": info["costo_presentacion"],
                                 "costo_unitario": info["costo_unitario_manual"],
+                                "unidad_base": info["unidad_base"],
+                                "contenido_base_por_unidad": info["contenido_base"],
+                                "costo_base_unitario": info["costo_base_manual"],
                             })
 
                     ok, msg = append_rows_con_retry(ws_his, filas)
