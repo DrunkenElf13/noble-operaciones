@@ -41,7 +41,9 @@ COLS_MERMA = [
 ]
 COLS_COSTOS_INSUMOS = [
     "Nombre_Insumo", "Marca", "Proveedor", "Unidad_Medida", "Presentacion",
-    "Costo_Presentacion", "Costo_Unitario", "Unidad_Costo", "Fecha_Captura", "Responsable"
+    "Costo_Presentacion", "Costo_Unitario", "Unidad_Costo",
+    "Unidad_Base", "Contenido_Base_por_Unidad", "Costo_Base_Unitario",
+    "Fecha_Captura", "Responsable"
 ]
 COLS_RECETAS = [
     "Receta", "Ingrediente", "Cantidad", "Unidad_Medida", "Costo_Ingrediente",
