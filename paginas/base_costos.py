@@ -88,7 +88,6 @@ def show_base_costos():
         st.stop()
 
     tab_costos, tab_recetas = st.tabs(["💰 Costos de Insumos", "🍽️ Recetas"])
-
     with tab_costos:
         st.subheader("Registro de Costo de Insumos (desde catálogo)")
         df_ci = cargar_costos_insumos()
@@ -103,24 +102,108 @@ def show_base_costos():
                 info_cat = {}
                 if mask_cat.any():
                     info_cat = df_cat[mask_cat].iloc[0].to_dict()
-                marca_ci = st.text_input("Marca:", value=str(info_cat.get("Marca","")))
-                prov_ci  = st.text_input("Proveedor:", value=str(info_cat.get("Proveedor","")))
-                um_ci    = st.selectbox("Unidad de Medida:", UNIDADES_MED, index=UNIDADES_MED.index(str(info_cat.get("Unidad de Medida","pz")).lower()) if str(info_cat.get("Unidad de Medida","pz")).lower() in UNIDADES_MED else 0)
-                pres_ci  = st.text_input("Presentación:", value=str(info_cat.get("Presentación de Compra","")))
-                costo_pres = st.number_input("Costo de la Presentación ($):", min_value=0.0, step=0.5, value=0.0)
-                costo_unit = st.number_input("Costo por Unidad ($):", min_value=0.0, step=0.001, value=0.0,
-                                             help="Costo por gramo, mililitro, pieza, etc.")
-                unidad_costo = st.text_input("Unidad de Costo:", placeholder="Ej: $/gr, $/ml, $/pz")
-                resp_ci = st.selectbox("Responsable:", st.session_state.responsables, index=st.session_state.responsables.index(st.session_state.current_user) if st.session_state.current_user in st.session_state.responsables else 0)
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    marca_ci = st.text_input("Marca:", value=str(info_cat.get("Marca","")))
+                with col_b:
+                    prov_ci  = st.text_input("Proveedor:", value=str(info_cat.get("Proveedor","")))
+
+                col_c, col_d = st.columns(2)
+                with col_c:
+                    um_ci    = st.selectbox(
+                        "Unidad de Medida (Inventario):",
+                        UNIDADES_MED,
+                        index=UNIDADES_MED.index(str(info_cat.get("Unidad de Medida","pz")).lower())
+                              if str(info_cat.get("Unidad de Medida","pz")).lower() in UNIDADES_MED else 0,
+                        help="Unidad en la que controlas el inventario de este insumo (ej. pz, paquete, gr, lt)."
+                    )
+                with col_d:
+                    pres_ci  = st.text_input(
+                        "Presentación:",
+                        value=str(info_cat.get("Presentación de Compra","")),
+                        help="Cantidad de unidades de inventario que contiene la presentación que compras (ej. 12 paquetes por caja)."
+                    )
+
+                col_e, col_f = st.columns(2)
+                with col_e:
+                    costo_pres = st.number_input(
+                        "Costo de la Presentación ($):",
+                        min_value=0.0, step=0.5, value=0.0,
+                        help="Costo total pagado por la presentación (caja, bolsa, paquete, etc.)."
+                    )
+                with col_f:
+                    costo_unit = st.number_input(
+                        "Costo por Unidad ($) (opcional):",
+                        min_value=0.0, step=0.001, value=0.0,
+                        help="Si dejas 0, se calculará automáticamente: Costo Presentación ÷ Presentación."
+                    )
+
+                st.markdown("---")
+                st.write("**Conversión para recetas / food cost**")
+                col_g, col_h = st.columns(2)
+                with col_g:
+                    unidad_base_ci = st.selectbox(
+                        "Unidad base para recetas:",
+                        UNIDADES_MED,
+                        index=UNIDADES_MED.index("ml") if "ml" in UNIDADES_MED else 0,
+                        help="Unidad en la que usarás el insumo en recetas (ml, gr, pieza, etc.)."
+                    )
+                with col_h:
+                    contenido_base_ci = st.number_input(
+                        f"Contenido en {unidad_base_ci} por unidad de inventario:",
+                        min_value=0.0, step=1.0, value=0.0,
+                        help=f"Cuántas unidades de {unidad_base_ci} hay en 1 {um_ci}. Ej: 1 paquete = 100 piezas → 100."
+                    )
+                col_i, col_j = st.columns(2)
+                with col_i:
+                    costo_base_ci = st.number_input(
+                        f"Costo base unitario ($/{unidad_base_ci}) (opcional):",
+                        min_value=0.0, step=0.0001, value=0.0,
+                        format="%.6f",
+                        help=f"Si dejas 0, se calculará automáticamente: Costo Unitario ÷ Contenido Base."
+                    )
+                with col_j:
+                    resp_ci = st.selectbox(
+                        "Responsable:",
+                        st.session_state.responsables,
+                        index=st.session_state.responsables.index(st.session_state.current_user)
+                              if st.session_state.current_user in st.session_state.responsables else 0
+                    )
+
                 if st.form_submit_button("💾 Guardar Costo"):
                     if costo_pres <= 0:
                         st.error("El costo de la presentación debe ser mayor a cero.")
                     else:
+                        # Cálculo automático del costo unitario si es 0
+                        if costo_unit <= 0:
+                            try:
+                                pres_num = float(pres_ci) if pres_ci.strip() else 0.0
+                                if pres_num > 0:
+                                    costo_unit = round(costo_pres / pres_num, 4)
+                                else:
+                                    st.error("La presentación debe ser un número mayor que cero para calcular el costo unitario.")
+                                    st.stop()
+                            except ValueError:
+                                st.error("La presentación debe ser un número válido.")
+                                st.stop()
+
+                        # Cálculo automático del costo base si es 0
+                        if costo_base_ci <= 0 and contenido_base_ci > 0:
+                            costo_base_ci = round(costo_unit / contenido_base_ci, 6)
+
+                        unidad_costo = f"$/{um_ci}"
+
                         ws_ci, err = _asegurar_hoja_costos_insumos()
                         if err:
                             st.error(err)
                         else:
-                            fila_ci = [insumo_sel, marca_ci, prov_ci, um_ci, pres_ci, costo_pres, costo_unit, unidad_costo, "", 0.0, 0.0, ts_hermosillo(), resp_ci]
+                            fila_ci = [
+                                insumo_sel, marca_ci, prov_ci, um_ci, pres_ci,
+                                costo_pres, costo_unit, unidad_costo,
+                                unidad_base_ci, contenido_base_ci, costo_base_ci,
+                                ts_hermosillo(), resp_ci
+                            ]
                             ok, msg = append_rows_con_retry(ws_ci, [fila_ci])
                             if ok:
                                 cargar_costos_insumos.clear()
@@ -130,13 +213,13 @@ def show_base_costos():
                                 st.rerun()
                             else:
                                 st.error(msg)
+
         st.subheader("📋 Costos registrados")
         if not df_ci.empty:
             df_ci_latest = df_ci.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
             st.dataframe(df_ci_latest, hide_index=True, width="stretch")
         else:
             st.info("Sin costos registrados aún.")
-
     with tab_recetas:
         st.subheader("📋 Editor de Recetas (Visual / Bulk)")
         df_rec = cargar_recetas()
@@ -262,7 +345,6 @@ def show_base_costos():
                     st.session_state.receta_modo = "Nueva receta"
                     st.session_state.receta_original = ""
                     st.rerun()
-
         col_r1, col_r2, col_r3 = st.columns(3)
         with col_r1:
             nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
