@@ -119,7 +119,7 @@ def show_base_costos():
                         help="Unidad en la que controlas el inventario de este insumo (ej. pz, paquete, gr, lt)."
                     )
                 with col_d:
-                    # MODIFICACIÓN: Presentación inicia vacía, no se precarga desde catálogo
+                    # Presentación inicia vacía, no se precarga desde catálogo
                     pres_ci  = st.text_input(
                         "Presentación:",
                         value="",
@@ -201,9 +201,20 @@ def show_base_costos():
                                 st.error("La presentación debe ser un número válido.")
                                 st.stop()
 
-                        # Cálculo automático del costo base si es 0
-                        if costo_base_ci <= 0 and contenido_base_ci > 0:
-                            costo_base_ci = round(costo_unit / contenido_base_ci, 6)
+                        # ✅ VALIDACIÓN NUEVA: conversión de unidades
+                        if unidad_base_ci != um_ci:
+                            if contenido_base_ci <= 0:
+                                st.error(
+                                    f"Debes indicar cuántas unidades de {unidad_base_ci} contiene 1 {um_ci}. "
+                                    f"Ej: 1 paquete = 100 piezas → escribe 100."
+                                )
+                                st.stop()
+                            if costo_base_ci <= 0:
+                                costo_base_ci = round(costo_unit / contenido_base_ci, 6)
+                        else:
+                            contenido_base_ci = 1.0
+                            if costo_base_ci <= 0:
+                                costo_base_ci = costo_unit
 
                         unidad_costo = f"$/{um_ci}"
 
