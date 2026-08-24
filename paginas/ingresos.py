@@ -43,9 +43,16 @@ def _guardar_costos(filas_costos: list, r_sel: str):
             if costo_unitario <= 0 and costo_presentacion > 0 and costo.get("cantidad_neta", 0) > 0:
                 costo_unitario = round(costo_presentacion / costo["cantidad_neta"], 4)
 
-            # Si no se proporcionó costo base manual, se calcula a partir del costo unitario y contenido base
-            if costo_base <= 0 and costo_unitario > 0 and contenido_base > 0:
-                costo_base = round(costo_unitario / contenido_base, 6)
+            # ✅ VALIDACIÓN NUEVA: conversión de unidades
+            if unidad_base != unidad_medida:
+                if contenido_base <= 0:
+                    return False, f"Para {nombre}, debes indicar cuántas unidades de {unidad_base} contiene 1 {unidad_medida}."
+                if costo_base <= 0:
+                    costo_base = round(costo_unitario / contenido_base, 6)
+            else:
+                contenido_base = 1.0
+                if costo_base <= 0:
+                    costo_base = costo_unitario
 
             unidad_costo = f"$/{unidad_medida}"
 
@@ -207,6 +214,8 @@ def show_ingresos():
                     # Costo opcional desde la columna "Costo Presentación"
                     costo_presentacion_bulk = limpiar_valor(r_ed.get("Costo Presentación", 0.0))
                     if costo_presentacion_bulk > 0:
+                        unidad_base_bulk = r_ed.get("Unidad Base", default_base)
+                        contenido_base_bulk = limpiar_valor(r_ed.get("Contenido Base", 0.0))
                         filas_costos_bulk.append({
                             "nombre": nom,
                             "marca": row_ins.get("Marca", ""),
@@ -215,10 +224,10 @@ def show_ingresos():
                             "presentacion": row_ins.get("Presentación de Compra", ""),
                             "cantidad_neta": ingreso,
                             "costo_presentacion": costo_presentacion_bulk,
-                            "costo_unitario": 0.0,  # se calculará automáticamente
-                            "unidad_base": r_ed.get("Unidad Base", default_base),
-                            "contenido_base_por_unidad": limpiar_valor(r_ed.get("Contenido Base", 0.0)),
-                            "costo_base_unitario": 0.0,  # se calculará automáticamente
+                            "costo_unitario": 0.0,
+                            "unidad_base": unidad_base_bulk,
+                            "contenido_base_por_unidad": contenido_base_bulk,
+                            "costo_base_unitario": 0.0,
                         })
 
                 st.session_state["_procesando_bulk"] = False
@@ -316,7 +325,6 @@ def show_ingresos():
                 if registrar_costo:
                     col_costo2 = st.columns([1, 1, 1, 1])
                     with col_costo2[0]:
-                        # Sugerencia automática de unidad base
                         unidad_inv = str(row_ins.get("Unidad de Medida", "pz")).lower()
                         if unidad_inv in ["pz", "paquete"]:
                             default_base = "pieza"
