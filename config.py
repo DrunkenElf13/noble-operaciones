@@ -47,7 +47,9 @@ COLS_COSTOS_INSUMOS = [
 ]
 COLS_RECETAS = [
     "Receta", "Ingrediente", "Cantidad", "Unidad_Medida", "Costo_Ingrediente",
-    "Precio_Venta", "Food_Cost_Pct", "Fecha_Captura", "Responsable"
+    "Precio_Venta", "Food_Cost_Pct", "Fecha_Captura", "Responsable",
+    "Linea", "Presentacion", "Fecha_Revision", "Precio_Insumo",
+    "Costo_Neto_Receta"
 ]
 COLS_CALENDARIO = [
     "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
