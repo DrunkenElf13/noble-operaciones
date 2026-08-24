@@ -392,7 +392,7 @@ def show_base_costos():
         st.session_state.receta_fecha_revision = fecha_revision.strftime("%Y-%m-%d")
 
         # Botones de acción rápida
-        col_acc1, col_acc2, col_acc3, col_acc4 = st.columns(4)
+        col_acc1, col_acc2 = st.columns(2)
         with col_acc1:
             if st.button("🧹 Limpiar", width="stretch"):
                 st.session_state.ingredientes_receta = []
@@ -413,13 +413,22 @@ def show_base_costos():
                     "total": 0.0
                 })
                 st.rerun()
-        with col_acc3:
-            if st.button("📂 Cargar receta existente", width="stretch"):
-                recetas_existentes = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
-                if recetas_existentes:
-                    receta_edit_sel = st.selectbox("Receta a cargar:", recetas_existentes, key="cargar_receta_sel")
-                    if st.button("Cargar", key="cargar_receta_btn"):
-                        df_edit = df_rec[df_rec["Receta"] == receta_edit_sel]
+
+        # Selector de receta existente (siempre visible si hay recetas)
+        recetas_existentes = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
+        if recetas_existentes:
+            col_rec1, col_rec2 = st.columns(2)
+            with col_rec1:
+                receta_seleccionada = st.selectbox(
+                    "Seleccionar receta existente:",
+                    recetas_existentes,
+                    key="receta_seleccionada"
+                )
+            with col_rec2:
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("📂 Cargar", width="stretch"):
+                        df_edit = df_rec[df_rec["Receta"] == receta_seleccionada]
                         if not df_edit.empty:
                             nuevos_ingredientes = []
                             for _, row in df_edit.iterrows():
@@ -431,21 +440,17 @@ def show_base_costos():
                                     "total": limpiar_valor(row["Costo_Ingrediente"])
                                 })
                             st.session_state.ingredientes_receta = nuevos_ingredientes
-                            st.session_state.receta_nombre = receta_edit_sel
+                            st.session_state.receta_nombre = receta_seleccionada
                             st.session_state.receta_linea = str(df_edit.iloc[0].get("Linea", "Bebidas"))
                             st.session_state.receta_presentacion = str(df_edit.iloc[0].get("Presentacion", ""))
                             st.session_state.receta_fecha_revision = str(df_edit.iloc[0].get("Fecha_Revision", ""))
                             st.session_state.receta_precio = limpiar_valor(df_edit.iloc[0].get("Precio_Venta", 0))
-                            st.session_state.receta_original = receta_edit_sel
+                            st.session_state.receta_original = receta_seleccionada
                             st.session_state.receta_modo = "Editar receta existente"
                             st.rerun()
-        with col_acc4:
-            if st.button("📋 Duplicar receta", width="stretch"):
-                recetas_existentes_dup = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
-                if recetas_existentes_dup:
-                    receta_dup_sel = st.selectbox("Receta a duplicar:", recetas_existentes_dup, key="dup_receta_sel")
-                    if st.button("Duplicar", key="dup_receta_btn"):
-                        df_dup = df_rec[df_rec["Receta"] == receta_dup_sel]
+                with col_btn2:
+                    if st.button("📋 Duplicar", width="stretch"):
+                        df_dup = df_rec[df_rec["Receta"] == receta_seleccionada]
                         if not df_dup.empty:
                             nuevos_ingredientes = []
                             for _, row in df_dup.iterrows():
@@ -457,7 +462,7 @@ def show_base_costos():
                                     "total": limpiar_valor(row["Costo_Ingrediente"])
                                 })
                             st.session_state.ingredientes_receta = nuevos_ingredientes
-                            st.session_state.receta_nombre = receta_dup_sel + " (copia)"
+                            st.session_state.receta_nombre = receta_seleccionada + " (copia)"
                             st.session_state.receta_linea = str(df_dup.iloc[0].get("Linea", "Bebidas"))
                             st.session_state.receta_presentacion = str(df_dup.iloc[0].get("Presentacion", ""))
                             st.session_state.receta_fecha_revision = ts_hermosillo().split(" ")[0]
@@ -465,13 +470,14 @@ def show_base_costos():
                             st.session_state.receta_original = ""
                             st.session_state.receta_modo = "Nueva receta"
                             st.rerun()
+        else:
+            st.info("No hay recetas guardadas todavía.")
         st.divider()
 
         # Tabla de ingredientes editable
         st.subheader("📋 Ingredientes de la receta")
         if st.session_state.ingredientes_receta:
             df_ingredientes = pd.DataFrame(st.session_state.ingredientes_receta)
-            # Asegurar columnas
             for col in ["insumo","cantidad","unidad","costo_unit","total"]:
                 if col not in df_ingredientes.columns:
                     df_ingredientes[col] = 0.0 if col in ("cantidad","costo_unit","total") else ""
@@ -499,7 +505,6 @@ def show_base_costos():
             for idx, row in edited_df.iterrows():
                 insumo = row.get("insumo", "")
                 if insumo:
-                    # Buscar costo más reciente
                     mask = df_ci2["Nombre_Insumo"] == insumo
                     if mask.any():
                         ultimo = df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]
@@ -511,7 +516,6 @@ def show_base_costos():
                             unidad = str(ultimo.get("Unidad_Medida", "pz"))
                         edited_df.at[idx, "costo_unit"] = costo_unit
                         edited_df.at[idx, "unidad"] = unidad
-                # Total siempre = cantidad * costo_unit
                 cantidad = limpiar_valor(row.get("cantidad", 0))
                 costo_unit_row = limpiar_valor(row.get("costo_unit", 0))
                 edited_df.at[idx, "total"] = round(cantidad * costo_unit_row, 4)
@@ -578,7 +582,6 @@ def show_base_costos():
                 elif precio_venta <= 0:
                     st.error("El precio de venta debe ser mayor que cero.")
                 else:
-                    # Validar ingredientes
                     for ing in st.session_state.ingredientes_receta:
                         if not ing.get("insumo"):
                             st.error("Hay un ingrediente sin seleccionar.")
@@ -592,7 +595,6 @@ def show_base_costos():
                         st.error(err)
                     else:
                         try:
-                            # Si es edición, eliminar receta original
                             if st.session_state.receta_modo == "Editar receta existente" and st.session_state.receta_original:
                                 all_data = ws_rec.get_all_values()
                                 if len(all_data) > 1:
@@ -627,7 +629,6 @@ def show_base_costos():
                                 cargar_recetas.clear()
                                 cargar_costos_insumos.clear()
                                 st.success(f"Receta '{nombre_final}' guardada ({len(filas_guardar)} ingredientes).")
-                                # Limpiar estado
                                 for key in ["ingredientes_receta","receta_nombre","receta_precio",
                                             "receta_modo","receta_original"]:
                                     if key in st.session_state:
@@ -650,7 +651,6 @@ def show_base_costos():
             df_rec_linea["Precio_Venta"] = df_rec_linea["Precio_Venta"].apply(limpiar_valor)
             df_rec_linea["Food_Cost_Pct"] = df_rec_linea["Food_Cost_Pct"].apply(limpiar_valor)
 
-            # Agrupar por receta y línea para no duplicar valores
             df_por_receta = df_rec_linea.drop_duplicates(subset=["Receta", "Linea"]).copy()
             if not df_por_receta.empty:
                 df_agrup_linea = df_por_receta.groupby("Linea").agg(
