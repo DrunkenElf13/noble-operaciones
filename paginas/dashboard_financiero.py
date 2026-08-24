@@ -244,29 +244,38 @@ def show_dashboard_financiero():
         else:
             df_rec_fc = cargar_recetas()
             if not df_rec_fc.empty:
-                df_por_prod = (
-                    df_rec_fc.groupby("Receta")
-                    .agg(
-                        Costo_Receta=("Costo_Ingrediente", "sum"),
-                        Precio_Venta=("Precio_Venta", "max"),
-                    )
-                    .reset_index()
+                # Ajuste: si no existe columna Costo_Neto_Receta, calcular desde Costo_Ingrediente
+                if "Costo_Neto_Receta" not in df_rec_fc.columns:
+                    df_rec_fc["Costo_Neto_Receta"] = 0.0
+
+                # Agrupar por receta para obtener costo neto, precio y línea/presentación
+                df_por_prod = df_rec_fc.groupby("Receta", as_index=False).agg(
+                    Costo_Ingredientes=("Costo_Ingrediente", "sum"),
+                    Precio_Venta=("Precio_Venta", "max"),
+                    Linea=("Linea", "first"),
+                    Presentacion=("Presentacion", "first"),
+                    Costo_Neto_Receta=("Costo_Neto_Receta", "max")
                 )
-                df_por_prod["Costo_Receta"] = pd.to_numeric(df_por_prod["Costo_Receta"], errors="coerce").fillna(0.0)
-                df_por_prod["Precio_Venta"] = pd.to_numeric(df_por_prod["Precio_Venta"], errors="coerce").fillna(0.0)
+                # Usar costo neto si es mayor que cero, de lo contrario la suma de ingredientes
+                df_por_prod["Costo_Receta"] = df_por_prod.apply(
+                    lambda r: r["Costo_Neto_Receta"] if limpiar_valor(r["Costo_Neto_Receta"]) > 0
+                    else r["Costo_Ingredientes"], axis=1
+                )
+                df_por_prod["Precio_Venta"] = df_por_prod["Precio_Venta"].apply(limpiar_valor)
+                df_por_prod["Costo_Receta"] = df_por_prod["Costo_Receta"].apply(limpiar_valor)
                 df_por_prod["Food_Cost_Pct"] = np.where(
                     df_por_prod["Precio_Venta"] > 0,
                     df_por_prod["Costo_Receta"] / df_por_prod["Precio_Venta"] * 100,
                     0.0
                 ).round(1)
                 df_por_prod["Margen_Bruto"] = df_por_prod["Precio_Venta"] - df_por_prod["Costo_Receta"]
-                df_por_prod["Margen_Pct"]   = np.where(
+                df_por_prod["Margen_Pct"] = np.where(
                     df_por_prod["Precio_Venta"] > 0,
                     (df_por_prod["Margen_Bruto"] / df_por_prod["Precio_Venta"]) * 100,
                     0.0
                 ).round(1)
-                st.success("Datos tomados de recetas registradas.")
                 df_por_prod.rename(columns={"Receta":"Producto"}, inplace=True)
+                st.success("Datos tomados de recetas registradas.")
             else:
                 df_bcf_s = df_bcf.copy()
                 df_bcf_s["Fecha_Captura"] = pd.to_datetime(df_bcf_s["Fecha_Captura"], errors="coerce")
@@ -284,7 +293,11 @@ def show_dashboard_financiero():
                 df_por_prod["Food_Cost_Pct"] = 50.0
                 df_por_prod["Margen_Bruto"] = df_por_prod["Precio_Venta"] - df_por_prod["Costo_Receta"]
                 df_por_prod["Margen_Pct"] = 50.0
+                df_por_prod["Linea"] = "Sin línea"
+                df_por_prod["Presentacion"] = ""
                 st.info("No hay recetas aún. Mostrando costos de insumos con precio estimado.")
+
+            # Métricas generales
             fc_prom_tab = df_por_prod["Food_Cost_Pct"].mean()
             margen_prom_tab = df_por_prod["Margen_Pct"].mean()
             tf1, tf2, tf3 = st.columns(3)
@@ -293,6 +306,8 @@ def show_dashboard_financiero():
                         delta_color="inverse" if fc_prom_tab > 35 else ("off" if fc_prom_tab > 25 else "normal"))
             tf2.metric("Margen Bruto Promedio", f"{margen_prom_tab:.1f}%")
             tf3.metric("Productos en base", len(df_por_prod))
+
+            # Gráfico de food cost por producto
             try:
                 colores_fc_tab = [
                     "#E24B4A" if fc > 35 else ("#EF9F27" if fc > 25 else "#48B065")
@@ -309,6 +324,8 @@ def show_dashboard_financiero():
                 st.plotly_chart(fig_fc_tab, width="stretch")
             except Exception:
                 st.bar_chart(df_por_prod.set_index("Producto")["Food_Cost_Pct"])
+
+            # Detalle por producto
             st.subheader("📋 Detalle por producto")
             def _color_fc_prod(row):
                 fc = limpiar_valor(row.get("Food_Cost_Pct", 0))
@@ -319,6 +336,43 @@ def show_dashboard_financiero():
                 df_por_prod.style.apply(_color_fc_prod, axis=1),
                 hide_index=True, width="stretch"
             )
+
+            # ✅ NUEVA ANALÍTICA POR LÍNEA
+            if "Linea" in df_por_prod.columns:
+                st.divider()
+                st.subheader("📊 Analítica por Línea / Categoría")
+                df_linea = df_por_prod.groupby("Linea", dropna=False).agg(
+                    Num_Productos=("Producto", "nunique"),
+                    Precio_Promedio=("Precio_Venta", "mean"),
+                    Food_Cost_Promedio=("Food_Cost_Pct", "mean"),
+                    Margen_Promedio=("Margen_Pct", "mean"),
+                    Costo_Total=("Costo_Receta", "sum"),
+                    Venta_Total=("Precio_Venta", "sum")
+                ).reset_index()
+                df_linea = df_linea.fillna(0)
+                df_linea["Margen_Total"] = df_linea["Venta_Total"] - df_linea["Costo_Total"]
+                df_linea["Food_Cost_Global"] = np.where(
+                    df_linea["Venta_Total"] > 0,
+                    df_linea["Costo_Total"] / df_linea["Venta_Total"] * 100,
+                    0.0
+                ).round(1)
+                st.dataframe(df_linea, hide_index=True, width="stretch")
+
+                # Gráfico de food cost promedio por línea
+                try:
+                    fig_linea = px.bar(
+                        df_linea, x="Linea", y="Food_Cost_Promedio",
+                        color="Linea",
+                        labels={"Linea":"Línea","Food_Cost_Promedio":"Food Cost %"},
+                        title="Food Cost promedio por línea"
+                    )
+                    fig_linea.update_layout(showlegend=False, yaxis_ticksuffix="%")
+                    st.plotly_chart(fig_linea, width="stretch")
+                except Exception:
+                    st.bar_chart(df_linea.set_index("Linea")["Food_Cost_Promedio"])
+
+            else:
+                st.info("No se encontró columna de Línea en las recetas.")
     # ==================== TAB MERMA ====================
     with tab_merma_d:
         st.subheader("📉 Análisis de Merma")
