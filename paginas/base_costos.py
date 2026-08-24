@@ -282,6 +282,8 @@ def show_base_costos():
             st.session_state.receta_precio = 0.0
         if "receta_factor" not in st.session_state:
             st.session_state.receta_factor = 2.5
+        if "receta_factor_manual" not in st.session_state:
+            st.session_state.receta_factor_manual = 2.5
         if "receta_modo" not in st.session_state:
             st.session_state.receta_modo = "Nueva receta"
         if "receta_original" not in st.session_state:
@@ -400,6 +402,7 @@ def show_base_costos():
                 st.session_state.receta_linea = "Bebidas"
                 st.session_state.receta_presentacion = ""
                 st.session_state.receta_precio = 0.0
+                st.session_state.receta_factor_manual = 2.5
                 st.session_state.receta_modo = "Nueva receta"
                 st.session_state.receta_original = ""
                 st.rerun()
@@ -525,43 +528,63 @@ def show_base_costos():
             # Cálculo de costo neto
             costo_neto = sum(limpiar_valor(ing.get("total", 0)) for ing in st.session_state.ingredientes_receta)
 
-            # Comparador de factores siempre visible
+            # Comparador de factores de ejemplo (siempre visible)
             st.markdown("### 💰 Comparador de precio por factor")
             factores = [2.0, 2.5, 3.0]
             col_factor = st.columns(len(factores))
-            precio_sugerido_por_factor = {}
             for i, f in enumerate(factores):
                 precio_sug = round(costo_neto * f, 2)
                 food_cost = (costo_neto / precio_sug * 100) if precio_sug > 0 else 0.0
                 margen = precio_sug - costo_neto
                 margen_pct = (margen / precio_sug * 100) if precio_sug > 0 else 0.0
-                precio_sugerido_por_factor[f] = precio_sug
                 with col_factor[i]:
                     st.markdown(f"**x{f}**")
                     st.metric("Precio", f"${precio_sug:,.2f}")
                     st.caption(f"Food Cost: {food_cost:.1f}%")
                     st.caption(f"Margen: ${margen:,.2f} ({margen_pct:.0f}%)")
 
-            # Selección de factor para guardar
-            factor_guardar = st.radio(
-                "Factor a usar para precio de venta:",
-                factores,
-                index=1,
-                format_func=lambda x: f"x{x}"
-            )
-            precio_sugerido_final = precio_sugerido_por_factor[factor_guardar]
+            # Factor personalizado y precio real
+            st.markdown("### ⚙️ Factor personalizado")
 
-            # Precio de venta manual
-            precio_venta = st.number_input(
-                "Precio de Venta ($):",
-                min_value=0.0,
-                step=0.5,
-                value=precio_sugerido_final,
-                key="precio_venta_input"
-            )
+            # Mostrar precio real guardado si existe
+            if st.session_state.receta_precio > 0:
+                precio_real_guardado = st.session_state.receta_precio
+                factor_real_guardado = precio_real_guardado / costo_neto if costo_neto > 0 else 0.0
+                col_real1, col_real2 = st.columns(2)
+                with col_real1:
+                    st.metric("Precio de Venta Actual", f"${precio_real_guardado:,.2f}")
+                with col_real2:
+                    st.metric("Factor Actual", f"x{factor_real_guardado:.2f}")
+
+            col_factor_custom, col_precio_custom = st.columns(2)
+            with col_factor_custom:
+                factor_manual = st.number_input(
+                    "Factor multiplicador personalizado:",
+                    min_value=0.1,
+                    step=0.1,
+                    value=st.session_state.get("receta_factor_manual", 2.5),
+                    key="factor_manual_input"
+                )
+                precio_sugerido_manual = round(costo_neto * factor_manual, 2)
+                st.caption(f"Precio sugerido: **${precio_sugerido_manual:,.2f}**")
+            with col_precio_custom:
+                precio_venta = st.number_input(
+                    "Precio de Venta ($):",
+                    min_value=0.0,
+                    step=0.5,
+                    value=precio_sugerido_manual,
+                    key="precio_venta_input"
+                )
+                if precio_venta > 0 and costo_neto > 0:
+                    factor_real = precio_venta / costo_neto
+                    st.caption(f"Factor real: **x{factor_real:.2f}**")
+                else:
+                    st.caption("Factor real: —")
+
+            st.session_state.receta_factor_manual = factor_manual
             st.session_state.receta_precio = precio_venta
 
-            # Métricas finales
+            # Métricas finales con el precio de venta actual
             fc_final = (costo_neto / precio_venta * 100) if precio_venta > 0 else 0.0
             margen_final = precio_venta - costo_neto
             margen_pct_final = (margen_final / precio_venta * 100) if precio_venta > 0 else 0.0
