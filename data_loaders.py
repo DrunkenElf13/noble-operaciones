@@ -218,7 +218,9 @@ def cargar_recetas():
         for col in COLS_RECETAS:
             if col not in df.columns:
                 df[col] = ""
-        for col in ["Cantidad","Costo_Ingrediente"]:
+        # Limpieza numérica
+        for col in ["Cantidad","Costo_Ingrediente","Precio_Venta","Food_Cost_Pct",
+                    "Precio_Insumo","Costo_Neto_Receta"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
         return df
@@ -289,17 +291,14 @@ def cargar_todas_ventas():
             # Detectar filas de abono (tipo "💰 Abono")
             if "Tipo" in df.columns:
                 mask_abono = df["Tipo"].astype(str).str.strip() == "💰 Abono"
-                # Para abonos, Venta_Diaria = Total_Cotizado (el monto pagado en esa fecha)
                 df.loc[mask_abono, "Venta_Diaria"] = total_cotizado[mask_abono]
                 df.loc[mask_abono, "Venta_Total"] = total_cotizado[mask_abono]
-                # Para eventos, Venta_Diaria = Anticipo (lo cobrado al contratar)
                 df.loc[~mask_abono, "Venta_Diaria"] = anticipo[~mask_abono]
                 df.loc[~mask_abono, "Venta_Total"] = total_cotizado[~mask_abono]
             else:
                 df["Venta_Diaria"] = anticipo
                 df["Venta_Total"] = total_cotizado
 
-            # Conservar columnas de adeudo y anticipo
             if "Anticipo" in df.columns:
                 df["Anticipo"] = df["Anticipo"].apply(limpiar_valor)
             else:
