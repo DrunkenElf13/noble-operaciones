@@ -23,6 +23,13 @@ def parsear_contenido_xml(contenido_xml: str):
     try:
         root = ET.fromstring(contenido_xml)
         ns = {"cfdi": "http://www.sat.gob.mx/cfd/4"}
+
+        # Extraer proveedor del emisor
+        proveedor = ""
+        emisor = root.find(".//cfdi:Emisor", ns)
+        if emisor is not None:
+            proveedor = emisor.get("Nombre", "")
+
         conceptos = []
         for concepto in root.findall(".//cfdi:Concepto", ns):
             descripcion = concepto.get("Descripcion", "")
@@ -50,6 +57,7 @@ def parsear_contenido_xml(contenido_xml: str):
                 "Descuento": descuento,
                 "IVA_Tasa": iva_tasa,
                 "IVA_Importe": iva_importe,
+                "Proveedor": proveedor,
             })
         return conceptos, None
     except Exception as e:
@@ -71,7 +79,6 @@ def show_carga_xml():
         st.warning("No hay insumos activos en el catálogo. Agrega insumos antes de cargar facturas.")
         st.stop()
 
-    # Inicializar estado si no existe
     if "xml_df_edit" not in st.session_state:
         st.session_state.xml_df_edit = None
 
@@ -90,12 +97,12 @@ def show_carga_xml():
                 conceptos_totales.extend(conceptos)
 
             if conceptos_totales:
-                # Crear DataFrame inicial
                 df_conceptos = pd.DataFrame(conceptos_totales)
                 insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
 
                 df_edit = df_conceptos.copy()
                 df_edit["Insumo"] = ""
+                df_edit["Marca"] = ""
                 df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
                 df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
                 df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
@@ -109,7 +116,7 @@ def show_carga_xml():
         else:
             st.info("Sube al menos un archivo XML para continuar.")
 
-    else:  # Pegar contenido XML
+    else:
         texto_xml = st.text_area(
             "Pega aquí el contenido del XML:",
             height=300,
@@ -126,6 +133,7 @@ def show_carga_xml():
 
                     df_edit = df_conceptos.copy()
                     df_edit["Insumo"] = ""
+                    df_edit["Marca"] = ""
                     df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
                     df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
                     df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
@@ -140,7 +148,6 @@ def show_carga_xml():
             else:
                 st.warning("Pega el contenido XML antes de procesar.")
 
-    # Mostrar editor si hay DataFrame guardado
     if st.session_state.xml_df_edit is not None:
         df_edit = st.session_state.xml_df_edit
         insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
@@ -160,6 +167,8 @@ def show_carga_xml():
                     options=[""] + insumos_disponibles,
                     required=True
                 ),
+                "Marca": st.column_config.TextColumn("Marca"),
+                "Proveedor": st.column_config.TextColumn("Proveedor"),
                 "Unidad_Medida": st.column_config.SelectboxColumn(
                     "Unidad Inventario",
                     options=UNIDADES_MED,
@@ -208,10 +217,8 @@ def show_carga_xml():
             key="xml_editor"
         )
 
-        # Guardar automáticamente los cambios en session_state
         st.session_state.xml_df_edit = edited_df
 
-        # Botón para recalcular derivados
         if st.button("🔄 Recalcular derivados"):
             for idx in edited_df.index:
                 pres = edited_df.at[idx, "Presentacion"]
@@ -229,7 +236,6 @@ def show_carga_xml():
             st.success("Costos derivados recalculados.")
             st.rerun()
 
-        # Botón guardar
         if st.button("💾 Guardar costos en CostosInsumos", type="primary", width="stretch"):
             filas_validas = edited_df[edited_df["Insumo"] != ""]
             if filas_validas.empty:
@@ -252,8 +258,8 @@ def show_carga_xml():
 
                         filas_guardar.append([
                             row["Insumo"],
-                            "",
-                            "",
+                            row.get("Marca", ""),
+                            row.get("Proveedor", ""),
                             row["Unidad_Medida"],
                             row["Presentacion"],
                             row["Costo_Presentacion"],
