@@ -8,7 +8,6 @@ from utils import limpiar_valor, ts_hermosillo
 from config import UNIDADES_MED
 from auth import tiene_permiso
 
-# Mapeo de ClaveUnidad SAT a unidades del sistema
 MAPA_UNIDADES_SAT = {
     "H87": "pieza",
     "XPK": "paquete",
@@ -65,7 +64,7 @@ def show_carga_xml():
     st.title("📄 Carga de Facturas XML")
     st.markdown("""
     Puedes **subir archivos XML** o **pegar el contenido XML** directamente.  
-    El sistema extraerá los conceptos y podrás revisar/modificar todos los campos antes de guardar.
+    Después de cargar, podrás revisar y modificar **todos** los campos antes de guardar.
     """)
 
     df_cat = cargar_datos_integrales()[0]
@@ -73,7 +72,6 @@ def show_carga_xml():
         st.warning("No hay insumos activos en el catálogo. Agrega insumos antes de cargar facturas.")
         st.stop()
 
-    # Método de entrada
     metodo = st.radio("Elige cómo cargar el XML:", ["📁 Subir archivo(s)", "📋 Pegar contenido XML"])
 
     conceptos_totales = []
@@ -82,15 +80,13 @@ def show_carga_xml():
         archivos = st.file_uploader("Selecciona archivos XML", type=["xml"], accept_multiple_files=True)
         if archivos:
             for archivo in archivos:
-                # Leer contenido del archivo y parsear
                 contenido = archivo.getvalue().decode("utf-8")
                 conceptos, error = parsear_contenido_xml(contenido)
                 if error:
                     st.error(f"Error al leer {archivo.name}: {error}")
                     continue
                 conceptos_totales.extend(conceptos)
-
-    else:  # Pegar contenido XML
+    else:
         texto_xml = st.text_area(
             "Pega aquí el contenido del XML:",
             height=300,
@@ -113,11 +109,11 @@ def show_carga_xml():
 
         insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
 
-        # Preparar DataFrame editable
+        # Crear DataFrame editable
         df_edit = df_conceptos.copy()
         df_edit["Insumo"] = ""
         df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
-        df_edit["Presentacion"] = 1.0
+        df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]  # inicial
         df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
         df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
         df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
@@ -133,21 +129,23 @@ def show_carga_xml():
                 "Unidad_XML": st.column_config.TextColumn("Unidad XML", disabled=True),
                 "Importe_Total": st.column_config.NumberColumn("Importe Total", disabled=True, format="%.2f"),
                 "Descuento": st.column_config.NumberColumn("Descuento", disabled=True, format="%.2f"),
+                "IVA_Tasa": st.column_config.NumberColumn("IVA Tasa", disabled=True, format="%.2f"),
                 "Insumo": st.column_config.SelectboxColumn(
                     "Insumo",
                     options=[""] + insumos_disponibles,
                     required=True
                 ),
                 "Unidad_Medida": st.column_config.SelectboxColumn(
-                    "Unidad Medida (Inventario)",
+                    "Unidad Inventario",
                     options=UNIDADES_MED,
-                    help="Unidad en la que controlas el inventario de este insumo."
+                    help="Unidad en la que controlas el inventario."
                 ),
                 "Presentacion": st.column_config.NumberColumn(
                     "Presentación",
                     min_value=0.0,
                     step=1.0,
-                    help="Cantidad de unidades de inventario que contiene una presentación."
+                    format="%.2f",
+                    help="Cantidad de unidades de inventario por presentación."
                 ),
                 "Costo_Presentacion": st.column_config.NumberColumn(
                     "Costo Presentación ($)",
@@ -167,9 +165,10 @@ def show_carga_xml():
                     help="Unidad que usarás en recetas (ml, gr, pieza, etc.)."
                 ),
                 "Contenido_Base_por_Unidad": st.column_config.NumberColumn(
-                    "Contenido Base por Unidad",
+                    "Contenido Base",
                     min_value=0.0,
                     step=1.0,
+                    format="%.2f",
                     help="Cuántas unidades base contiene 1 unidad de inventario."
                 ),
                 "Costo_Base_Unitario": st.column_config.NumberColumn(
@@ -183,6 +182,27 @@ def show_carga_xml():
             width="stretch",
             key="xml_editor"
         )
+
+        # Botón para recalcular derivados después de editar Presentacion o Contenido
+        if st.button("🔄 Recalcular derivados"):
+            # Recalcula Costo_Unitario y Costo_Base_Unitario a partir de los campos base
+            for idx in edited_df.index:
+                pres = edited_df.at[idx, "Presentacion"]
+                costo_pres = edited_df.at[idx, "Costo_Presentacion"]
+                contenido = edited_df.at[idx, "Contenido_Base_por_Unidad"]
+                if pres > 0:
+                    edited_df.at[idx, "Costo_Unitario"] = round(costo_pres / pres, 4)
+                else:
+                    edited_df.at[idx, "Costo_Unitario"] = 0.0
+                if contenido > 0 and edited_df.at[idx, "Costo_Unitario"] > 0:
+                    edited_df.at[idx, "Costo_Base_Unitario"] = round(edited_df.at[idx, "Costo_Unitario"] / contenido, 6)
+                else:
+                    edited_df.at[idx, "Costo_Base_Unitario"] = 0.0
+            st.success("Costos derivados recalculados.")
+            # Actualizar el estado para que se muestre
+            # (Streamlit no permite modificar el df de data_editor directamente, pero al hacer rerun se reflejará)
+            # Por simplicidad, recargamos la página
+            st.rerun()
 
         if st.button("💾 Guardar costos en CostosInsumos", type="primary", width="stretch"):
             filas_validas = edited_df[edited_df["Insumo"] != ""]
@@ -199,6 +219,7 @@ def show_carga_xml():
                             st.error(f"Contenido base inválido para {row['Insumo']}.")
                             st.stop()
 
+                        # Recalcular si están en cero
                         if row["Costo_Unitario"] <= 0 and row["Costo_Presentacion"] > 0 and row["Presentacion"] > 0:
                             row["Costo_Unitario"] = round(row["Costo_Presentacion"] / row["Presentacion"], 4)
                         if row["Costo_Base_Unitario"] <= 0 and row["Costo_Unitario"] > 0 and row["Contenido_Base_por_Unidad"] > 0:
