@@ -250,6 +250,92 @@ def show_base_costos():
             st.dataframe(df_ci_latest, hide_index=True, width="stretch")
         else:
             st.info("Sin costos registrados aún.")
+        # ⚡ EDICIÓN MASIVA DE COSTOS DE INSUMOS
+        st.divider()
+        with st.expander("⚡ Edición masiva de costos de insumos", expanded=False):
+            st.markdown("""
+            Edita los **costos actuales** de cada insumo.  
+            Al guardar, se agregará **una fila nueva con fecha actual** para cada insumo modificado.  
+            El sistema usará el costo más reciente para recetas y food cost.
+            """)
+            if df_ci.empty:
+                st.info("No hay costos registrados todavía.")
+            else:
+                # Obtener último costo por insumo
+                df_ci_latest = df_ci.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
+                df_ci_edit = df_ci_latest[[
+                    "Nombre_Insumo", "Marca", "Proveedor", "Unidad_Medida",
+                    "Presentacion", "Costo_Presentacion", "Costo_Unitario",
+                    "Unidad_Base", "Contenido_Base_por_Unidad", "Costo_Base_Unitario"
+                ]].copy()
+
+                # Convertir a tipos numéricos
+                for col in ["Costo_Presentacion", "Costo_Unitario", "Contenido_Base_por_Unidad", "Costo_Base_Unitario"]:
+                    df_ci_edit[col] = df_ci_edit[col].apply(limpiar_valor)
+
+                edited_costos = st.data_editor(
+                    df_ci_edit,
+                    column_config={
+                        "Nombre_Insumo": st.column_config.TextColumn(disabled=True),
+                        "Marca": st.column_config.TextColumn(disabled=True),
+                        "Proveedor": st.column_config.TextColumn(disabled=True),
+                        "Unidad_Medida": st.column_config.SelectboxColumn(options=UNIDADES_MED),
+                        "Presentacion": st.column_config.NumberColumn(min_value=0.0, step=1.0),
+                        "Costo_Presentacion": st.column_config.NumberColumn(min_value=0.0, step=0.5),
+                        "Costo_Unitario": st.column_config.NumberColumn(min_value=0.0, step=0.001, format="%.4f"),
+                        "Unidad_Base": st.column_config.SelectboxColumn(options=UNIDADES_MED),
+                        "Contenido_Base_por_Unidad": st.column_config.NumberColumn(min_value=0.0, step=1.0),
+                        "Costo_Base_Unitario": st.column_config.NumberColumn(min_value=0.0, step=0.0001, format="%.6f"),
+                    },
+                    hide_index=True,
+                    width="stretch",
+                    key="bulk_edit_costos"
+                )
+
+                if st.button("💾 Guardar cambios de costos", type="primary", width="stretch"):
+                    ws_costos_bulk, err_bulk = _asegurar_hoja_costos_insumos()
+                    if err_bulk:
+                        st.error(err_bulk)
+                    else:
+                        filas_nuevas = []
+                        for _, row in edited_costos.iterrows():
+                            # Validar conversión
+                            if row["Unidad_Base"] != row["Unidad_Medida"] and row["Contenido_Base_por_Unidad"] <= 0:
+                                st.error(
+                                    f"Para {row['Nombre_Insumo']}, debes indicar cuántas unidades de {row['Unidad_Base']} contiene 1 {row['Unidad_Medida']}."
+                                )
+                                st.stop()
+                            if row["Costo_Unitario"] <= 0 and row["Costo_Presentacion"] > 0 and row["Presentacion"] > 0:
+                                row["Costo_Unitario"] = round(row["Costo_Presentacion"] / row["Presentacion"], 4)
+                            if row["Costo_Base_Unitario"] <= 0 and row["Costo_Unitario"] > 0 and row["Contenido_Base_por_Unidad"] > 0:
+                                row["Costo_Base_Unitario"] = round(row["Costo_Unitario"] / row["Contenido_Base_por_Unidad"], 6)
+
+                            filas_nuevas.append([
+                                row["Nombre_Insumo"],
+                                row["Marca"],
+                                row["Proveedor"],
+                                row["Unidad_Medida"],
+                                row["Presentacion"],
+                                row["Costo_Presentacion"],
+                                row["Costo_Unitario"],
+                                f"$/{row['Unidad_Medida']}",
+                                row["Unidad_Base"],
+                                row["Contenido_Base_por_Unidad"],
+                                row["Costo_Base_Unitario"],
+                                ts_hermosillo(),
+                                st.session_state.current_user
+                            ])
+
+                        if filas_nuevas:
+                            ok_bulk, msg_bulk = append_rows_con_retry(ws_costos_bulk, filas_nuevas)
+                            if ok_bulk:
+                                cargar_costos_insumos.clear()
+                                cargar_recetas.clear()
+                                st.success(f"✅ {len(filas_nuevas)} costos actualizados con historial.")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error(msg_bulk)
     with tab_recetas:
         st.subheader("🍽️ Editor de Recetas")
         df_rec = cargar_recetas()
@@ -366,7 +452,6 @@ def show_base_costos():
         with col_r1:
             nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
         with col_r2:
-            # Línea totalmente editable
             linea_final = st.text_input("Línea / Categoría:", value=st.session_state.receta_linea, placeholder="Ej: Bebidas, Alimentos, Repostería...")
         with col_r3:
             presentacion = st.text_input("Presentación / Tamaño:", value=st.session_state.receta_presentacion, placeholder="12oz, 16oz, rebanada...")
@@ -652,6 +737,76 @@ def show_base_costos():
                             st.error(f"Error al guardar: {e}")
         else:
             st.info("Presiona '➕ Agregar ingrediente' para comenzar la captura.")
+
+        # ⚡ EDICIÓN MASIVA DE PRECIOS DE RECETAS
+        if not df_rec.empty:
+            st.divider()
+            with st.expander("⚡ Edición masiva de precios de recetas", expanded=False):
+                st.markdown("""
+                Edita **Línea**, **Presentación** y **Precio de Venta** de todas las recetas.  
+                Al guardar, se actualizarán **todas las filas** de cada receta en la hoja `Recetas`.
+                """)
+                # Crear dataframe único por receta
+                df_rec_uniq = df_rec.drop_duplicates(subset=["Receta"]).copy()
+                df_rec_uniq = df_rec_uniq[[
+                    "Receta", "Linea", "Presentacion", "Precio_Venta", "Costo_Neto_Receta", "Food_Cost_Pct"
+                ]].copy()
+                for col in ["Precio_Venta", "Costo_Neto_Receta", "Food_Cost_Pct"]:
+                    df_rec_uniq[col] = df_rec_uniq[col].apply(limpiar_valor)
+
+                edited_recetas = st.data_editor(
+                    df_rec_uniq,
+                    column_config={
+                        "Receta": st.column_config.TextColumn(disabled=True),
+                        "Linea": st.column_config.TextColumn(),
+                        "Presentacion": st.column_config.TextColumn(),
+                        "Precio_Venta": st.column_config.NumberColumn(min_value=0.0, step=1.0),
+                        "Costo_Neto_Receta": st.column_config.NumberColumn(disabled=True, format="%.2f"),
+                        "Food_Cost_Pct": st.column_config.NumberColumn(disabled=True, format="%.2f"),
+                    },
+                    hide_index=True,
+                    width="stretch",
+                    key="bulk_edit_recetas"
+                )
+
+                if st.button("💾 Guardar cambios de recetas", type="primary", width="stretch"):
+                    ws_rec_bulk, err_rec_bulk = _asegurar_hoja_recetas()
+                    if err_rec_bulk:
+                        st.error(err_rec_bulk)
+                    else:
+                        # Releer todos los datos
+                        all_data = ws_rec_bulk.get_all_values()
+                        if len(all_data) <= 1:
+                            st.error("No hay recetas para editar.")
+                            st.stop()
+
+                        df_all = pd.DataFrame(all_data[1:], columns=all_data[0])
+                        for col in COLS_RECETAS:
+                            if col not in df_all.columns:
+                                df_all[col] = ""
+
+                        # Crear diccionario de cambios por receta
+                        for _, row in edited_recetas.iterrows():
+                            nombre_receta_bulk = row["Receta"]
+                            mask = df_all["Receta"] == nombre_receta_bulk
+                            if mask.any():
+                                df_all.loc[mask, "Linea"] = row["Linea"]
+                                df_all.loc[mask, "Presentacion"] = row["Presentacion"]
+                                df_all.loc[mask, "Precio_Venta"] = row["Precio_Venta"]
+                                # Recalcular Food_Cost_Pct
+                                df_all.loc[mask, "Food_Cost_Pct"] = df_all.loc[mask, "Costo_Ingrediente"].apply(
+                                    lambda c: round((float(c) / row["Precio_Venta"] * 100) if row["Precio_Venta"] > 0 else 0.0, 2)
+                                )
+
+                        # Limpiar y reescribir
+                        ws_rec_bulk.clear()
+                        ws_rec_bulk.append_row(COLS_RECETAS)
+                        ws_rec_bulk.append_rows(df_all[COLS_RECETAS].values.tolist(), value_input_option="USER_ENTERED")
+                        cargar_recetas.clear()
+                        cargar_costos_insumos.clear()
+                        st.success("✅ Precios y datos de recetas actualizados.")
+                        time.sleep(0.5)
+                        st.rerun()
 
         # Analítica por Línea
         if not df_rec.empty and "Linea" in df_rec.columns:
