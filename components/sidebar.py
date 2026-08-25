@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import uuid
-from auth import USUARIOS_PIN, LISTA_RESPONSABLES, DF_USUARIOS, PERMISOS, tiene_permiso, cargar_permisos
+from auth import LISTA_RESPONSABLES, DF_USUARIOS, PERMISOS, tiene_permiso, cargar_permisos, validar_usuario
 from data_loaders import cargar_avisos, cargar_datos_integrales
 from sheets import safe_worksheet, sh
 from utils import ts_hermosillo, limpiar_valor, normalizar_dataframe
@@ -20,10 +20,11 @@ def render_sidebar(cambiar_pagina):
                 pin_input = st.text_input("Ingresa tu Clave:", type="password")
                 submitted = st.form_submit_button("Desbloquear Sistema", type="primary", width="stretch")
                 if submitted:
-                    if pin_input in USUARIOS_PIN:
+                    nombre, rol = validar_usuario(pin_input)
+                    if nombre is not None:
                         st.session_state.auth_status = True
-                        st.session_state.current_user = USUARIOS_PIN[pin_input]["nombre"]
-                        st.session_state.user_role = USUARIOS_PIN[pin_input]["rol"]
+                        st.session_state.current_user = nombre
+                        st.session_state.user_role = rol
                         st.rerun()
                     else:
                         st.error("⚠️ Clave incorrecta o no registrada.")
@@ -42,6 +43,7 @@ def render_sidebar(cambiar_pagina):
         st.write("**📦 Movimientos de Stock:**")
         if st.button("📝 Capturar inventario", width="stretch"): cambiar_pagina("Inventario")
         if st.button("📥 Entrada de compras", width="stretch"): cambiar_pagina("Ingresos")
+        if st.button("📄 Carga Facturas XML", width="stretch"): cambiar_pagina("CargaXML")
         if st.button("📦 Inventario actual", width="stretch"): cambiar_pagina("Consulta")
         st.divider()
         st.write("**💰 Ventas:**")
@@ -242,7 +244,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                 st.write("Asigna qué páginas puede ver cada rol.")
                 all_pages = ["Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas","ImportarVentas",
                              "RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma","DashboardFinanciero",
-                             "Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"]
+                             "Calendario","Impresion","ListaCompra","ReporteStock","CorteMes","CargaXML"]
                 ws_perm, err_perm = safe_worksheet(sh, "Permisos")
                 if err_perm:
                     try:
