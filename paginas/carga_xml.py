@@ -39,8 +39,6 @@ def parsear_contenido_xml(contenido_xml: str):
             importe = float(concepto.get("Importe", "0"))
             descuento = float(concepto.get("Descuento", "0"))
 
-            # Calcular base sin IVA: buscar Base del traslado
-            base_sin_iva = importe - descuento
             iva_tasa = 0.0
             iva_importe = 0.0
             for traslado in concepto.findall(".//cfdi:Traslado", ns):
@@ -49,9 +47,9 @@ def parsear_contenido_xml(contenido_xml: str):
                     tasa = float(traslado.get("TasaOCuota", "0"))
                     iva_tasa = max(iva_tasa, tasa)
                     iva_importe += float(traslado.get("Importe", "0"))
-                    base_traslado = float(traslado.get("Base", "0"))
-                    if base_traslado > 0:
-                        base_sin_iva = base_traslado  # base real sin IVA
+
+            # Total neto real pagado (incluye IVA si aplica)
+            total_neto_real = importe - descuento + iva_importe
 
             conceptos.append({
                 "Descripcion": descripcion,
@@ -61,7 +59,7 @@ def parsear_contenido_xml(contenido_xml: str):
                 "ValorUnitario": valor_unitario,
                 "Importe_Total": importe,
                 "Descuento": descuento,
-                "Total_Neto": base_sin_iva,
+                "Total_Neto_Real": total_neto_real,
                 "IVA_Tasa": iva_tasa,
                 "IVA_Importe": iva_importe,
                 "Proveedor": proveedor,
@@ -78,7 +76,7 @@ def show_carga_xml():
     st.title("📄 Carga de Facturas XML")
     st.markdown("""
     Puedes **subir archivos XML** o **pegar el contenido XML**.  
-    El sistema extrae conceptos y calcula costos **sin IVA**.  
+    El sistema calculará el **costo real pagado (con IVA cuando aplique)**.  
     Podrás revisar y corregir todos los campos antes de guardar.
     """)
 
@@ -113,7 +111,7 @@ def show_carga_xml():
                 df_edit["Marca"] = ""
                 df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
                 df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
-                df_edit["Costo_Presentacion"] = df_edit["Total_Neto"] / df_edit["Cantidad_Comprada"]
+                df_edit["Costo_Presentacion"] = df_edit["Total_Neto_Real"] / df_edit["Cantidad_Comprada"]
                 df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
                 df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
                 df_edit["Contenido_Base_por_Unidad"] = 1.0
@@ -144,7 +142,7 @@ def show_carga_xml():
                     df_edit["Marca"] = ""
                     df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
                     df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
-                    df_edit["Costo_Presentacion"] = df_edit["Total_Neto"] / df_edit["Cantidad_Comprada"]
+                    df_edit["Costo_Presentacion"] = df_edit["Total_Neto_Real"] / df_edit["Cantidad_Comprada"]
                     df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
                     df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
                     df_edit["Contenido_Base_por_Unidad"] = 1.0
@@ -160,15 +158,14 @@ def show_carga_xml():
         df_edit = st.session_state.xml_df_edit
         insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
 
-        # Selección de columnas visibles para pantallas pequeñas
-        # Mostramos primero las más importantes, y el resto en un expander
+        # Columnas en orden lógico para pantallas pequeñas
         columnas_visibles = [
-            "Insumo", "Marca", "Proveedor", "Cantidad_Comprada", "Total_Neto",
+            "Descripcion", "Insumo", "Marca", "Proveedor",
+            "Cantidad_Comprada", "Total_Neto_Real", "IVA_Importe",
             "Unidad_Medida", "Presentacion", "Costo_Presentacion",
             "Costo_Unitario", "Unidad_Base", "Contenido_Base_por_Unidad",
             "Costo_Base_Unitario"
         ]
-        # Reordenar para que aparezcan en ese orden
         df_edit = df_edit[columnas_visibles]
 
         st.subheader("Asignación y ajuste de conceptos")
@@ -177,6 +174,7 @@ def show_carga_xml():
         edited_df = st.data_editor(
             df_edit,
             column_config={
+                "Descripcion": st.column_config.TextColumn("Descripción", disabled=True),
                 "Insumo": st.column_config.SelectboxColumn(
                     "Insumo",
                     options=[""] + insumos_disponibles,
@@ -185,7 +183,8 @@ def show_carga_xml():
                 "Marca": st.column_config.TextColumn("Marca"),
                 "Proveedor": st.column_config.TextColumn("Proveedor"),
                 "Cantidad_Comprada": st.column_config.NumberColumn("Cantidad", disabled=True, format="%.2f"),
-                "Total_Neto": st.column_config.NumberColumn("Total Neto", disabled=True, format="%.2f"),
+                "Total_Neto_Real": st.column_config.NumberColumn("Total Pagado", disabled=True, format="%.2f"),
+                "IVA_Importe": st.column_config.NumberColumn("IVA", disabled=True, format="%.2f"),
                 "Unidad_Medida": st.column_config.SelectboxColumn(
                     "Unidad Inv.",
                     options=UNIDADES_MED,
