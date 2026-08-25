@@ -190,11 +190,15 @@ def cargar_costos_insumos():
         data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_COSTOS_INSUMOS)
-        df = pd.DataFrame(data[1:], columns=data[0])
-        for col in COLS_COSTOS_INSUMOS:
-            if col not in df.columns:
-                df[col] = ""
-        # Columnas numéricas a limpiar
+
+        # Tomar solo las primeras 13 columnas de cada fila
+        data_recortado = [fila[:13] for fila in data]
+        # Si hay filas con menos de 13, rellenar con ""
+        data_recortado = [fila + [""]*(13 - len(fila)) for fila in data_recortado]
+
+        df = pd.DataFrame(data_recortado[1:], columns=COLS_COSTOS_INSUMOS)
+
+        # Limpieza numérica
         for col in ["Costo_Presentacion","Costo_Unitario","Contenido_Base_por_Unidad","Costo_Base_Unitario"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
