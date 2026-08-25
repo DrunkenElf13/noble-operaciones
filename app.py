@@ -36,6 +36,7 @@ from paginas.base_costos import show_base_costos
 from paginas.merma import show_merma
 from paginas.dashboard_financiero import show_dashboard_financiero
 from paginas.calendario import show_calendario
+from paginas.carga_xml import show_carga_xml
 
 _defaults = {
     "auth_status": False,
@@ -110,3 +111,5 @@ elif pagina == "DashboardFinanciero":
     if tiene_permiso("DashboardFinanciero"): show_dashboard_financiero()
 elif pagina == "Calendario":
     show_calendario()   # ← sin verificación de permisos (acordado)
+elif pagina == "CargaXML":
+    if tiene_permiso("BaseCostos"): show_carga_xml()
