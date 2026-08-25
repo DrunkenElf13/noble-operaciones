@@ -365,8 +365,6 @@ def show_base_costos():
             st.session_state.receta_modo = "Nueva receta"
         if "receta_original" not in st.session_state:
             st.session_state.receta_original = ""
-        if "mostrar_metricas" not in st.session_state:
-            st.session_state.mostrar_metricas = False
 
         # ── IMPORTACIÓN DESDE EXCEL ──
         with st.expander("📥 Importar recetas desde Excel", expanded=False):
@@ -446,7 +444,7 @@ def show_base_costos():
                             st.error(msg)
         st.divider()
 
-        # ── ENCABEZADO DE RECETA ──
+        # ── ENCABEZADO DE RECETA (fuera del formulario para poder cargar) ──
         col_r1, col_r2, col_r3 = st.columns(3)
         with col_r1:
             nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
@@ -473,7 +471,6 @@ def show_base_costos():
                 st.session_state.receta_factor_manual = 2.5
                 st.session_state.receta_modo = "Nueva receta"
                 st.session_state.receta_original = ""
-                st.session_state.mostrar_metricas = False
                 st.rerun()
         with col_acc2:
             if st.button("➕ Agregar ingrediente", width="stretch"):
@@ -484,12 +481,10 @@ def show_base_costos():
                     "costo_unit": 0.0,
                     "total": 0.0
                 })
-                st.session_state.mostrar_metricas = False
                 st.rerun()
         with col_acc3:
             if st.session_state.ingredientes_receta and st.button("🗑️ Quitar último", width="stretch"):
                 st.session_state.ingredientes_receta.pop()
-                st.session_state.mostrar_metricas = False
                 st.rerun()
 
         # Selector de receta existente
@@ -525,7 +520,6 @@ def show_base_costos():
                             st.session_state.receta_precio = limpiar_valor(df_edit.iloc[0].get("Precio_Venta", 0))
                             st.session_state.receta_original = receta_seleccionada
                             st.session_state.receta_modo = "Editar receta existente"
-                            st.session_state.mostrar_metricas = False
                             st.rerun()
                 with col_btn2:
                     if st.button("📋 Duplicar", width="stretch"):
@@ -548,7 +542,6 @@ def show_base_costos():
                             st.session_state.receta_precio = limpiar_valor(df_dup.iloc[0].get("Precio_Venta", 0))
                             st.session_state.receta_original = ""
                             st.session_state.receta_modo = "Nueva receta"
-                            st.session_state.mostrar_metricas = False
                             st.rerun()
         else:
             st.info("No hay recetas guardadas todavía.")
@@ -571,10 +564,9 @@ def show_base_costos():
             for i, ing in enumerate(st.session_state.ingredientes_receta):
                 cols = st.columns([2.5, 1.0, 1.0, 1.0, 1.0])
                 with cols[0]:
-                    # Selectbox de insumo
                     insumo_actual = ing.get("insumo", "")
                     if insumo_actual not in insumos_con_costo:
-                        insumo_actual = ""  # si no está en la lista, mostrar vacío
+                        insumo_actual = ""
                     insumo_seleccionado = st.selectbox(
                         "Ingrediente",
                         options=[""] + insumos_con_costo,
@@ -592,7 +584,6 @@ def show_base_costos():
                         label_visibility="collapsed"
                     )
                 with cols[2]:
-                    # Unidad se autocompleta al elegir insumo
                     if insumo_seleccionado:
                         mask = df_ci2["Nombre_Insumo"] == insumo_seleccionado
                         if mask.any():
@@ -632,20 +623,12 @@ def show_base_costos():
                     "total": total
                 }
 
-            st.session_state.mostrar_metricas = False
-
-        # Botón para calcular receta (solo si hay ingredientes)
+        # Métricas y guardado (siempre visibles si hay ingredientes)
         if st.session_state.ingredientes_receta:
-            if st.button("🧮 Calcular receta", width="stretch"):
-                st.session_state.mostrar_metricas = True
-                st.rerun()
-
-        # Mostrar métricas y comparador solo si se presionó calcular
-        if st.session_state.mostrar_metricas and st.session_state.ingredientes_receta:
-            # Calcular costo neto
+            # Calcular costo neto en tiempo real
             costo_neto = sum(limpiar_valor(ing.get("total", 0)) for ing in st.session_state.ingredientes_receta)
 
-            # Comparador de factores de ejemplo
+            # Comparador de factores
             st.markdown("### 💰 Comparador de precio por factor")
             factores = [2.0, 2.5, 3.0]
             col_factor = st.columns(len(factores))
@@ -662,7 +645,6 @@ def show_base_costos():
 
             # Factor personalizado y precio final
             st.markdown("### ⚙️ Factor personalizado")
-
             if st.session_state.receta_precio > 0:
                 precio_real_guardado = st.session_state.receta_precio
                 factor_real_guardado = precio_real_guardado / costo_neto if costo_neto > 0 else 0.0
@@ -715,7 +697,7 @@ def show_base_costos():
             c3.metric("Food Cost %", f"{fc_final:.1f}%")
             c4.metric("Margen Bruto", f"${margen_final:,.2f} ({margen_pct_final:.0f}%)")
 
-            # Guardar receta
+            # Guardar receta (botón único)
             if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", width="stretch"):
                 nombre_final = st.session_state.receta_nombre.strip()
                 if not nombre_final:
