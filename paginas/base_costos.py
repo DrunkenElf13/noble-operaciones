@@ -78,7 +78,6 @@ def procesar_importacion_recetas(archivo, mapeo_ingredientes, precio_default=0.0
                 costo_unit,
                 0.0  # Costo_Neto_Receta se rellena después por receta
             ])
-        # Calcular costo neto por receta
         df_resultado = pd.DataFrame(filas, columns=COLS_RECETAS)
         for receta in df_resultado["Receta"].unique():
             mask = df_resultado["Receta"] == receta
@@ -155,7 +154,6 @@ def show_base_costos():
                 st.markdown("---")
                 st.write("**Conversión para recetas / food cost**")
 
-                # Sugerencia automática de unidad base según unidad de inventario
                 if um_ci in ["pz", "paquete"]:
                     default_base = "pieza"
                 elif um_ci == "kg":
@@ -211,7 +209,6 @@ def show_base_costos():
                                 st.error("La presentación debe ser un número válido.")
                                 st.stop()
 
-                        # Validación de conversión
                         if unidad_base_ci != um_ci:
                             if contenido_base_ci <= 0:
                                 st.error(
@@ -259,7 +256,6 @@ def show_base_costos():
         df_ci2 = cargar_costos_insumos()
         df_cat2 = cargar_datos_integrales()[0]
 
-        # Lista de insumos con costo base disponible
         insumos_con_costo = []
         if not df_ci2.empty:
             latest_costs = df_ci2.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
@@ -267,7 +263,6 @@ def show_base_costos():
         else:
             insumos_con_costo = sorted(df_cat2["Nombre del Insumo"].dropna().unique()) if not df_cat2.empty else []
 
-        # Inicializar estructura de ingredientes si no existe
         if "ingredientes_receta" not in st.session_state:
             st.session_state.ingredientes_receta = []
         if "receta_nombre" not in st.session_state:
@@ -280,8 +275,6 @@ def show_base_costos():
             st.session_state.receta_fecha_revision = ts_hermosillo().split(" ")[0]
         if "receta_precio" not in st.session_state:
             st.session_state.receta_precio = 0.0
-        if "receta_factor" not in st.session_state:
-            st.session_state.receta_factor = 2.5
         if "receta_factor_manual" not in st.session_state:
             st.session_state.receta_factor_manual = 2.5
         if "receta_modo" not in st.session_state:
@@ -372,7 +365,6 @@ def show_base_costos():
         with col_r1:
             nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
         with col_r2:
-            # Línea con opción manual
             lineas_base = ["Bebidas", "Alimentos", "Repostería"]
             if st.session_state.receta_linea not in lineas_base and st.session_state.receta_linea:
                 lineas_opciones = lineas_base + [st.session_state.receta_linea]
@@ -417,7 +409,7 @@ def show_base_costos():
                 })
                 st.rerun()
 
-        # Selector de receta existente (siempre visible si hay recetas)
+        # Selector de receta existente
         recetas_existentes = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
         if recetas_existentes:
             col_rec1, col_rec2 = st.columns(2)
@@ -504,7 +496,6 @@ def show_base_costos():
                 num_rows="dynamic"
             )
 
-            # Recalcular totales y actualizar costos automáticamente al elegir ingrediente
             for idx, row in edited_df.iterrows():
                 insumo = row.get("insumo", "")
                 if insumo:
@@ -528,7 +519,7 @@ def show_base_costos():
             # Cálculo de costo neto
             costo_neto = sum(limpiar_valor(ing.get("total", 0)) for ing in st.session_state.ingredientes_receta)
 
-            # Comparador de factores de ejemplo (siempre visible)
+            # Comparador de factores de ejemplo
             st.markdown("### 💰 Comparador de precio por factor")
             factores = [2.0, 2.5, 3.0]
             col_factor = st.columns(len(factores))
@@ -543,10 +534,10 @@ def show_base_costos():
                     st.caption(f"Food Cost: {food_cost:.1f}%")
                     st.caption(f"Margen: ${margen:,.2f} ({margen_pct:.0f}%)")
 
-            # Factor personalizado y precio real
+            # Factor personalizado y precio final
             st.markdown("### ⚙️ Factor personalizado")
 
-            # Mostrar precio real guardado si existe
+            # Mostrar precio actual guardado si existe
             if st.session_state.receta_precio > 0:
                 precio_real_guardado = st.session_state.receta_precio
                 factor_real_guardado = precio_real_guardado / costo_neto if costo_neto > 0 else 0.0
@@ -568,11 +559,17 @@ def show_base_costos():
                 precio_sugerido_manual = round(costo_neto * factor_manual, 2)
                 st.caption(f"Precio sugerido: **${precio_sugerido_manual:,.2f}**")
             with col_precio_custom:
+                # Inicializar precio con el real guardado o sugerido
+                if st.session_state.receta_precio > 0:
+                    valor_inicial_precio = st.session_state.receta_precio
+                else:
+                    valor_inicial_precio = precio_sugerido_manual
+
                 precio_venta = st.number_input(
                     "Precio de Venta ($):",
                     min_value=0.0,
                     step=0.5,
-                    value=precio_sugerido_manual,
+                    value=valor_inicial_precio,
                     key="precio_venta_input"
                 )
                 if precio_venta > 0 and costo_neto > 0:
@@ -584,7 +581,7 @@ def show_base_costos():
             st.session_state.receta_factor_manual = factor_manual
             st.session_state.receta_precio = precio_venta
 
-            # Métricas finales con el precio de venta actual
+            # Métricas finales con el precio del input
             fc_final = (costo_neto / precio_venta * 100) if precio_venta > 0 else 0.0
             margen_final = precio_venta - costo_neto
             margen_pct_final = (margen_final / precio_venta * 100) if precio_venta > 0 else 0.0
