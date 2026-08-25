@@ -20,7 +20,6 @@ MAPA_UNIDADES_SAT = {
 }
 
 def parsear_contenido_xml(contenido_xml: str):
-    """Parsea un string con contenido XML y extrae conceptos."""
     try:
         root = ET.fromstring(contenido_xml)
         ns = {"cfdi": "http://www.sat.gob.mx/cfd/4"}
@@ -72,13 +71,16 @@ def show_carga_xml():
         st.warning("No hay insumos activos en el catálogo. Agrega insumos antes de cargar facturas.")
         st.stop()
 
-    metodo = st.radio("Elige cómo cargar el XML:", ["📁 Subir archivo(s)", "📋 Pegar contenido XML"])
+    # Inicializar estado si no existe
+    if "xml_df_edit" not in st.session_state:
+        st.session_state.xml_df_edit = None
 
-    conceptos_totales = []
+    metodo = st.radio("Elige cómo cargar el XML:", ["📁 Subir archivo(s)", "📋 Pegar contenido XML"])
 
     if metodo == "📁 Subir archivo(s)":
         archivos = st.file_uploader("Selecciona archivos XML", type=["xml"], accept_multiple_files=True)
         if archivos:
+            conceptos_totales = []
             for archivo in archivos:
                 contenido = archivo.getvalue().decode("utf-8")
                 conceptos, error = parsear_contenido_xml(contenido)
@@ -86,7 +88,28 @@ def show_carga_xml():
                     st.error(f"Error al leer {archivo.name}: {error}")
                     continue
                 conceptos_totales.extend(conceptos)
-    else:
+
+            if conceptos_totales:
+                # Crear DataFrame inicial
+                df_conceptos = pd.DataFrame(conceptos_totales)
+                insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
+
+                df_edit = df_conceptos.copy()
+                df_edit["Insumo"] = ""
+                df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
+                df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
+                df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
+                df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
+                df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
+                df_edit["Contenido_Base_por_Unidad"] = 1.0
+                df_edit["Costo_Base_Unitario"] = df_edit["Costo_Unitario"] / df_edit["Contenido_Base_por_Unidad"]
+
+                st.session_state.xml_df_edit = df_edit
+                st.success(f"Se cargaron {len(df_edit)} conceptos.")
+        else:
+            st.info("Sube al menos un archivo XML para continuar.")
+
+    else:  # Pegar contenido XML
         texto_xml = st.text_area(
             "Pega aquí el contenido del XML:",
             height=300,
@@ -98,27 +121,29 @@ def show_carga_xml():
                 if error:
                     st.error(f"Error al parsear el XML pegado: {error}")
                 else:
-                    conceptos_totales = conceptos
-                    st.success(f"Se leyeron {len(conceptos)} conceptos del XML pegado.")
+                    df_conceptos = pd.DataFrame(conceptos)
+                    insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
+
+                    df_edit = df_conceptos.copy()
+                    df_edit["Insumo"] = ""
+                    df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
+                    df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
+                    df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
+                    df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
+                    df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
+                    df_edit["Contenido_Base_por_Unidad"] = 1.0
+                    df_edit["Costo_Base_Unitario"] = df_edit["Costo_Unitario"] / df_edit["Contenido_Base_por_Unidad"]
+
+                    st.session_state.xml_df_edit = df_edit
+                    st.success(f"Se leyeron {len(df_edit)} conceptos del XML pegado.")
+                    st.rerun()
             else:
                 st.warning("Pega el contenido XML antes de procesar.")
 
-    if conceptos_totales:
-        st.success(f"Se cargaron {len(conceptos_totales)} conceptos en total.")
-        df_conceptos = pd.DataFrame(conceptos_totales)
-
+    # Mostrar editor si hay DataFrame guardado
+    if st.session_state.xml_df_edit is not None:
+        df_edit = st.session_state.xml_df_edit
         insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
-
-        # Crear DataFrame editable
-        df_edit = df_conceptos.copy()
-        df_edit["Insumo"] = ""
-        df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
-        df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]  # inicial
-        df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
-        df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
-        df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
-        df_edit["Contenido_Base_por_Unidad"] = 1.0
-        df_edit["Costo_Base_Unitario"] = df_edit["Costo_Unitario"] / df_edit["Contenido_Base_por_Unidad"]
 
         st.subheader("Asignación y ajuste de conceptos")
         edited_df = st.data_editor(
@@ -183,9 +208,11 @@ def show_carga_xml():
             key="xml_editor"
         )
 
-        # Botón para recalcular derivados después de editar Presentacion o Contenido
+        # Guardar automáticamente los cambios en session_state
+        st.session_state.xml_df_edit = edited_df
+
+        # Botón para recalcular derivados
         if st.button("🔄 Recalcular derivados"):
-            # Recalcula Costo_Unitario y Costo_Base_Unitario a partir de los campos base
             for idx in edited_df.index:
                 pres = edited_df.at[idx, "Presentacion"]
                 costo_pres = edited_df.at[idx, "Costo_Presentacion"]
@@ -198,12 +225,11 @@ def show_carga_xml():
                     edited_df.at[idx, "Costo_Base_Unitario"] = round(edited_df.at[idx, "Costo_Unitario"] / contenido, 6)
                 else:
                     edited_df.at[idx, "Costo_Base_Unitario"] = 0.0
+            st.session_state.xml_df_edit = edited_df
             st.success("Costos derivados recalculados.")
-            # Actualizar el estado para que se muestre
-            # (Streamlit no permite modificar el df de data_editor directamente, pero al hacer rerun se reflejará)
-            # Por simplicidad, recargamos la página
             st.rerun()
 
+        # Botón guardar
         if st.button("💾 Guardar costos en CostosInsumos", type="primary", width="stretch"):
             filas_validas = edited_df[edited_df["Insumo"] != ""]
             if filas_validas.empty:
@@ -219,7 +245,6 @@ def show_carga_xml():
                             st.error(f"Contenido base inválido para {row['Insumo']}.")
                             st.stop()
 
-                        # Recalcular si están en cero
                         if row["Costo_Unitario"] <= 0 and row["Costo_Presentacion"] > 0 and row["Presentacion"] > 0:
                             row["Costo_Unitario"] = round(row["Costo_Presentacion"] / row["Presentacion"], 4)
                         if row["Costo_Base_Unitario"] <= 0 and row["Costo_Unitario"] > 0 and row["Contenido_Base_por_Unidad"] > 0:
@@ -244,6 +269,7 @@ def show_carga_xml():
                     if ok:
                         cargar_costos_insumos.clear()
                         st.success(f"✅ {len(filas_guardar)} costos guardados con historial.")
+                        st.session_state.xml_df_edit = None
                         st.cache_data.clear()
                         st.rerun()
                     else:
