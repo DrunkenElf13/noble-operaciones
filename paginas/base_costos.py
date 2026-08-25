@@ -261,7 +261,6 @@ def show_base_costos():
             if df_ci.empty:
                 st.info("No hay costos registrados todavía.")
             else:
-                # Obtener último costo por insumo
                 df_ci_latest = df_ci.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
                 df_ci_edit = df_ci_latest[[
                     "Nombre_Insumo", "Marca", "Proveedor", "Unidad_Medida",
@@ -269,7 +268,6 @@ def show_base_costos():
                     "Unidad_Base", "Contenido_Base_por_Unidad", "Costo_Base_Unitario"
                 ]].copy()
 
-                # Convertir a tipos numéricos
                 for col in ["Costo_Presentacion", "Costo_Unitario", "Contenido_Base_por_Unidad", "Costo_Base_Unitario"]:
                     df_ci_edit[col] = df_ci_edit[col].apply(limpiar_valor)
 
@@ -299,7 +297,6 @@ def show_base_costos():
                     else:
                         filas_nuevas = []
                         for _, row in edited_costos.iterrows():
-                            # Validar conversión
                             if row["Unidad_Base"] != row["Unidad_Medida"] and row["Contenido_Base_por_Unidad"] <= 0:
                                 st.error(
                                     f"Para {row['Nombre_Insumo']}, debes indicar cuántas unidades de {row['Unidad_Base']} contiene 1 {row['Unidad_Medida']}."
@@ -368,6 +365,8 @@ def show_base_costos():
             st.session_state.receta_modo = "Nueva receta"
         if "receta_original" not in st.session_state:
             st.session_state.receta_original = ""
+        if "mostrar_metricas" not in st.session_state:
+            st.session_state.mostrar_metricas = False
 
         # ── IMPORTACIÓN DESDE EXCEL ──
         with st.expander("📥 Importar recetas desde Excel", expanded=False):
@@ -474,6 +473,7 @@ def show_base_costos():
                 st.session_state.receta_factor_manual = 2.5
                 st.session_state.receta_modo = "Nueva receta"
                 st.session_state.receta_original = ""
+                st.session_state.mostrar_metricas = False
                 st.rerun()
         with col_acc2:
             if st.button("➕ Agregar ingrediente", width="stretch"):
@@ -484,10 +484,12 @@ def show_base_costos():
                     "costo_unit": 0.0,
                     "total": 0.0
                 })
+                st.session_state.mostrar_metricas = False
                 st.rerun()
         with col_acc3:
             if st.session_state.ingredientes_receta and st.button("🗑️ Quitar último", width="stretch"):
                 st.session_state.ingredientes_receta.pop()
+                st.session_state.mostrar_metricas = False
                 st.rerun()
 
         # Selector de receta existente
@@ -523,6 +525,7 @@ def show_base_costos():
                             st.session_state.receta_precio = limpiar_valor(df_edit.iloc[0].get("Precio_Venta", 0))
                             st.session_state.receta_original = receta_seleccionada
                             st.session_state.receta_modo = "Editar receta existente"
+                            st.session_state.mostrar_metricas = False
                             st.rerun()
                 with col_btn2:
                     if st.button("📋 Duplicar", width="stretch"):
@@ -545,58 +548,101 @@ def show_base_costos():
                             st.session_state.receta_precio = limpiar_valor(df_dup.iloc[0].get("Precio_Venta", 0))
                             st.session_state.receta_original = ""
                             st.session_state.receta_modo = "Nueva receta"
+                            st.session_state.mostrar_metricas = False
                             st.rerun()
         else:
             st.info("No hay recetas guardadas todavía.")
         st.divider()
 
-        # Tabla de ingredientes editable
+        # Lista de ingredientes con widgets ligeros
         st.subheader("📋 Ingredientes de la receta")
-        if st.session_state.ingredientes_receta:
-            df_ingredientes = pd.DataFrame(st.session_state.ingredientes_receta)
-            for col in ["insumo","cantidad","unidad","costo_unit","total"]:
-                if col not in df_ingredientes.columns:
-                    df_ingredientes[col] = 0.0 if col in ("cantidad","costo_unit","total") else ""
-            df_ingredientes = df_ingredientes[["insumo","cantidad","unidad","costo_unit","total"]]
+        if not st.session_state.ingredientes_receta:
+            st.info("Presiona '➕ Agregar ingrediente' para comenzar la captura.")
+        else:
+            # Mostrar encabezados
+            col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([2.5, 1.0, 1.0, 1.0, 1.0])
+            col_h1.write("**Ingrediente**")
+            col_h2.write("**Cantidad**")
+            col_h3.write("**Unidad**")
+            col_h4.write("**Precio Insumo**")
+            col_h5.write("**Total**")
 
-            edited_df = st.data_editor(
-                df_ingredientes,
-                column_config={
-                    "insumo": st.column_config.SelectboxColumn(
+            # Iterar sobre cada fila
+            for i, ing in enumerate(st.session_state.ingredientes_receta):
+                cols = st.columns([2.5, 1.0, 1.0, 1.0, 1.0])
+                with cols[0]:
+                    # Selectbox de insumo
+                    insumo_actual = ing.get("insumo", "")
+                    if insumo_actual not in insumos_con_costo:
+                        insumo_actual = ""  # si no está en la lista, mostrar vacío
+                    insumo_seleccionado = st.selectbox(
                         "Ingrediente",
                         options=[""] + insumos_con_costo,
-                        required=True
-                    ),
-                    "cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, step=0.1, format="%.2f"),
-                    "unidad": st.column_config.SelectboxColumn("Unidad", options=UNIDADES_MED),
-                    "costo_unit": st.column_config.NumberColumn("Precio Insumo ($)", min_value=0.0, step=0.0001, format="%.4f"),
-                    "total": st.column_config.NumberColumn("Total ($)", min_value=0.0, disabled=True)
-                },
-                hide_index=True,
-                width="stretch",
-                num_rows="dynamic"
-            )
-
-            for idx, row in edited_df.iterrows():
-                insumo = row.get("insumo", "")
-                if insumo:
-                    mask = df_ci2["Nombre_Insumo"] == insumo
-                    if mask.any():
-                        ultimo = df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]
-                        if "Costo_Base_Unitario" in ultimo and limpiar_valor(ultimo.get("Costo_Base_Unitario", 0)) > 0:
-                            costo_unit = limpiar_valor(ultimo["Costo_Base_Unitario"])
-                            unidad = str(ultimo.get("Unidad_Base", "pz"))
+                        index=0 if not insumo_actual else ([""] + insumos_con_costo).index(insumo_actual),
+                        key=f"ing_insumo_{i}",
+                        label_visibility="collapsed"
+                    )
+                with cols[1]:
+                    cantidad = st.number_input(
+                        "Cantidad",
+                        min_value=0.0,
+                        step=0.1,
+                        value=float(ing.get("cantidad", 0.0)),
+                        key=f"ing_cantidad_{i}",
+                        label_visibility="collapsed"
+                    )
+                with cols[2]:
+                    # Unidad se autocompleta al elegir insumo
+                    if insumo_seleccionado:
+                        mask = df_ci2["Nombre_Insumo"] == insumo_seleccionado
+                        if mask.any():
+                            ultimo = df_ci2[mask].sort_values("Fecha_Captura").iloc[-1]
+                            if "Costo_Base_Unitario" in ultimo and limpiar_valor(ultimo.get("Costo_Base_Unitario", 0)) > 0:
+                                unidad_auto = str(ultimo.get("Unidad_Base", "pz"))
+                                costo_auto = limpiar_valor(ultimo["Costo_Base_Unitario"])
+                            else:
+                                unidad_auto = str(ultimo.get("Unidad_Medida", "pz"))
+                                costo_auto = limpiar_valor(ultimo["Costo_Unitario"])
                         else:
-                            costo_unit = limpiar_valor(ultimo["Costo_Unitario"])
-                            unidad = str(ultimo.get("Unidad_Medida", "pz"))
-                        edited_df.at[idx, "costo_unit"] = costo_unit
-                        edited_df.at[idx, "unidad"] = unidad
-                cantidad = limpiar_valor(row.get("cantidad", 0))
-                costo_unit_row = limpiar_valor(row.get("costo_unit", 0))
-                edited_df.at[idx, "total"] = round(cantidad * costo_unit_row, 4)
+                            unidad_auto = ing.get("unidad", "pz")
+                            costo_auto = ing.get("costo_unit", 0.0)
+                    else:
+                        unidad_auto = ing.get("unidad", "pz")
+                        costo_auto = ing.get("costo_unit", 0.0)
 
-            st.session_state.ingredientes_receta = edited_df.to_dict(orient="records")
+                    unidad = st.selectbox(
+                        "Unidad",
+                        options=UNIDADES_MED,
+                        index=UNIDADES_MED.index(unidad_auto) if unidad_auto in UNIDADES_MED else 0,
+                        key=f"ing_unidad_{i}",
+                        label_visibility="collapsed"
+                    )
+                with cols[3]:
+                    st.write(f"${costo_auto:.4f}")
+                with cols[4]:
+                    total = round(cantidad * costo_auto, 4)
+                    st.write(f"**${total:.2f}**")
 
+                # Actualizar el diccionario de la fila
+                st.session_state.ingredientes_receta[i] = {
+                    "insumo": insumo_seleccionado,
+                    "cantidad": cantidad,
+                    "unidad": unidad,
+                    "costo_unit": costo_auto,
+                    "total": total
+                }
+
+            st.session_state.mostrar_metricas = False
+
+        # Botón para calcular receta (solo si hay ingredientes)
+        if st.session_state.ingredientes_receta:
+            if st.button("🧮 Calcular receta", width="stretch"):
+                st.session_state.mostrar_metricas = True
+                st.rerun()
+
+        # Mostrar métricas y comparador solo si se presionó calcular
+        if st.session_state.mostrar_metricas and st.session_state.ingredientes_receta:
+            # Calcular costo neto
             costo_neto = sum(limpiar_valor(ing.get("total", 0)) for ing in st.session_state.ingredientes_receta)
 
             # Comparador de factores de ejemplo
@@ -669,6 +715,7 @@ def show_base_costos():
             c3.metric("Food Cost %", f"{fc_final:.1f}%")
             c4.metric("Margen Bruto", f"${margen_final:,.2f} ({margen_pct_final:.0f}%)")
 
+            # Guardar receta
             if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", width="stretch"):
                 nombre_final = st.session_state.receta_nombre.strip()
                 if not nombre_final:
@@ -735,8 +782,6 @@ def show_base_costos():
                                 st.error(msg)
                         except Exception as e:
                             st.error(f"Error al guardar: {e}")
-        else:
-            st.info("Presiona '➕ Agregar ingrediente' para comenzar la captura.")
 
         # ⚡ EDICIÓN MASIVA DE PRECIOS DE RECETAS
         if not df_rec.empty:
@@ -746,7 +791,6 @@ def show_base_costos():
                 Edita **Línea**, **Presentación** y **Precio de Venta** de todas las recetas.  
                 Al guardar, se actualizarán **todas las filas** de cada receta en la hoja `Recetas`.
                 """)
-                # Crear dataframe único por receta
                 df_rec_uniq = df_rec.drop_duplicates(subset=["Receta"]).copy()
                 df_rec_uniq = df_rec_uniq[[
                     "Receta", "Linea", "Presentacion", "Precio_Venta", "Costo_Neto_Receta", "Food_Cost_Pct"
@@ -774,7 +818,6 @@ def show_base_costos():
                     if err_rec_bulk:
                         st.error(err_rec_bulk)
                     else:
-                        # Releer todos los datos
                         all_data = ws_rec_bulk.get_all_values()
                         if len(all_data) <= 1:
                             st.error("No hay recetas para editar.")
@@ -785,7 +828,6 @@ def show_base_costos():
                             if col not in df_all.columns:
                                 df_all[col] = ""
 
-                        # Crear diccionario de cambios por receta
                         for _, row in edited_recetas.iterrows():
                             nombre_receta_bulk = row["Receta"]
                             mask = df_all["Receta"] == nombre_receta_bulk
@@ -793,12 +835,10 @@ def show_base_costos():
                                 df_all.loc[mask, "Linea"] = row["Linea"]
                                 df_all.loc[mask, "Presentacion"] = row["Presentacion"]
                                 df_all.loc[mask, "Precio_Venta"] = row["Precio_Venta"]
-                                # Recalcular Food_Cost_Pct
                                 df_all.loc[mask, "Food_Cost_Pct"] = df_all.loc[mask, "Costo_Ingrediente"].apply(
                                     lambda c: round((float(c) / row["Precio_Venta"] * 100) if row["Precio_Venta"] > 0 else 0.0, 2)
                                 )
 
-                        # Limpiar y reescribir
                         ws_rec_bulk.clear()
                         ws_rec_bulk.append_row(COLS_RECETAS)
                         ws_rec_bulk.append_rows(df_all[COLS_RECETAS].values.tolist(), value_input_option="USER_ENTERED")
