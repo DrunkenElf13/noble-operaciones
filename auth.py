@@ -76,3 +76,14 @@ def tiene_permiso(pagina: str) -> bool:
             return True
         return pagina in PERMISOS[rol]
     return True
+
+def validar_usuario(clave: str):
+    """
+    Consulta Google Sheets en vivo y valida la clave.
+    Retorna (nombre, rol) si existe; de lo contrario (None, None).
+    """
+    obtener_usuarios.clear()
+    usuarios, _, _ = obtener_usuarios()
+    if clave in usuarios:
+        return usuarios[clave]["nombre"], usuarios[clave]["rol"]
+    return None, None
