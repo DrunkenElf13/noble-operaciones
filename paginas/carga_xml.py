@@ -24,7 +24,6 @@ def parsear_contenido_xml(contenido_xml: str):
         root = ET.fromstring(contenido_xml)
         ns = {"cfdi": "http://www.sat.gob.mx/cfd/4"}
 
-        # Extraer proveedor del emisor
         proveedor = ""
         emisor = root.find(".//cfdi:Emisor", ns)
         if emisor is not None:
@@ -39,6 +38,9 @@ def parsear_contenido_xml(contenido_xml: str):
             valor_unitario = float(concepto.get("ValorUnitario", "0"))
             importe = float(concepto.get("Importe", "0"))
             descuento = float(concepto.get("Descuento", "0"))
+
+            # Calcular base sin IVA: buscar Base del traslado
+            base_sin_iva = importe - descuento
             iva_tasa = 0.0
             iva_importe = 0.0
             for traslado in concepto.findall(".//cfdi:Traslado", ns):
@@ -47,6 +49,10 @@ def parsear_contenido_xml(contenido_xml: str):
                     tasa = float(traslado.get("TasaOCuota", "0"))
                     iva_tasa = max(iva_tasa, tasa)
                     iva_importe += float(traslado.get("Importe", "0"))
+                    base_traslado = float(traslado.get("Base", "0"))
+                    if base_traslado > 0:
+                        base_sin_iva = base_traslado  # base real sin IVA
+
             conceptos.append({
                 "Descripcion": descripcion,
                 "Cantidad_Comprada": cantidad,
@@ -55,6 +61,7 @@ def parsear_contenido_xml(contenido_xml: str):
                 "ValorUnitario": valor_unitario,
                 "Importe_Total": importe,
                 "Descuento": descuento,
+                "Total_Neto": base_sin_iva,
                 "IVA_Tasa": iva_tasa,
                 "IVA_Importe": iva_importe,
                 "Proveedor": proveedor,
@@ -70,8 +77,9 @@ def show_carga_xml():
 
     st.title("📄 Carga de Facturas XML")
     st.markdown("""
-    Puedes **subir archivos XML** o **pegar el contenido XML** directamente.  
-    Después de cargar, podrás revisar y modificar **todos** los campos antes de guardar.
+    Puedes **subir archivos XML** o **pegar el contenido XML**.  
+    El sistema extrae conceptos y calcula costos **sin IVA**.  
+    Podrás revisar y corregir todos los campos antes de guardar.
     """)
 
     df_cat = cargar_datos_integrales()[0]
@@ -82,7 +90,7 @@ def show_carga_xml():
     if "xml_df_edit" not in st.session_state:
         st.session_state.xml_df_edit = None
 
-    metodo = st.radio("Elige cómo cargar el XML:", ["📁 Subir archivo(s)", "📋 Pegar contenido XML"])
+    metodo = st.radio("Elige cómo cargar el XML:", ["📁 Subir archivo(s)", "📋 Pegar contenido XML"], horizontal=True)
 
     if metodo == "📁 Subir archivo(s)":
         archivos = st.file_uploader("Selecciona archivos XML", type=["xml"], accept_multiple_files=True)
@@ -105,7 +113,7 @@ def show_carga_xml():
                 df_edit["Marca"] = ""
                 df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
                 df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
-                df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
+                df_edit["Costo_Presentacion"] = df_edit["Total_Neto"] / df_edit["Cantidad_Comprada"]
                 df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
                 df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
                 df_edit["Contenido_Base_por_Unidad"] = 1.0
@@ -136,7 +144,7 @@ def show_carga_xml():
                     df_edit["Marca"] = ""
                     df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
                     df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
-                    df_edit["Costo_Presentacion"] = (df_edit["Importe_Total"] - df_edit["Descuento"]) / df_edit["Cantidad_Comprada"]
+                    df_edit["Costo_Presentacion"] = df_edit["Total_Neto"] / df_edit["Cantidad_Comprada"]
                     df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
                     df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
                     df_edit["Contenido_Base_por_Unidad"] = 1.0
@@ -152,16 +160,23 @@ def show_carga_xml():
         df_edit = st.session_state.xml_df_edit
         insumos_disponibles = sorted(df_cat["Nombre del Insumo"].dropna().unique())
 
+        # Selección de columnas visibles para pantallas pequeñas
+        # Mostramos primero las más importantes, y el resto en un expander
+        columnas_visibles = [
+            "Insumo", "Marca", "Proveedor", "Cantidad_Comprada", "Total_Neto",
+            "Unidad_Medida", "Presentacion", "Costo_Presentacion",
+            "Costo_Unitario", "Unidad_Base", "Contenido_Base_por_Unidad",
+            "Costo_Base_Unitario"
+        ]
+        # Reordenar para que aparezcan en ese orden
+        df_edit = df_edit[columnas_visibles]
+
         st.subheader("Asignación y ajuste de conceptos")
+        st.caption("Desplázate horizontalmente si es necesario.")
+
         edited_df = st.data_editor(
             df_edit,
             column_config={
-                "Descripcion": st.column_config.TextColumn("Descripción", disabled=True),
-                "Cantidad_Comprada": st.column_config.NumberColumn("Cantidad Comprada", disabled=True, format="%.2f"),
-                "Unidad_XML": st.column_config.TextColumn("Unidad XML", disabled=True),
-                "Importe_Total": st.column_config.NumberColumn("Importe Total", disabled=True, format="%.2f"),
-                "Descuento": st.column_config.NumberColumn("Descuento", disabled=True, format="%.2f"),
-                "IVA_Tasa": st.column_config.NumberColumn("IVA Tasa", disabled=True, format="%.2f"),
                 "Insumo": st.column_config.SelectboxColumn(
                     "Insumo",
                     options=[""] + insumos_disponibles,
@@ -169,44 +184,44 @@ def show_carga_xml():
                 ),
                 "Marca": st.column_config.TextColumn("Marca"),
                 "Proveedor": st.column_config.TextColumn("Proveedor"),
+                "Cantidad_Comprada": st.column_config.NumberColumn("Cantidad", disabled=True, format="%.2f"),
+                "Total_Neto": st.column_config.NumberColumn("Total Neto", disabled=True, format="%.2f"),
                 "Unidad_Medida": st.column_config.SelectboxColumn(
-                    "Unidad Inventario",
+                    "Unidad Inv.",
                     options=UNIDADES_MED,
-                    help="Unidad en la que controlas el inventario."
+                    help="Unidad de inventario"
                 ),
                 "Presentacion": st.column_config.NumberColumn(
                     "Presentación",
                     min_value=0.0,
                     step=1.0,
-                    format="%.2f",
-                    help="Cantidad de unidades de inventario por presentación."
+                    format="%.2f"
                 ),
                 "Costo_Presentacion": st.column_config.NumberColumn(
-                    "Costo Presentación ($)",
+                    "Costo Pres. ($)",
                     min_value=0.0,
                     step=0.5,
                     format="%.2f"
                 ),
                 "Costo_Unitario": st.column_config.NumberColumn(
-                    "Costo Unitario ($)",
+                    "Costo Unit. ($)",
                     min_value=0.0,
                     step=0.001,
                     format="%.4f"
                 ),
                 "Unidad_Base": st.column_config.SelectboxColumn(
-                    "Unidad Base (Recetas)",
+                    "Unidad Base",
                     options=UNIDADES_MED,
-                    help="Unidad que usarás en recetas (ml, gr, pieza, etc.)."
+                    help="Unidad para recetas"
                 ),
                 "Contenido_Base_por_Unidad": st.column_config.NumberColumn(
-                    "Contenido Base",
+                    "Cont. Base",
                     min_value=0.0,
                     step=1.0,
-                    format="%.2f",
-                    help="Cuántas unidades base contiene 1 unidad de inventario."
+                    format="%.2f"
                 ),
                 "Costo_Base_Unitario": st.column_config.NumberColumn(
-                    "Costo Base Unitario ($)",
+                    "Costo Base ($)",
                     min_value=0.0,
                     step=0.0001,
                     format="%.6f"
