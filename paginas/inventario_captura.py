@@ -43,6 +43,17 @@ def show_inventario():
     with col_r:
         r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx,
                              disabled=(st.session_state.user_role != "admin"))
+
+    # ✅ Limpiar estado si cambia la unidad (evita precarga obsoleta)
+    if "ultima_unidad_inv" not in st.session_state:
+        st.session_state.ultima_unidad_inv = u_sel
+
+    if st.session_state.ultima_unidad_inv != u_sel:
+        for key in list(st.session_state.keys()):
+            if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_")):
+                del st.session_state[key]
+        st.session_state.ultima_unidad_inv = u_sel
+
     df_u = df_raw[df_raw["Unidad de Negocio"] == u_sel] if not df_raw.empty else pd.DataFrame()
     with col_g:
         grps  = sorted(df_u["Grupo"].dropna().unique().tolist()) if not df_u.empty and "Grupo" in df_u.columns else GRUPOS
@@ -131,7 +142,6 @@ def show_inventario():
 
         st.session_state.inv_bulk_data = edited_df.to_dict(orient="records")
 
-        # Tabla de diferencias sin bloquear
         if lista_sospechosos:
             st.divider()
             st.subheader("📋 Insumos con diferencias grandes")
@@ -161,7 +171,6 @@ def show_inventario():
         else:
             st.success("No se detectaron diferencias mayores al 50%.")
 
-        # Procesar sin bloquear
         if st.button("📥 PROCESAR INVENTARIO BULK", type="primary", width="stretch"):
             ws_his, err = safe_worksheet(sh, "Historial")
             if err:
@@ -209,7 +218,7 @@ def show_inventario():
             st.session_state.mostrar_vista_previa = False
 
         with st.form("form_inventario", clear_on_submit=False):
-            # Encabezados con tooltips HTML (compatible)
+            # Encabezados con tooltips HTML
             h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
             headers = [
                 ("Insumo / Ref", "Nombre del insumo y su unidad esperada."),
@@ -233,7 +242,9 @@ def show_inventario():
             regs_form = {}
             for idx_row, row in df_f.iterrows():
                 nom      = str(row.get("Nombre del Insumo",""))
-                safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35] + f"_{idx_row}"
+                # 🔥 CLAVE ESTABLE: no depende del índice ni de filtros
+                safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]  # sin idx_row
+
                 prev        = buscar_insumo_en_actual(df_actual, nom)
                 v_prev      = prev["Stock Neto Calculado"] if prev is not None else 0.0
                 v_alm_prev  = limpiar_valor(prev["Alm"])   if prev is not None else 0.0
@@ -348,7 +359,6 @@ def show_inventario():
                 st.dataframe(df_vp, hide_index=True, width="stretch")
                 st.caption("🔴 >20% de diferencia  |  🟡 >10%  |  ⚪ ≤10%")
 
-            # Tabla de diferencias grandes (sin bloquear)
             if lista_sospechosos:
                 st.divider()
                 st.subheader("📋 Insumos con diferencias grandes")
