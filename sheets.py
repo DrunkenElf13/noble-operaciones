@@ -158,3 +158,30 @@ def _asegurar_hoja_canal_ventas(nombre_canal: str):
     except Exception:
         pass
     return ws, None
+
+def _asegurar_hoja_mapeo_xml():
+    """Crea o devuelve la hoja MapeoXML con encabezados incluyendo NoIdentificacion."""
+    try:
+        ws = sh.worksheet("MapeoXML")
+        # Verificar encabezados
+        encabezados_actuales = ws.row_values(1)
+        encabezados_esperados = [
+            "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
+            "Unidad_Medida", "Presentacion", "Unidad_Base", "Contenido_Base_por_Unidad"
+        ]
+        if len(encabezados_actuales) < len(encabezados_esperados):
+            # Actualizar encabezados sin borrar datos
+            ws.update(range_name="A1:I1", values=[encabezados_esperados])
+        return ws, None
+    except gspread.exceptions.WorksheetNotFound:
+        try:
+            ws = sh.add_worksheet(title="MapeoXML", rows="1000", cols="9")
+            ws.append_row([
+                "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
+                "Unidad_Medida", "Presentacion", "Unidad_Base", "Contenido_Base_por_Unidad"
+            ])
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja MapeoXML: {e}"
+    except Exception as e:
+        return None, f"Error accediendo a MapeoXML: {e}"
