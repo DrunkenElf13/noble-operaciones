@@ -3,22 +3,39 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 from io import StringIO
 from data_loaders import cargar_costos_insumos, cargar_datos_integrales
-from sheets import _asegurar_hoja_costos_insumos, _asegurar_hoja_mapeo_xml, append_rows_con_retry
+from sheets import _asegurar_hoja_costos_insumos, append_rows_con_retry, _asegurar_hoja_mapeo_xml
 from utils import limpiar_valor, ts_hermosillo
 from config import UNIDADES_MED
 from auth import tiene_permiso
 
 MAPA_UNIDADES_SAT = {
-    "H87": "pieza",
-    "XPK": "paquete",
+    "H87": "pz",
+    "XPK": "pz",
     "KGM": "kg",
     "LTR": "lt",
-    "XBX": "paquete",
-    "BB": "paquete",
+    "XBX": "pz",
+    "BB": "pz",
     "GRM": "gr",
     "MLT": "ml",
-    "XUN": "unidad",
+    "XUN": "pz",
 }
+
+@st.cache_data(ttl=600)
+def obtener_mapeo_xml_cacheado():
+    """Lee la hoja MapeoXML una sola vez cada 10 minutos."""
+    ws_mapeo, err = _asegurar_hoja_mapeo_xml()
+    if err:
+        return pd.DataFrame(columns=[
+            "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
+            "Unidad_Medida", "Factor_Conversion", "Unidad_Base", "Contenido_Base_por_Unidad"
+        ])
+    datos = ws_mapeo.get_all_values()
+    if len(datos) > 1:
+        return pd.DataFrame(datos[1:], columns=datos[0])
+    return pd.DataFrame(columns=[
+        "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
+        "Unidad_Medida", "Factor_Conversion", "Unidad_Base", "Contenido_Base_por_Unidad"
+    ])
 
 def parsear_contenido_xml(contenido_xml: str):
     try:
@@ -50,20 +67,20 @@ def parsear_contenido_xml(contenido_xml: str):
                     iva_tasa = max(iva_tasa, tasa)
                     iva_importe += float(traslado.get("Importe", "0"))
 
-            total_neto_real = importe - descuento + iva_importe
+            total_neto_real = round(importe - descuento + iva_importe, 2)
 
             conceptos.append({
                 "Descripcion": descripcion,
                 "NoIdentificacion": no_identificacion,
-                "Cantidad_Comprada": cantidad,
+                "Cantidad_Comprada": round(cantidad, 2),
                 "ClaveUnidad": clave_unidad,
                 "Unidad_XML": unidad_xml,
-                "ValorUnitario": valor_unitario,
-                "Importe_Total": importe,
-                "Descuento": descuento,
+                "ValorUnitario": round(valor_unitario, 2),
+                "Importe_Total": round(importe, 2),
+                "Descuento": round(descuento, 2),
                 "Total_Neto_Real": total_neto_real,
                 "IVA_Tasa": iva_tasa,
-                "IVA_Importe": iva_importe,
+                "IVA_Importe": round(iva_importe, 2),
                 "Proveedor": proveedor,
             })
         return conceptos, None
@@ -77,23 +94,27 @@ def preparar_dataframe_con_mapeo(df_conceptos, df_mapeo, df_cat):
     df_edit = df_conceptos.copy()
     df_edit["Insumo"] = ""
     df_edit["Marca"] = ""
-    df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pieza")
+    df_edit["Unidad_Medida"] = df_edit["ClaveUnidad"].map(MAPA_UNIDADES_SAT).fillna("pz")
+
+    df_edit["Factor_Conversion"] = 1.0
     df_edit["Presentacion"] = df_edit["Cantidad_Comprada"]
-    df_edit["Costo_Presentacion"] = df_edit["Total_Neto_Real"] / df_edit["Cantidad_Comprada"]
+    df_edit["Costo_Presentacion"] = df_edit["Total_Neto_Real"]
     df_edit["Costo_Unitario"] = df_edit["Costo_Presentacion"] / df_edit["Presentacion"]
     df_edit["Unidad_Base"] = df_edit["Unidad_Medida"]
     df_edit["Contenido_Base_por_Unidad"] = 1.0
     df_edit["Costo_Base_Unitario"] = df_edit["Costo_Unitario"]
     df_edit["Guardar_Regla"] = True
 
-    # Autocompletar desde MapeoXML
+    df_edit["Costo_Presentacion"] = df_edit["Costo_Presentacion"].round(2)
+    df_edit["Costo_Unitario"] = df_edit["Costo_Unitario"].round(4)
+    df_edit["Costo_Base_Unitario"] = df_edit["Costo_Base_Unitario"].round(6)
+
     if not df_mapeo.empty:
         for idx, row in df_edit.iterrows():
             desc = row["Descripcion"].upper()
             proveedor_factura = row["Proveedor"].strip().upper()
             no_id = row["NoIdentificacion"].strip().upper()
 
-            # 1) Intento por NoIdentificacion + Proveedor
             coincidencia = None
             if no_id:
                 mascara = (
@@ -103,7 +124,6 @@ def preparar_dataframe_con_mapeo(df_conceptos, df_mapeo, df_cat):
                 if mascara.any():
                     coincidencia = df_mapeo[mascara].iloc[0]
 
-            # 2) Intento por texto buscado
             if coincidencia is None:
                 mascara_texto = df_mapeo["Texto_Buscado"].apply(lambda x: x.upper() in desc)
                 if mascara_texto.any():
@@ -113,20 +133,22 @@ def preparar_dataframe_con_mapeo(df_conceptos, df_mapeo, df_cat):
                 df_edit.at[idx, "Insumo"] = coincidencia["Insumo"]
                 df_edit.at[idx, "Marca"] = coincidencia.get("Marca", "")
                 df_edit.at[idx, "Unidad_Medida"] = coincidencia.get("Unidad_Medida", row["Unidad_Medida"])
-                df_edit.at[idx, "Presentacion"] = float(coincidencia.get("Presentacion", row["Presentacion"]))
+                factor = float(coincidencia.get("Factor_Conversion", 1.0))
+                df_edit.at[idx, "Factor_Conversion"] = factor
+                df_edit.at[idx, "Presentacion"] = row["Cantidad_Comprada"] * factor
                 df_edit.at[idx, "Unidad_Base"] = coincidencia.get("Unidad_Base", row["Unidad_Base"])
                 df_edit.at[idx, "Contenido_Base_por_Unidad"] = float(coincidencia.get("Contenido_Base_por_Unidad", 1.0))
-                df_edit.at[idx, "Costo_Unitario"] = df_edit.at[idx, "Costo_Presentacion"] / df_edit.at[idx, "Presentacion"]
+                df_edit.at[idx, "Costo_Presentacion"] = row["Total_Neto_Real"]
+                df_edit.at[idx, "Costo_Unitario"] = row["Total_Neto_Real"] / df_edit.at[idx, "Presentacion"]
                 df_edit.at[idx, "Costo_Base_Unitario"] = df_edit.at[idx, "Costo_Unitario"] / df_edit.at[idx, "Contenido_Base_por_Unidad"]
-                df_edit.at[idx, "Guardar_Regla"] = False  # ya existe regla
+                df_edit.at[idx, "Guardar_Regla"] = False
 
-    # Reordenar columnas para visualización
     columnas_orden = [
         "Descripcion", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
         "Cantidad_Comprada", "Total_Neto_Real", "IVA_Importe",
-        "Unidad_Medida", "Presentacion", "Costo_Presentacion",
-        "Costo_Unitario", "Unidad_Base", "Contenido_Base_por_Unidad",
-        "Costo_Base_Unitario", "Guardar_Regla"
+        "Unidad_Medida", "Factor_Conversion", "Presentacion",
+        "Costo_Presentacion", "Costo_Unitario", "Unidad_Base",
+        "Contenido_Base_por_Unidad", "Costo_Base_Unitario", "Guardar_Regla"
     ]
     return df_edit[columnas_orden]
 
@@ -146,19 +168,8 @@ def show_carga_xml():
         st.warning("No hay insumos activos en el catálogo. Agrega insumos antes de cargar facturas.")
         st.stop()
 
-    # Cargar hoja MapeoXML
-    ws_mapeo, err_mapeo = _asegurar_hoja_mapeo_xml()
-    if err_mapeo:
-        st.error(err_mapeo)
-        st.stop()
-    datos_mapeo = ws_mapeo.get_all_values()
-    if len(datos_mapeo) > 1:
-        df_mapeo = pd.DataFrame(datos_mapeo[1:], columns=datos_mapeo[0])
-    else:
-        df_mapeo = pd.DataFrame(columns=[
-            "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
-            "Unidad_Medida", "Presentacion", "Unidad_Base", "Contenido_Base_por_Unidad"
-        ])
+    # Leer MapeoXML con caché
+    df_mapeo = obtener_mapeo_xml_cacheado()
 
     if "xml_df_edit" not in st.session_state:
         st.session_state.xml_df_edit = None
@@ -223,7 +234,7 @@ def show_carga_xml():
                 ),
                 "Marca": st.column_config.TextColumn("Marca"),
                 "Proveedor": st.column_config.TextColumn("Proveedor"),
-                "Cantidad_Comprada": st.column_config.NumberColumn("Cantidad", disabled=True, format="%.2f"),
+                "Cantidad_Comprada": st.column_config.NumberColumn("Cant. Factura", disabled=True, format="%.2f"),
                 "Total_Neto_Real": st.column_config.NumberColumn("Total Pagado", disabled=True, format="%.2f"),
                 "IVA_Importe": st.column_config.NumberColumn("IVA", disabled=True, format="%.2f"),
                 "Unidad_Medida": st.column_config.SelectboxColumn(
@@ -231,14 +242,22 @@ def show_carga_xml():
                     options=UNIDADES_MED,
                     help="Unidad de inventario"
                 ),
-                "Presentacion": st.column_config.NumberColumn(
-                    "Presentación",
+                "Factor_Conversion": st.column_config.NumberColumn(
+                    "Factor Conv.",
                     min_value=0.0,
                     step=1.0,
-                    format="%.2f"
+                    format="%.2f",
+                    help="Unidades de inventario por 1 unidad de factura"
+                ),
+                "Presentacion": st.column_config.NumberColumn(
+                    "Presentación Total",
+                    min_value=0.0,
+                    step=1.0,
+                    format="%.2f",
+                    help="Total de unidades de inventario compradas en esta línea"
                 ),
                 "Costo_Presentacion": st.column_config.NumberColumn(
-                    "Costo Pres. ($)",
+                    "Costo Total ($)",
                     min_value=0.0,
                     step=0.5,
                     format="%.2f"
@@ -281,10 +300,10 @@ def show_carga_xml():
         if st.button("🔄 Recalcular derivados"):
             for idx in edited_df.index:
                 pres = edited_df.at[idx, "Presentacion"]
-                costo_pres = edited_df.at[idx, "Costo_Presentacion"]
+                costo_total = edited_df.at[idx, "Costo_Presentacion"]
                 contenido = edited_df.at[idx, "Contenido_Base_por_Unidad"]
                 if pres > 0:
-                    edited_df.at[idx, "Costo_Unitario"] = round(costo_pres / pres, 4)
+                    edited_df.at[idx, "Costo_Unitario"] = round(costo_total / pres, 4)
                 else:
                     edited_df.at[idx, "Costo_Unitario"] = 0.0
                 if contenido > 0 and edited_df.at[idx, "Costo_Unitario"] > 0:
@@ -333,6 +352,7 @@ def show_carga_xml():
                         ])
 
                         if row.get("Guardar_Regla", False):
+                            factor_conversion = row["Presentacion"] / row["Cantidad_Comprada"] if row["Cantidad_Comprada"] > 0 else 1.0
                             filas_mapeo_nuevas.append({
                                 "Texto_Buscado": row["Descripcion"].upper(),
                                 "NoIdentificacion": row["NoIdentificacion"],
@@ -340,7 +360,7 @@ def show_carga_xml():
                                 "Marca": row.get("Marca", ""),
                                 "Proveedor": row.get("Proveedor", ""),
                                 "Unidad_Medida": row["Unidad_Medida"],
-                                "Presentacion": row["Presentacion"],
+                                "Factor_Conversion": factor_conversion,
                                 "Unidad_Base": row["Unidad_Base"],
                                 "Contenido_Base_por_Unidad": row["Contenido_Base_por_Unidad"],
                             })
@@ -351,7 +371,7 @@ def show_carga_xml():
                         st.stop()
 
                     if filas_mapeo_nuevas:
-                        # Evitar duplicados
+                        ws_mapeo, _ = _asegurar_hoja_mapeo_xml()
                         datos_actuales = ws_mapeo.get_all_values()
                         if len(datos_actuales) > 1:
                             df_existentes = pd.DataFrame(datos_actuales[1:], columns=datos_actuales[0])
@@ -376,7 +396,7 @@ def show_carga_xml():
                                     regla.get("Marca", ""),
                                     regla.get("Proveedor", ""),
                                     regla["Unidad_Medida"],
-                                    regla["Presentacion"],
+                                    regla["Factor_Conversion"],
                                     regla["Unidad_Base"],
                                     regla["Contenido_Base_por_Unidad"],
                                 ])
@@ -384,6 +404,8 @@ def show_carga_xml():
                                 existentes_textos.add(clave_texto)
                         if nuevas_filas:
                             append_rows_con_retry(ws_mapeo, nuevas_filas)
+                            # Limpiar caché de mapeo para que se actualice
+                            obtener_mapeo_xml_cacheado.clear()
 
                     cargar_costos_insumos.clear()
                     st.success(f"✅ {len(filas_guardar)} costos guardados con historial.")
