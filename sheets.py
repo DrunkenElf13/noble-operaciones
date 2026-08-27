@@ -4,7 +4,7 @@ import time
 from google.oauth2.service_account import Credentials
 from config import (
     SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO,
-    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_MERMA, COLS_CALENDARIO
+    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_COMBOS, COLS_MERMA, COLS_CALENDARIO
 )
 
 @st.cache_resource
@@ -106,6 +106,17 @@ def _asegurar_hoja_recetas():
     except Exception as e:
         return None, f"Error accediendo a Recetas: {e}"
 
+def _asegurar_hoja_combos():
+    ws, err = safe_worksheet(sh, "Combos")
+    if err:
+        try:
+            ws = sh.add_worksheet(title="Combos", rows="2000", cols=str(len(COLS_COMBOS)))
+            ws.append_row(COLS_COMBOS)
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja Combos: {e}"
+    return ws, None
+
 def _asegurar_hoja_merma():
     ws, err = safe_worksheet(sh, "Merma")
     if err:
@@ -120,14 +131,11 @@ def _asegurar_hoja_merma():
 def _asegurar_hoja_calendario():
     try:
         ws = sh.worksheet("Calendario")
-        # Verificar que los encabezados estén completos
         try:
             encabezados_actuales = ws.row_values(1)
             if len(encabezados_actuales) < len(COLS_CALENDARIO):
-                # Actualizar la fila de encabezados sin borrar datos
                 ws.update(range_name="A1:T1", values=[COLS_CALENDARIO])
         except Exception:
-            # Si no se puede leer, actualizamos igual
             ws.update(range_name="A1:T1", values=[COLS_CALENDARIO])
         return ws, None
     except gspread.exceptions.WorksheetNotFound:
@@ -141,8 +149,6 @@ def _asegurar_hoja_calendario():
         return None, f"Error accediendo a Calendario: {e}"
 
 def _asegurar_hoja_canal_ventas(nombre_canal: str):
-    """Crea o actualiza la hoja del canal con las columnas de Calendario.
-    Solo escribe encabezados si la hoja está vacía (menos de 2 filas)."""
     ws, err = safe_worksheet(sh, nombre_canal)
     if err:
         try:
@@ -160,26 +166,21 @@ def _asegurar_hoja_canal_ventas(nombre_canal: str):
     return ws, None
 
 def _asegurar_hoja_mapeo_xml():
-    """Crea o devuelve la hoja MapeoXML con encabezados incluyendo NoIdentificacion."""
+    """Crea o devuelve la hoja MapeoXML con encabezados incluyendo NoIdentificacion y Factor_Conversion."""
+    encabezados_esperados = [
+        "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
+        "Unidad_Medida", "Factor_Conversion", "Unidad_Base", "Contenido_Base_por_Unidad"
+    ]
     try:
         ws = sh.worksheet("MapeoXML")
-        # Verificar encabezados
         encabezados_actuales = ws.row_values(1)
-        encabezados_esperados = [
-            "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
-            "Unidad_Medida", "Presentacion", "Unidad_Base", "Contenido_Base_por_Unidad"
-        ]
         if len(encabezados_actuales) < len(encabezados_esperados):
-            # Actualizar encabezados sin borrar datos
             ws.update(range_name="A1:I1", values=[encabezados_esperados])
         return ws, None
     except gspread.exceptions.WorksheetNotFound:
         try:
             ws = sh.add_worksheet(title="MapeoXML", rows="1000", cols="9")
-            ws.append_row([
-                "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
-                "Unidad_Medida", "Presentacion", "Unidad_Base", "Contenido_Base_por_Unidad"
-            ])
+            ws.append_row(encabezados_esperados)
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja MapeoXML: {e}"
