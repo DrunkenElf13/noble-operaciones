@@ -1,10 +1,16 @@
 import streamlit as st
 import pandas as pd
 import time
-from data_loaders import cargar_costos_insumos, cargar_recetas, cargar_datos_integrales
-from sheets import _asegurar_hoja_costos_insumos, _asegurar_hoja_recetas, append_rows_con_retry
+from data_loaders import (
+    cargar_costos_insumos, cargar_recetas, cargar_datos_integrales,
+    cargar_combos
+)
+from sheets import (
+    _asegurar_hoja_costos_insumos, _asegurar_hoja_recetas,
+    _asegurar_hoja_combos, append_rows_con_retry
+)
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
-from config import UNIDADES_MED, COLS_RECETAS
+from config import UNIDADES_MED, COLS_RECETAS, COLS_COMBOS
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
@@ -87,7 +93,6 @@ def procesar_importacion_recetas(archivo, mapeo_ingredientes, precio_default=0.0
     except Exception as e:
         st.error(f"Error al procesar el archivo: {e}")
         return None
-
 def show_base_costos():
     if not tiene_permiso("BaseCostos"):
         st.error("No tienes permiso para esta página.")
@@ -98,7 +103,11 @@ def show_base_costos():
         st.error("🔒 Autenticación requerida.")
         st.stop()
 
-    tab_costos, tab_recetas = st.tabs(["💰 Costos de Insumos", "🍽️ Recetas"])
+    tab_costos, tab_recetas, tab_combos = st.tabs([
+        "💰 Costos de Insumos", "🍽️ Recetas", "🍱 Combos"
+    ])
+
+    # ==================== TAB COSTOS DE INSUMOS ====================
     with tab_costos:
         st.subheader("Registro de Costo de Insumos (desde catálogo)")
         df_ci = cargar_costos_insumos()
@@ -127,7 +136,7 @@ def show_base_costos():
                         UNIDADES_MED,
                         index=UNIDADES_MED.index(str(info_cat.get("Unidad de Medida","pz")).lower())
                               if str(info_cat.get("Unidad de Medida","pz")).lower() in UNIDADES_MED else 0,
-                        help="Unidad en la que controlas el inventario de este insumo (ej. pz, paquete, gr, lt)."
+                        help="Unidad en la que controlas el inventario de este insumo (ej. pz, gr, lt)."
                     )
                 with col_d:
                     pres_ci  = st.text_input(
@@ -154,8 +163,8 @@ def show_base_costos():
                 st.markdown("---")
                 st.write("**Conversión para recetas / food cost**")
 
-                if um_ci in ["pz", "paquete"]:
-                    default_base = "pieza"
+                if um_ci in ["pz"]:
+                    default_base = "pz"
                 elif um_ci == "kg":
                     default_base = "gr"
                 elif um_ci == "lt":
@@ -169,13 +178,13 @@ def show_base_costos():
                         "Unidad base para recetas:",
                         UNIDADES_MED,
                         index=UNIDADES_MED.index(default_base) if default_base in UNIDADES_MED else 0,
-                        help="Unidad en la que usarás el insumo en recetas (ml, gr, pieza, paquete, etc.)."
+                        help="Unidad en la que usarás el insumo en recetas (ml, gr, pz, etc.)."
                     )
                 with col_h:
                     contenido_base_ci = st.number_input(
                         f"Contenido en {unidad_base_ci} por unidad de inventario:",
                         min_value=0.0, step=1.0, value=0.0,
-                        help=f"Cuántas unidades de {unidad_base_ci} hay en 1 {um_ci}. Ej: 1 paquete = 100 piezas → 100."
+                        help=f"Cuántas unidades de {unidad_base_ci} hay en 1 {um_ci}. Ej: 1 pz = 1000 ml → 1000."
                     )
                 col_i, col_j = st.columns(2)
                 with col_i:
@@ -250,6 +259,7 @@ def show_base_costos():
             st.dataframe(df_ci_latest, hide_index=True, width="stretch")
         else:
             st.info("Sin costos registrados aún.")
+
         # ⚡ EDICIÓN MASIVA DE COSTOS DE INSUMOS
         st.divider()
         with st.expander("⚡ Edición masiva de costos de insumos", expanded=False):
@@ -333,6 +343,7 @@ def show_base_costos():
                                 st.rerun()
                             else:
                                 st.error(msg_bulk)
+    # ==================== TAB RECETAS ====================
     with tab_recetas:
         st.subheader("🍽️ Editor de Recetas")
         df_rec = cargar_recetas()
@@ -442,9 +453,10 @@ def show_base_costos():
                             st.rerun()
                         else:
                             st.error(msg)
+
         st.divider()
 
-        # ── ENCABEZADO DE RECETA (fuera del formulario para poder cargar) ──
+        # ── ENCABEZADO DE RECETA ──
         col_r1, col_r2, col_r3 = st.columns(3)
         with col_r1:
             nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
@@ -552,17 +564,15 @@ def show_base_costos():
         if not st.session_state.ingredientes_receta:
             st.info("Presiona '➕ Agregar ingrediente' para comenzar la captura.")
         else:
-            # Mostrar encabezados
-            col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([2.5, 1.0, 1.0, 1.0, 1.0])
+            col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([2.5,1.0,1.0,1.0,1.0])
             col_h1.write("**Ingrediente**")
             col_h2.write("**Cantidad**")
             col_h3.write("**Unidad**")
             col_h4.write("**Precio Insumo**")
             col_h5.write("**Total**")
 
-            # Iterar sobre cada fila
             for i, ing in enumerate(st.session_state.ingredientes_receta):
-                cols = st.columns([2.5, 1.0, 1.0, 1.0, 1.0])
+                cols = st.columns([2.5,1.0,1.0,1.0,1.0])
                 with cols[0]:
                     insumo_actual = ing.get("insumo", "")
                     if insumo_actual not in insumos_con_costo:
@@ -614,7 +624,6 @@ def show_base_costos():
                     total = round(cantidad * costo_auto, 4)
                     st.write(f"**${total:.2f}**")
 
-                # Actualizar el diccionario de la fila
                 st.session_state.ingredientes_receta[i] = {
                     "insumo": insumo_seleccionado,
                     "cantidad": cantidad,
@@ -623,12 +632,9 @@ def show_base_costos():
                     "total": total
                 }
 
-        # Métricas y guardado (siempre visibles si hay ingredientes)
         if st.session_state.ingredientes_receta:
-            # Calcular costo neto en tiempo real
             costo_neto = sum(limpiar_valor(ing.get("total", 0)) for ing in st.session_state.ingredientes_receta)
 
-            # Comparador de factores
             st.markdown("### 💰 Comparador de precio por factor")
             factores = [2.0, 2.5, 3.0]
             col_factor = st.columns(len(factores))
@@ -643,8 +649,8 @@ def show_base_costos():
                     st.caption(f"Food Cost: {food_cost:.1f}%")
                     st.caption(f"Margen: ${margen:,.2f} ({margen_pct:.0f}%)")
 
-            # Factor personalizado y precio final
             st.markdown("### ⚙️ Factor personalizado")
+
             if st.session_state.receta_precio > 0:
                 precio_real_guardado = st.session_state.receta_precio
                 factor_real_guardado = precio_real_guardado / costo_neto if costo_neto > 0 else 0.0
@@ -697,7 +703,6 @@ def show_base_costos():
             c3.metric("Food Cost %", f"{fc_final:.1f}%")
             c4.metric("Margen Bruto", f"${margen_final:,.2f} ({margen_pct_final:.0f}%)")
 
-            # Guardar receta (botón único)
             if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", width="stretch"):
                 nombre_final = st.session_state.receta_nombre.strip()
                 if not nombre_final:
@@ -764,6 +769,8 @@ def show_base_costos():
                                 st.error(msg)
                         except Exception as e:
                             st.error(f"Error al guardar: {e}")
+        else:
+            st.info("Presiona '➕ Agregar ingrediente' para comenzar la captura.")
 
         # ⚡ EDICIÓN MASIVA DE PRECIOS DE RECETAS
         if not df_rec.empty:
@@ -848,3 +855,386 @@ def show_base_costos():
                     Margen_Promedio=("Precio_Venta", lambda x: (x - df_por_receta.loc[x.index, "Costo_Neto_Receta"]).mean())
                 ).reset_index()
                 st.dataframe(df_agrup_linea, hide_index=True, width="stretch")
+    # ==================== TAB COMBOS ====================
+    with tab_combos:
+        st.subheader("🍱 Combos de Productos")
+        df_combos = cargar_combos()
+        df_ci3 = cargar_costos_insumos()
+        df_cat3 = cargar_datos_integrales()[0]
+        df_rec3 = cargar_recetas()
+
+        # Inicialización de estado para combo
+        if "combo_nombre" not in st.session_state:
+            st.session_state.combo_nombre = ""
+        if "combo_linea" not in st.session_state:
+            st.session_state.combo_linea = ""
+        if "combo_presentacion" not in st.session_state:
+            st.session_state.combo_presentacion = ""
+        if "combo_fecha_revision" not in st.session_state:
+            st.session_state.combo_fecha_revision = ts_hermosillo().split(" ")[0]
+        if "combo_precio" not in st.session_state:
+            st.session_state.combo_precio = 0.0
+        if "combo_factor_manual" not in st.session_state:
+            st.session_state.combo_factor_manual = 2.5
+        if "combo_modo" not in st.session_state:
+            st.session_state.combo_modo = "Nuevo combo"
+        if "combo_original" not in st.session_state:
+            st.session_state.combo_original = ""
+        if "componentes_combo" not in st.session_state:
+            st.session_state.componentes_combo = []
+
+        # Encabezado del combo
+        col_c1, col_c2, col_c3 = st.columns(3)
+        with col_c1:
+            nombre_combo = st.text_input("Nombre del combo:", value=st.session_state.combo_nombre, key="combo_nombre_input")
+        with col_c2:
+            linea_combo = st.text_input("Línea / Categoría:", value=st.session_state.combo_linea, placeholder="Ej: Desayunos, Almuerzos...")
+        with col_c3:
+            presentacion_combo = st.text_input("Presentación / Tamaño:", value=st.session_state.combo_presentacion, placeholder="Ej: Regular, Grande")
+            fecha_revision_combo = st.date_input("Fecha Revisión:", value=pd.to_datetime(st.session_state.combo_fecha_revision))
+
+        st.session_state.combo_nombre = nombre_combo
+        st.session_state.combo_linea = linea_combo
+        st.session_state.combo_presentacion = presentacion_combo
+        st.session_state.combo_fecha_revision = fecha_revision_combo.strftime("%Y-%m-%d")
+
+        # Botones de acción combo
+        col_acc_combo1, col_acc_combo2, col_acc_combo3 = st.columns(3)
+        with col_acc_combo1:
+            if st.button("🧹 Nuevo combo (limpiar)", width="stretch"):
+                st.session_state.componentes_combo = []
+                st.session_state.combo_nombre = ""
+                st.session_state.combo_linea = ""
+                st.session_state.combo_presentacion = ""
+                st.session_state.combo_precio = 0.0
+                st.session_state.combo_factor_manual = 2.5
+                st.session_state.combo_modo = "Nuevo combo"
+                st.session_state.combo_original = ""
+                st.rerun()
+        with col_acc_combo2:
+            if st.button("➕ Agregar componente", width="stretch"):
+                st.session_state.componentes_combo.append({
+                    "tipo": "Receta",
+                    "referencia": "",
+                    "cantidad": 1.0,
+                    "unidad": "pz",
+                    "costo_unit": 0.0,
+                    "total": 0.0
+                })
+                st.rerun()
+        with col_acc_combo3:
+            if st.session_state.componentes_combo and st.button("🗑️ Quitar último", width="stretch"):
+                st.session_state.componentes_combo.pop()
+                st.rerun()
+
+        # Selector de combo existente
+        combos_existentes = sorted(df_combos["Combo"].unique()) if not df_combos.empty else []
+        if combos_existentes:
+            col_combo_sel, col_combo_btn = st.columns(2)
+            with col_combo_sel:
+                combo_seleccionado = st.selectbox("Seleccionar combo existente:", combos_existentes, key="combo_seleccionado")
+            with col_combo_btn:
+                cbtn1, cbtn2 = st.columns(2)
+                with cbtn1:
+                    if st.button("📂 Cargar combo", width="stretch"):
+                        df_combo_edit = df_combos[df_combos["Combo"] == combo_seleccionado]
+                        if not df_combo_edit.empty:
+                            comps = []
+                            for _, row in df_combo_edit.iterrows():
+                                comps.append({
+                                    "tipo": row.get("Tipo_Componente", "Receta"),
+                                    "referencia": row.get("Componente", ""),
+                                    "cantidad": limpiar_valor(row.get("Cantidad", 1)),
+                                    "unidad": row.get("Unidad_Medida", "pz"),
+                                    "costo_unit": limpiar_valor(row.get("Costo_Unitario", 0)),
+                                    "total": limpiar_valor(row.get("Costo_Total_Componente", 0))
+                                })
+                            st.session_state.componentes_combo = comps
+                            st.session_state.combo_nombre = combo_seleccionado
+                            st.session_state.combo_linea = str(df_combo_edit.iloc[0].get("Linea", ""))
+                            st.session_state.combo_presentacion = str(df_combo_edit.iloc[0].get("Presentacion", ""))
+                            st.session_state.combo_fecha_revision = str(df_combo_edit.iloc[0].get("Fecha_Revision", ""))
+                            st.session_state.combo_precio = limpiar_valor(df_combo_edit.iloc[0].get("Precio_Venta", 0))
+                            st.session_state.combo_original = combo_seleccionado
+                            st.session_state.combo_modo = "Editar combo existente"
+                            st.rerun()
+                with cbtn2:
+                    if st.button("📋 Duplicar combo", width="stretch"):
+                        df_combo_dup = df_combos[df_combos["Combo"] == combo_seleccionado]
+                        if not df_combo_dup.empty:
+                            comps = []
+                            for _, row in df_combo_dup.iterrows():
+                                comps.append({
+                                    "tipo": row.get("Tipo_Componente", "Receta"),
+                                    "referencia": row.get("Componente", ""),
+                                    "cantidad": limpiar_valor(row.get("Cantidad", 1)),
+                                    "unidad": row.get("Unidad_Medida", "pz"),
+                                    "costo_unit": limpiar_valor(row.get("Costo_Unitario", 0)),
+                                    "total": limpiar_valor(row.get("Costo_Total_Componente", 0))
+                                })
+                            st.session_state.componentes_combo = comps
+                            st.session_state.combo_nombre = combo_seleccionado + " (copia)"
+                            st.session_state.combo_linea = str(df_combo_dup.iloc[0].get("Linea", ""))
+                            st.session_state.combo_presentacion = str(df_combo_dup.iloc[0].get("Presentacion", ""))
+                            st.session_state.combo_fecha_revision = ts_hermosillo().split(" ")[0]
+                            st.session_state.combo_precio = limpiar_valor(df_combo_dup.iloc[0].get("Precio_Venta", 0))
+                            st.session_state.combo_original = ""
+                            st.session_state.combo_modo = "Nuevo combo"
+                            st.rerun()
+        else:
+            st.info("No hay combos guardados todavía.")
+        st.divider()
+
+        # Lista de componentes con widgets ligeros
+        st.subheader("🧩 Componentes del combo")
+        if not st.session_state.componentes_combo:
+            st.info("Presiona '➕ Agregar componente' para comenzar.")
+        else:
+            col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([1.5,2.0,1.0,1.0,1.0])
+            col_h1.write("**Tipo**")
+            col_h2.write("**Componente**")
+            col_h3.write("**Cant.**")
+            col_h4.write("**Unidad**")
+            col_h5.write("**Total**")
+
+            recetas_lista = sorted(df_rec3["Receta"].unique()) if not df_rec3.empty else []
+            insumos_lista = sorted(df_ci3["Nombre_Insumo"].dropna().unique()) if not df_ci3.empty else []
+
+            for i, comp in enumerate(st.session_state.componentes_combo):
+                cols = st.columns([1.5,2.0,1.0,1.0,1.0])
+                with cols[0]:
+                    tipo_comp = st.selectbox(
+                        "Tipo",
+                        options=["Receta", "Insumo"],
+                        index=0 if comp.get("tipo", "Receta") == "Receta" else 1,
+                        key=f"combo_tipo_{i}",
+                        label_visibility="collapsed"
+                    )
+                with cols[1]:
+                    if tipo_comp == "Receta":
+                        referencia_actual = comp.get("referencia", "")
+                        if referencia_actual not in recetas_lista:
+                            referencia_actual = ""
+                        referencia = st.selectbox(
+                            "Receta",
+                            options=[""] + recetas_lista,
+                            index=0 if not referencia_actual else ([""] + recetas_lista).index(referencia_actual),
+                            key=f"combo_ref_{i}",
+                            label_visibility="collapsed"
+                        )
+                        if referencia:
+                            df_receta_sel = df_rec3[df_rec3["Receta"] == referencia]
+                            costo_unitario = limpiar_valor(df_receta_sel.iloc[0].get("Costo_Neto_Receta", 0))
+                            unidad_auto = "pz"
+                            cantidad_auto = 1.0
+                        else:
+                            costo_unitario = 0.0
+                            unidad_auto = "pz"
+                            cantidad_auto = comp.get("cantidad", 1.0)
+                    else:
+                        referencia_actual = comp.get("referencia", "")
+                        if referencia_actual not in insumos_lista:
+                            referencia_actual = ""
+                        referencia = st.selectbox(
+                            "Insumo",
+                            options=[""] + insumos_lista,
+                            index=0 if not referencia_actual else ([""] + insumos_lista).index(referencia_actual),
+                            key=f"combo_ref_{i}",
+                            label_visibility="collapsed"
+                        )
+                        if referencia:
+                            mask_ins = df_ci3["Nombre_Insumo"] == referencia
+                            if mask_ins.any():
+                                ultimo = df_ci3[mask_ins].sort_values("Fecha_Captura").iloc[-1]
+                                if "Costo_Base_Unitario" in ultimo and limpiar_valor(ultimo.get("Costo_Base_Unitario", 0)) > 0:
+                                    costo_unitario = limpiar_valor(ultimo["Costo_Base_Unitario"])
+                                    unidad_auto = str(ultimo.get("Unidad_Base", "pz"))
+                                else:
+                                    costo_unitario = limpiar_valor(ultimo["Costo_Unitario"])
+                                    unidad_auto = str(ultimo.get("Unidad_Medida", "pz"))
+                            else:
+                                costo_unitario = 0.0
+                                unidad_auto = comp.get("unidad", "pz")
+                            cantidad_auto = comp.get("cantidad", 1.0)
+                        else:
+                            costo_unitario = 0.0
+                            unidad_auto = comp.get("unidad", "pz")
+                            cantidad_auto = comp.get("cantidad", 1.0)
+
+                with cols[2]:
+                    cantidad = st.number_input(
+                        "Cantidad",
+                        min_value=0.0,
+                        step=1.0,
+                        value=float(cantidad_auto),
+                        key=f"combo_cant_{i}",
+                        label_visibility="collapsed"
+                    )
+                with cols[3]:
+                    unidad = st.selectbox(
+                        "Unidad",
+                        options=UNIDADES_MED,
+                        index=UNIDADES_MED.index(unidad_auto) if unidad_auto in UNIDADES_MED else 0,
+                        key=f"combo_unidad_{i}",
+                        label_visibility="collapsed"
+                    )
+                with cols[4]:
+                    total = round(cantidad * costo_unitario, 4)
+                    st.write(f"**${total:.2f}**")
+
+                st.session_state.componentes_combo[i] = {
+                    "tipo": tipo_comp,
+                    "referencia": referencia,
+                    "cantidad": cantidad,
+                    "unidad": unidad,
+                    "costo_unit": costo_unitario,
+                    "total": total
+                }
+
+        if st.session_state.componentes_combo:
+            costo_neto_combo = sum(limpiar_valor(c["total"]) for c in st.session_state.componentes_combo)
+
+            st.markdown("### 💰 Comparador de precio por factor")
+            factores = [2.0, 2.5, 3.0]
+            col_factor_combo = st.columns(len(factores))
+            for i, f in enumerate(factores):
+                precio_sug = round(costo_neto_combo * f, 2)
+                food_cost = (costo_neto_combo / precio_sug * 100) if precio_sug > 0 else 0.0
+                margen = precio_sug - costo_neto_combo
+                margen_pct = (margen / precio_sug * 100) if precio_sug > 0 else 0.0
+                with col_factor_combo[i]:
+                    st.markdown(f"**x{f}**")
+                    st.metric("Precio", f"${precio_sug:,.2f}")
+                    st.caption(f"Food Cost: {food_cost:.1f}%")
+                    st.caption(f"Margen: ${margen:,.2f} ({margen_pct:.0f}%)")
+
+            st.markdown("### ⚙️ Factor personalizado")
+
+            if st.session_state.combo_precio > 0:
+                precio_real_combo = st.session_state.combo_precio
+                factor_real_combo = precio_real_combo / costo_neto_combo if costo_neto_combo > 0 else 0.0
+                col_real1, col_real2 = st.columns(2)
+                with col_real1:
+                    st.metric("Precio de Venta Actual", f"${precio_real_combo:,.2f}")
+                with col_real2:
+                    st.metric("Factor Actual", f"x{factor_real_combo:.2f}")
+
+            col_factor_custom_combo, col_precio_custom_combo = st.columns(2)
+            with col_factor_custom_combo:
+                factor_manual_combo = st.number_input(
+                    "Factor multiplicador personalizado:",
+                    min_value=0.1,
+                    step=0.1,
+                    value=st.session_state.get("combo_factor_manual", 2.5),
+                    key="combo_factor_manual_input"
+                )
+                precio_sugerido_combo = round(costo_neto_combo * factor_manual_combo, 2)
+                st.caption(f"Precio sugerido: **${precio_sugerido_combo:,.2f}**")
+            with col_precio_custom_combo:
+                if st.session_state.combo_precio > 0:
+                    valor_inicial_combo = st.session_state.combo_precio
+                else:
+                    valor_inicial_combo = precio_sugerido_combo
+
+                precio_venta_combo = st.number_input(
+                    "Precio de Venta ($):",
+                    min_value=0.0,
+                    step=0.5,
+                    value=valor_inicial_combo,
+                    key="combo_precio_input"
+                )
+                if precio_venta_combo > 0 and costo_neto_combo > 0:
+                    factor_real_combo_calc = precio_venta_combo / costo_neto_combo
+                    st.caption(f"Factor real: **x{factor_real_combo_calc:.2f}**")
+                else:
+                    st.caption("Factor real: —")
+
+            st.session_state.combo_factor_manual = factor_manual_combo
+            st.session_state.combo_precio = precio_venta_combo
+
+            fc_final_combo = (costo_neto_combo / precio_venta_combo * 100) if precio_venta_combo > 0 else 0.0
+            margen_final_combo = precio_venta_combo - costo_neto_combo
+            margen_pct_final_combo = (margen_final_combo / precio_venta_combo * 100) if precio_venta_combo > 0 else 0.0
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Costo Neto Combo", f"${costo_neto_combo:,.2f}")
+            c2.metric("Precio de Venta", f"${precio_venta_combo:,.2f}")
+            c3.metric("Food Cost %", f"{fc_final_combo:.1f}%")
+            c4.metric("Margen Bruto", f"${margen_final_combo:,.2f} ({margen_pct_final_combo:.0f}%)")
+
+            if st.button("💾 GUARDAR COMBO", type="primary", width="stretch"):
+                nombre_final_combo = st.session_state.combo_nombre.strip()
+                if not nombre_final_combo:
+                    st.error("Escribe el nombre del combo.")
+                elif not st.session_state.componentes_combo:
+                    st.error("Agrega al menos un componente.")
+                elif precio_venta_combo <= 0:
+                    st.error("El precio de venta debe ser mayor que cero.")
+                else:
+                    ws_combo, err_combo = _asegurar_hoja_combos()
+                    if err_combo:
+                        st.error(err_combo)
+                    else:
+                        try:
+                            if st.session_state.combo_modo == "Editar combo existente" and st.session_state.combo_original:
+                                all_data = ws_combo.get_all_values()
+                                if len(all_data) > 1:
+                                    df_all = pd.DataFrame(all_data[1:], columns=all_data[0])
+                                    df_all = df_all[df_all["Combo"] != st.session_state.combo_original]
+                                    ws_combo.clear()
+                                    ws_combo.append_row(COLS_COMBOS)
+                                    if not df_all.empty:
+                                        ws_combo.append_rows(df_all.values.tolist())
+
+                            filas_combo = []
+                            for comp in st.session_state.componentes_combo:
+                                filas_combo.append([
+                                    nombre_final_combo,
+                                    st.session_state.combo_linea,
+                                    st.session_state.combo_presentacion,
+                                    st.session_state.combo_fecha_revision,
+                                    precio_venta_combo,
+                                    comp["referencia"],
+                                    comp["tipo"],
+                                    comp["cantidad"],
+                                    comp["unidad"],
+                                    comp["costo_unit"],
+                                    comp["total"],
+                                    costo_neto_combo,
+                                    round((comp["total"] / precio_venta_combo * 100) if precio_venta_combo > 0 else 0.0, 2),
+                                    ts_hermosillo(),
+                                    st.session_state.current_user
+                                ])
+                            ok_combo, msg_combo = append_rows_con_retry(ws_combo, filas_combo)
+                            if ok_combo:
+                                cargar_combos.clear()
+                                st.success(f"Combo '{nombre_final_combo}' guardado ({len(filas_combo)} componentes).")
+                                for key in ["componentes_combo","combo_nombre","combo_precio",
+                                            "combo_modo","combo_original"]:
+                                    if key in st.session_state:
+                                        st.session_state[key] = [] if key == "componentes_combo" else ""
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error(msg_combo)
+                        except Exception as e:
+                            st.error(f"Error al guardar combo: {e}")
+
+        # Analítica por Línea de combos
+        if not df_combos.empty and "Linea" in df_combos.columns:
+            st.divider()
+            st.subheader("📊 Analítica de Combos por Línea")
+            df_combos_linea = df_combos.copy()
+            df_combos_linea["Costo_Neto_Combo"] = df_combos_linea["Costo_Neto_Combo"].apply(limpiar_valor)
+            df_combos_linea["Precio_Venta"] = df_combos_linea["Precio_Venta"].apply(limpiar_valor)
+            df_combos_linea["Food_Cost_Pct"] = df_combos_linea["Food_Cost_Pct"].apply(limpiar_valor)
+
+            df_por_combo = df_combos_linea.drop_duplicates(subset=["Combo", "Linea"]).copy()
+            if not df_por_combo.empty:
+                df_agrup_combo = df_por_combo.groupby("Linea").agg(
+                    Num_Combos=("Combo", "nunique"),
+                    Precio_Promedio=("Precio_Venta", "mean"),
+                    Food_Cost_Promedio=("Food_Cost_Pct", "mean"),
+                    Margen_Promedio=("Precio_Venta", lambda x: (x - df_por_combo.loc[x.index, "Costo_Neto_Combo"]).mean())
+                ).reset_index()
+                st.dataframe(df_agrup_combo, hide_index=True, width="stretch")
