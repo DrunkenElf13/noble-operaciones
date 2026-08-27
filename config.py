@@ -51,6 +51,13 @@ COLS_RECETAS = [
     "Linea", "Presentacion", "Fecha_Revision", "Precio_Insumo",
     "Costo_Neto_Receta"
 ]
+COLS_COMBOS = [
+    "Combo", "Linea", "Presentacion", "Fecha_Revision",
+    "Precio_Venta", "Componente", "Tipo_Componente",
+    "Cantidad", "Unidad_Medida", "Costo_Unitario",
+    "Costo_Total_Componente", "Costo_Neto_Combo",
+    "Food_Cost_Pct", "Fecha_Captura", "Responsable"
+]
 COLS_CALENDARIO = [
     "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
     "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
@@ -65,7 +72,7 @@ COLS_CRITICAS_HISTORIAL = {"Nombre del Insumo", "Alm", "Barra", "Fecha de Invent
 
 GRUPOS       = ["A", "B", "C", "D", "E", "F", "G"]
 UNIDADES     = ["Noble", "Coffee Station"]
-UNIDADES_MED = ["pz", "ml", "gr", "kg", "lt", "pieza", "paquete"]
+UNIDADES_MED = ["pz", "ml", "gr", "kg", "lt", "oz"]
 
 CANALES_VENTA = ["Noble", "Coffee Station", "Noble To Go"]
 
