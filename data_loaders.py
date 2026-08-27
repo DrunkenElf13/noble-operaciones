@@ -7,7 +7,7 @@ from sheets import safe_worksheet, sh
 from utils import normalizar_dataframe, limpiar_valor, normalizar_nombre
 from config import (COLS_INSUMOS, COLS_HISTORIAL, COLS_VENTAS, COLS_GASTOS,
                     COLS_PRESUPUESTO, COLS_BASE_COSTOS, COLS_MERMA,
-                    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_AVISOS,
+                    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_COMBOS, COLS_AVISOS,
                     COLS_CRITICAS_INSUMOS, COLS_CRITICAS_HISTORIAL)
 
 def _safe_get_all_values(ws, retries=3, delay=2):
@@ -190,15 +190,11 @@ def cargar_costos_insumos():
         data = _safe_get_all_values(ws)
         if len(data) < 2:
             return pd.DataFrame(columns=COLS_COSTOS_INSUMOS)
-
-        # Tomar solo las primeras 13 columnas de cada fila
-        data_recortado = [fila[:13] for fila in data]
-        # Si hay filas con menos de 13, rellenar con ""
-        data_recortado = [fila + [""]*(13 - len(fila)) for fila in data_recortado]
-
-        df = pd.DataFrame(data_recortado[1:], columns=COLS_COSTOS_INSUMOS)
-
-        # Limpieza numérica
+        df = pd.DataFrame(data[1:], columns=data[0])
+        for col in COLS_COSTOS_INSUMOS:
+            if col not in df.columns:
+                df[col] = ""
+        # Columnas numéricas a limpiar
         for col in ["Costo_Presentacion","Costo_Unitario","Contenido_Base_por_Unidad","Costo_Base_Unitario"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
@@ -231,6 +227,30 @@ def cargar_recetas():
     except Exception as e:
         st.warning(f"Error cargando recetas: {e}")
         return pd.DataFrame(columns=COLS_RECETAS)
+
+@st.cache_data(ttl=120)
+def cargar_combos():
+    if sh is None:
+        return pd.DataFrame(columns=COLS_COMBOS)
+    ws, err = safe_worksheet(sh, "Combos")
+    if err:
+        return pd.DataFrame(columns=COLS_COMBOS)
+    try:
+        data = _safe_get_all_values(ws)
+        if len(data) < 2:
+            return pd.DataFrame(columns=COLS_COMBOS)
+        df = pd.DataFrame(data[1:], columns=data[0])
+        for col in COLS_COMBOS:
+            if col not in df.columns:
+                df[col] = ""
+        for col in ["Cantidad","Costo_Unitario","Costo_Total_Componente",
+                    "Costo_Neto_Combo","Precio_Venta","Food_Cost_Pct"]:
+            if col in df.columns:
+                df[col] = df[col].apply(limpiar_valor)
+        return df
+    except Exception as e:
+        st.warning(f"Error cargando combos: {e}")
+        return pd.DataFrame(columns=COLS_COMBOS)
 
 @st.cache_data(ttl=120)
 def cargar_merma():
@@ -292,7 +312,6 @@ def cargar_todas_ventas():
             adeudo = df["Adeudo"].apply(limpiar_valor) if "Adeudo" in df.columns else 0.0
             anticipo = df["Anticipo"].apply(limpiar_valor) if "Anticipo" in df.columns else 0.0
 
-            # Detectar filas de abono (tipo "💰 Abono")
             if "Tipo" in df.columns:
                 mask_abono = df["Tipo"].astype(str).str.strip() == "💰 Abono"
                 df.loc[mask_abono, "Venta_Diaria"] = total_cotizado[mask_abono]
@@ -309,7 +328,6 @@ def cargar_todas_ventas():
                 df["Anticipo"] = 0.0
             df["Adeudo"] = adeudo
 
-            # Mes y Año desde Fecha_Contratacion (o Fecha si está vacía)
             if "Fecha_Contratacion" in df.columns:
                 fecha_ref = df["Fecha_Contratacion"].astype(str).str.strip()
                 mask_empty = (fecha_ref == "") | (fecha_ref.isna())
@@ -331,7 +349,6 @@ def cargar_todas_ventas():
             df["Mes"] = fechas_dt.dt.month.fillna(0).astype(int).astype(str)
             df["Año"] = fechas_dt.dt.year.fillna(0).astype(int).astype(str)
 
-            # Rellenar columnas faltantes
             for col in COLS_VENTAS:
                 if col not in df.columns:
                     if col in ["Efectivo","Transferencias","Tarjeta","Total_POS","Uber_Eats","Rappi",
@@ -342,7 +359,7 @@ def cargar_todas_ventas():
                     else:
                         df[col] = ""
             df["Canal"] = hoja
-        else:  # Ventas POS
+        else:
             if "Canal" not in df.columns:
                 df["Canal"] = "Noble"
             else:
