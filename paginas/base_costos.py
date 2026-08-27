@@ -93,6 +93,7 @@ def procesar_importacion_recetas(archivo, mapeo_ingredientes, precio_default=0.0
     except Exception as e:
         st.error(f"Error al procesar el archivo: {e}")
         return None
+
 def show_base_costos():
     if not tiene_permiso("BaseCostos"):
         st.error("No tienes permiso para esta página.")
@@ -106,7 +107,6 @@ def show_base_costos():
     tab_costos, tab_recetas, tab_combos = st.tabs([
         "💰 Costos de Insumos", "🍽️ Recetas", "🍱 Combos"
     ])
-
     # ==================== TAB COSTOS DE INSUMOS ====================
     with tab_costos:
         st.subheader("Registro de Costo de Insumos (desde catálogo)")
@@ -417,7 +417,11 @@ def show_base_costos():
 
                         linea_imp = st.text_input("Línea (opcional):", value="")
                         presentacion_imp = st.text_input("Presentación (opcional):", value="")
-                        fecha_rev_imp = st.date_input("Fecha Revisión (opcional):", value=pd.to_datetime("today"))
+                        fecha_rev_imp = st.date_input(
+                            "Fecha Revisión (opcional):",
+                            value=pd.to_datetime("today"),
+                            key="import_fecha_revision"
+                        )
 
                         if st.button("🔍 Previsualizar recetas importadas"):
                             if not mapeo:
@@ -464,7 +468,11 @@ def show_base_costos():
             linea_final = st.text_input("Línea / Categoría:", value=st.session_state.receta_linea, placeholder="Ej: Bebidas, Alimentos, Repostería...")
         with col_r3:
             presentacion = st.text_input("Presentación / Tamaño:", value=st.session_state.receta_presentacion, placeholder="12oz, 16oz, rebanada...")
-            fecha_revision = st.date_input("Fecha Revisión:", value=pd.to_datetime(st.session_state.receta_fecha_revision))
+            fecha_revision = st.date_input(
+                "Fecha Revisión:",
+                value=pd.to_datetime(st.session_state.receta_fecha_revision),
+                key="receta_fecha_revision_input"
+            )
 
         st.session_state.receta_nombre = nombre_receta
         st.session_state.receta_linea = linea_final
@@ -891,7 +899,11 @@ def show_base_costos():
             linea_combo = st.text_input("Línea / Categoría:", value=st.session_state.combo_linea, placeholder="Ej: Desayunos, Almuerzos...")
         with col_c3:
             presentacion_combo = st.text_input("Presentación / Tamaño:", value=st.session_state.combo_presentacion, placeholder="Ej: Regular, Grande")
-            fecha_revision_combo = st.date_input("Fecha Revisión:", value=pd.to_datetime(st.session_state.combo_fecha_revision))
+            fecha_revision_combo = st.date_input(
+                "Fecha Revisión:",
+                value=pd.to_datetime(st.session_state.combo_fecha_revision),
+                key="combo_fecha_revision_input"
+            )
 
         st.session_state.combo_nombre = nombre_combo
         st.session_state.combo_linea = linea_combo
