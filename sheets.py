@@ -217,9 +217,8 @@ def _asegurar_hoja_borradores():
     """Crea o devuelve la hoja Borradores_Inventario."""
     try:
         ws = sh.worksheet("Borradores_Inventario")
-        # Verificar encabezados
-        encabezados = ws.row_values(1)
-        if encabezados != ["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"]:
+        encabezados_actuales = ws.row_values(1)
+        if encabezados_actuales != ["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"]:
             ws.update(range_name="A1:F1", values=[["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"]])
         return ws, None
     except gspread.exceptions.WorksheetNotFound:
