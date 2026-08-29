@@ -23,7 +23,6 @@ def _guardar_borrador_inventario(session_id, u_sel, fecha, modo, data_dict):
         return False
     try:
         datos_json = json.dumps(data_dict)
-        # Buscar fila existente
         todos = ws.get_all_values()
         fila_idx = None
         for i, fila in enumerate(todos[1:], start=2):
@@ -97,7 +96,7 @@ def show_inventario():
         st.success("✅ Inventario registrado correctamente.")
         if st.button("➕ Nueva captura", width="stretch"):
             for key in list(st.session_state.keys()):
-                if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_", "inv_bulk_data")):
+                if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_", "inv_bulk_data", "inv_campos")):
                     del st.session_state[key]
             st.session_state.inventario_guardado = False
             st.rerun()
@@ -112,13 +111,12 @@ def show_inventario():
         r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx,
                              disabled=(st.session_state.user_role != "admin"))
 
-    # Limpiar estado si cambia la unidad
     if "ultima_unidad_inv" not in st.session_state:
         st.session_state.ultima_unidad_inv = u_sel
 
     if st.session_state.ultima_unidad_inv != u_sel:
         for key in list(st.session_state.keys()):
-            if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_")):
+            if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_", "inv_bulk_data", "inv_campos")):
                 del st.session_state[key]
         st.session_state.ultima_unidad_inv = u_sel
         st.session_state.pop("borrador_consultado", None)
@@ -137,8 +135,7 @@ def show_inventario():
                     if borrador["modo"] == "bulk":
                         st.session_state.inv_bulk_data = borrador["data"].get("bulk_data")
                     else:
-                        for key, valor in borrador["data"].get("campos", {}).items():
-                            st.session_state[key] = valor
+                        st.session_state.inv_campos = borrador["data"].get("campos", {})
                     st.session_state.borrador_consultado = True
                     st.rerun()
             with col_bor2:
@@ -165,6 +162,33 @@ def show_inventario():
         st.info("Selecciona al menos un grupo para mostrar insumos.")
         return
 
+    # Inicializar estructura centralizada de campos manuales con TODA la unidad
+    if "inv_campos" not in st.session_state:
+        inv_campos = {}
+        for _, row in df_u.iterrows():
+            nom = str(row.get("Nombre del Insumo",""))
+            safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]
+            prev = buscar_insumo_en_actual(df_actual, nom)
+            v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
+            v_bar_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
+            v_tara_hist = limpiar_valor(prev.get("Tara",0)) if prev is not None else 0.0
+            v_tara_cat = limpiar_valor(row.get("Tara",0))
+            v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
+            ud_cat = str(row.get("Unidad de Medida","pz")).lower()
+            inv_campos[safe_nom] = {
+                "a": v_alm_prev,
+                "b": v_bar_prev,
+                "u": ud_cat,
+                "tara": v_tara_init,
+                "p": bool(prev.get("Necesita Compra", False)) if prev is not None else False,
+                "c": "",
+                "nombre": nom,
+                "row": row.to_dict()
+            }
+        st.session_state.inv_campos = inv_campos
+    else:
+        inv_campos = st.session_state.inv_campos
+
     modo_bulk_inv = st.toggle("🚀 Activar Captura Masiva (Bulk)")
 
     # Autoguardado silencioso cada 5 minutos
@@ -173,8 +197,7 @@ def show_inventario():
         if modo_bulk_inv:
             data = {"modo": "bulk", "bulk_data": st.session_state.get("inv_bulk_data")}
         else:
-            campos = {k: st.session_state[k] for k in st.session_state if k.startswith(("a_","b_","u_","tara_","p_","c_"))}
-            data = {"modo": "manual", "campos": campos}
+            data = {"modo": "manual", "campos": st.session_state.get("inv_campos", {})}
         _guardar_borrador_inventario(session_id, u_sel, hoy_str, data["modo"], data)
 
     autoguardar_inventario()
@@ -187,7 +210,7 @@ def show_inventario():
         st.caption("Los datos se conservarán incluso si la página se recarga accidentalmente.")
         if "inv_bulk_data" not in st.session_state or st.session_state.inv_bulk_data is None:
             bulk_data = []
-            for idx_row, row in df_f.iterrows():
+            for _, row in df_u.iterrows():  # toda la unidad, sin filtro de grupo
                 nom = str(row.get("Nombre del Insumo",""))
                 prev = buscar_insumo_en_actual(df_actual, nom)
                 v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
@@ -326,7 +349,6 @@ def show_inventario():
             st.session_state.mostrar_vista_previa = False
 
         with st.form("form_inventario", clear_on_submit=False):
-            # Encabezados
             h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
             headers = [
                 ("Insumo / Ref", "Nombre del insumo y su unidad esperada."),
@@ -350,76 +372,77 @@ def show_inventario():
             regs_form = {}
             for idx_row, row in df_f.iterrows():
                 nom      = str(row.get("Nombre del Insumo",""))
-                # Clave estable
                 safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]
 
-                prev        = buscar_insumo_en_actual(df_actual, nom)
-                v_prev      = prev["Stock Neto Calculado"] if prev is not None else 0.0
-                v_alm_prev  = limpiar_valor(prev["Alm"])   if prev is not None else 0.0
-                v_bar_prev  = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
-                v_min       = limpiar_valor(row.get("Stock Mínimo",0))
-                v_tara_hist = limpiar_valor(prev.get("Tara",0)) if prev is not None else 0.0
-                v_tara_cat  = limpiar_valor(row.get("Tara",0))
-                v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
-                ud_cat = str(row.get("Unidad de Medida","pz")).lower()
+                # Obtener valores desde inv_campos
+                campos = st.session_state.inv_campos.get(safe_nom)
+                if campos is None:
+                    prev = buscar_insumo_en_actual(df_actual, nom)
+                    v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
+                    v_bar_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
+                    v_tara_hist = limpiar_valor(prev.get("Tara",0)) if prev is not None else 0.0
+                    v_tara_cat = limpiar_valor(row.get("Tara",0))
+                    v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
+                    ud_cat = str(row.get("Unidad de Medida","pz")).lower()
+                    campos = {
+                        "a": v_alm_prev,
+                        "b": v_bar_prev,
+                        "u": ud_cat,
+                        "tara": v_tara_init,
+                        "p": bool(prev.get("Necesita Compra", False)) if prev is not None else False,
+                        "c": "",
+                        "nombre": nom,
+                        "row": row.to_dict()
+                    }
+                    st.session_state.inv_campos[safe_nom] = campos
 
                 c1,c2,c3,c4,c5,c6,c7,c8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
                 with c1:
-                    st.write(f"**{nom}** *({ud_cat})*")
+                    st.write(f"**{nom}** *({campos['u']})*")
                     st.caption(f"Marca: {row.get('Marca','-')} | Prov: {row.get('Proveedor','-')}")
-                    diff  = v_prev - v_min
+                    v_prev = campos.get("a",0.0) + max(0.0, campos.get("b",0.0) - campos.get("tara",0.0))
+                    v_min = limpiar_valor(row.get("Stock Mínimo",0))
+                    diff = v_prev - v_min
                     color = "green" if diff >= 0 else "red"
-                    tara_txt = f" | Tara: {v_tara_init}" if v_tara_init > 0 else ""
+                    tara_txt = f" | Tara: {campos.get('tara',0.0)}" if campos.get('tara',0.0) > 0 else ""
                     st.markdown(
                         f"<small>Anterior: {v_prev} | Mín: {v_min} (<span style='color:{color}'>{diff:+.1f}</span>){tara_txt}</small>",
                         unsafe_allow_html=True
                     )
                 with c2:
-                    alm_key = f"a_{safe_nom}"
-                    if alm_key not in st.session_state: st.session_state[alm_key] = v_alm_prev
-                    v_a = st.number_input("Alm", min_value=0.0, step=1.0, key=alm_key,
-                                          label_visibility="collapsed",
-                                          placeholder=f"en {ud_cat}")
+                    v_a = st.number_input("Alm", min_value=0.0, step=1.0, value=float(campos.get("a",0.0)),
+                                          key=f"a_{safe_nom}", label_visibility="collapsed")
                 with c3:
-                    bar_key = f"b_{safe_nom}"
-                    if bar_key not in st.session_state: st.session_state[bar_key] = v_bar_prev
-                    v_b = st.number_input("Bar", min_value=0.0, step=1.0, key=bar_key,
-                                          label_visibility="collapsed",
-                                          placeholder=f"en {ud_cat}")
+                    v_b = st.number_input("Bar", min_value=0.0, step=1.0, value=float(campos.get("b",0.0)),
+                                          key=f"b_{safe_nom}", label_visibility="collapsed")
                 with c4:
-                    u_act = str(row.get("Unidad de Medida","pz")).lower()
+                    u_actual = str(campos.get("u","pz")).lower()
                     v_u = st.selectbox("U", UNIDADES_MED,
-                                       index=UNIDADES_MED.index(u_act) if u_act in UNIDADES_MED else 0,
+                                       index=UNIDADES_MED.index(u_actual) if u_actual in UNIDADES_MED else 0,
                                        key=f"u_{safe_nom}", label_visibility="collapsed")
-                    if v_u != ud_cat:
-                        st.warning(f"⚠️ Unidad del catálogo para {nom}: {ud_cat}. Estás usando {v_u}.")
                 with c5:
-                    tara_key = f"tara_{safe_nom}"
-                    if tara_key not in st.session_state: st.session_state[tara_key] = v_tara_init
-                    v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1,
-                                                    key=tara_key, label_visibility="collapsed",
-                                                    placeholder="en gr")
-                    if v_tara_manual != v_tara_cat and v_tara_cat > 0:
-                        st.caption(f"⚠️ Tara en catálogo: {v_tara_cat}")
+                    v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1, value=float(campos.get("tara",0.0)),
+                                                    key=f"tara_{safe_nom}", label_visibility="collapsed")
                 with c6:
-                    v_b_neto    = max(0.0, v_b - v_tara_manual)
+                    v_b_neto = max(0.0, v_b - v_tara_manual)
                     v_n_display = v_a + v_b_neto
                     st.write(f"**{v_n_display:.1f}**")
-                    if v_prev > 0 and v_n_display > 0:
-                        pct_diff = abs(v_n_display - v_prev) / v_prev * 100
-                        if pct_diff > 100:
-                            diferencias_grandes = True
-                            lista_sospechosos.append(f"{nom}: anterior {v_prev:.1f}, nuevo {v_n_display:.1f} (+{pct_diff:.0f}%)")
-                        elif pct_diff > 50:
-                            st.warning(f"⚠️ Diferencia del {pct_diff:.0f}% respecto al anterior")
                 with c7:
-                    v_comprar_prev = bool(prev.get("Necesita Compra",False)) if prev is not None else False
-                    ck_key = f"p_{safe_nom}"
-                    if ck_key not in st.session_state: st.session_state[ck_key] = v_comprar_prev
-                    v_p = st.checkbox("🛒", key=ck_key)
+                    v_p = st.checkbox("🛒", value=bool(campos.get("p", False)), key=f"p_{safe_nom}")
                 with c8:
-                    v_c = st.text_input("Obs", key=f"c_{safe_nom}", label_visibility="collapsed",
-                                        placeholder="Opcional")
+                    v_c = st.text_input("Obs", value=str(campos.get("c","")), key=f"c_{safe_nom}", label_visibility="collapsed")
+
+                # Actualizar inv_campos
+                st.session_state.inv_campos[safe_nom] = {
+                    "a": v_a,
+                    "b": v_b,
+                    "u": v_u,
+                    "tara": v_tara_manual,
+                    "p": v_p,
+                    "c": v_c,
+                    "nombre": nom,
+                    "row": row.to_dict()
+                }
 
                 regs_form[nom] = {
                     "a": v_a,
@@ -433,16 +456,10 @@ def show_inventario():
                     "anterior": v_prev,
                 }
 
-            # Botones del form
             revisar = st.form_submit_button("🔍 Revisar captura", width="stretch")
             if revisar:
                 st.session_state.mostrar_vista_previa = True
-                # Guardar borrador automáticamente al revisar
-                campos_guardar = {}
-                for key in list(st.session_state.keys()):
-                    if key.startswith(("a_","b_","u_","tara_","p_","c_")):
-                        campos_guardar[key] = st.session_state[key]
-                _guardar_borrador_inventario(session_id, u_sel, hoy_str, "manual", {"campos": campos_guardar})
+                _guardar_borrador_inventario(session_id, u_sel, hoy_str, "manual", {"campos": st.session_state.inv_campos})
                 st.rerun()
 
             if st.session_state.mostrar_vista_previa:
@@ -500,9 +517,7 @@ def show_inventario():
                     df_diff = pd.DataFrame(filas_diff)
                     st.dataframe(df_diff, hide_index=True, width="stretch")
 
-            # Botón procesar
             btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", width="stretch", type="primary")
-
             if btn_inv:
                 ws_his, err = safe_worksheet(sh, "Historial")
                 if err:
