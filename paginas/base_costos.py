@@ -474,17 +474,38 @@ def show_base_costos():
         # Encabezado de receta
         col_r1, col_r2, col_r3, col_r4 = st.columns([2, 1.5, 1.5, 1.0])
         with col_r1:
-            nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre)  # sin key
+            nombre_receta = st.text_input(
+                "Nombre de la receta:",
+                value=st.session_state.receta_nombre,
+                key=f"receta_nombre_input_{st.session_state.receta_version}"
+            )
         with col_r2:
-            linea_final = st.text_input("Línea / Categoría:", value=st.session_state.receta_linea, placeholder="Ej: Bebidas, Alimentos...")  # sin key
+            linea_final = st.text_input(
+                "Línea / Categoría:",
+                value=st.session_state.receta_linea,
+                placeholder="Ej: Bebidas, Alimentos...",
+                key=f"receta_linea_input_{st.session_state.receta_version}"
+            )
         with col_r3:
-            presentacion = st.text_input("Presentación / Tamaño:", value=st.session_state.receta_presentacion, placeholder="12oz, 16oz...")  # sin key
+            presentacion = st.text_input(
+                "Presentación / Tamaño:",
+                value=st.session_state.receta_presentacion,
+                placeholder="12oz, 16oz...",
+                key=f"receta_presentacion_input_{st.session_state.receta_version}"
+            )
             fecha_revision = st.date_input(
                 "Fecha Revisión:",
-                value=pd.to_datetime(st.session_state.receta_fecha_revision)
-            )  # sin key
+                value=pd.to_datetime(st.session_state.receta_fecha_revision),
+                key=f"receta_fecha_revision_input_{st.session_state.receta_version}"
+            )
         with col_r4:
-            rinde = st.number_input("Rinde (porciones):", min_value=0, step=1, value=int(st.session_state.receta_rinde))  # sin key
+            rinde = st.number_input(
+                "Rinde (porciones):",
+                min_value=0,
+                step=1,
+                value=int(st.session_state.receta_rinde),
+                key=f"receta_rinde_input_{st.session_state.receta_version}"
+            )
             st.caption("0 = 1 porción")
 
         st.session_state.receta_nombre = nombre_receta
@@ -963,15 +984,30 @@ def show_base_costos():
 
         col_c1, col_c2, col_c3 = st.columns(3)
         with col_c1:
-            nombre_combo = st.text_input("Nombre del combo:", value=st.session_state.combo_nombre)  # sin key
+            nombre_combo = st.text_input(
+                "Nombre del combo:",
+                value=st.session_state.combo_nombre,
+                key=f"combo_nombre_input_{st.session_state.combo_version}"
+            )
         with col_c2:
-            linea_combo = st.text_input("Línea / Categoría:", value=st.session_state.combo_linea, placeholder="Ej: Desayunos, Almuerzos...")  # sin key
+            linea_combo = st.text_input(
+                "Línea / Categoría:",
+                value=st.session_state.combo_linea,
+                placeholder="Ej: Desayunos, Almuerzos...",
+                key=f"combo_linea_input_{st.session_state.combo_version}"
+            )
         with col_c3:
-            presentacion_combo = st.text_input("Presentación / Tamaño:", value=st.session_state.combo_presentacion, placeholder="Ej: Regular, Grande")  # sin key
+            presentacion_combo = st.text_input(
+                "Presentación / Tamaño:",
+                value=st.session_state.combo_presentacion,
+                placeholder="Ej: Regular, Grande",
+                key=f"combo_presentacion_input_{st.session_state.combo_version}"
+            )
             fecha_revision_combo = st.date_input(
                 "Fecha Revisión:",
-                value=pd.to_datetime(st.session_state.combo_fecha_revision)
-            )  # sin key
+                value=pd.to_datetime(st.session_state.combo_fecha_revision),
+                key=f"combo_fecha_revision_input_{st.session_state.combo_version}"
+            )
 
         st.session_state.combo_nombre = nombre_combo
         st.session_state.combo_linea = linea_combo
