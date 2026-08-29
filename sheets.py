@@ -212,3 +212,22 @@ def _asegurar_hoja_mapeo_xml():
             return None, f"No se pudo crear hoja MapeoXML: {e}"
     except Exception as e:
         return None, f"Error accediendo a MapeoXML: {e}"
+
+def _asegurar_hoja_borradores():
+    """Crea o devuelve la hoja Borradores_Inventario."""
+    try:
+        ws = sh.worksheet("Borradores_Inventario")
+        # Verificar encabezados
+        encabezados = ws.row_values(1)
+        if encabezados != ["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"]:
+            ws.update(range_name="A1:F1", values=[["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"]])
+        return ws, None
+    except gspread.exceptions.WorksheetNotFound:
+        try:
+            ws = sh.add_worksheet(title="Borradores_Inventario", rows="100", cols="6")
+            ws.append_row(["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"])
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja Borradores_Inventario: {e}"
+    except Exception as e:
+        return None, f"Error accediendo a Borradores_Inventario: {e}"
