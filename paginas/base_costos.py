@@ -876,15 +876,19 @@ def show_base_costos():
                             if col not in df_all.columns:
                                 df_all[col] = ""
 
+                                         # Convertir columnas numéricas antes de asignar
+                        df_all["Precio_Venta"] = pd.to_numeric(df_all["Precio_Venta"], errors="coerce").fillna(0)
+                        df_all["Costo_Ingrediente"] = pd.to_numeric(df_all["Costo_Ingrediente"], errors="coerce").fillna(0)
+
                         for _, row in edited_recetas.iterrows():
                             nombre_receta_bulk = row["Receta"]
                             mask = df_all["Receta"] == nombre_receta_bulk
                             if mask.any():
                                 df_all.loc[mask, "Linea"] = row["Linea"]
                                 df_all.loc[mask, "Presentacion"] = row["Presentacion"]
-                                df_all.loc[mask, "Precio_Venta"] = row["Precio_Venta"]
+                                df_all.loc[mask, "Precio_Venta"] = float(row["Precio_Venta"])
                                 df_all.loc[mask, "Food_Cost_Pct"] = df_all.loc[mask, "Costo_Ingrediente"].apply(
-                                    lambda c: round((float(c) / row["Precio_Venta"] * 100) if row["Precio_Venta"] > 0 else 0.0, 2)
+                                    lambda c: round((float(c) / float(row["Precio_Venta"]) * 100) if float(row["Precio_Venta"]) > 0 else 0.0, 2)
                                 )
 
                         ws_rec_bulk.clear()
