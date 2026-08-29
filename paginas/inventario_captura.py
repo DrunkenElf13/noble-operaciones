@@ -31,15 +31,12 @@ def _mostrar_preview_borrador(borrador, df_actual):
     filas_diff = []
 
     for safe_nom, datos in campos.items():
-        # Obtener nombre del insumo
         nombre = datos.get("nombre", "")
         if not nombre:
             continue
 
-        # Buscar en inventario actual
         prev = buscar_insumo_en_actual(df_actual, nombre)
         if prev is None:
-            # Si no existe en actual, es nuevo en borrador
             filas_diff.append({
                 "Insumo": nombre,
                 "Anterior Neto": "—",
@@ -52,23 +49,27 @@ def _mostrar_preview_borrador(borrador, df_actual):
             })
             continue
 
-        # Calcular neto del borrador
+        # Neto del inventario anterior: usar Stock Neto Calculado si está disponible
+        if "Stock Neto Calculado" in prev:
+            neto_prev = limpiar_valor(prev["Stock Neto Calculado"])
+        else:
+            neto_prev = limpiar_valor(prev["Alm"]) + limpiar_valor(prev["Barra"])
+
+        # Neto del borrador: Alm + (Barra bruta - Tara)
         a_borr = float(datos.get("a", 0))
         b_borr = float(datos.get("b", 0))
         tara_borr = float(datos.get("tara", 0))
         neto_borr = a_borr + max(0.0, b_borr - tara_borr)
 
-        # Valores del inventario actual
-        a_prev = limpiar_valor(prev["Alm"])
-        b_prev = limpiar_valor(prev["Barra"])
         tara_prev = limpiar_valor(prev.get("Tara", 0))
-        neto_prev = a_prev + b_prev  # ya que Barra en actual es neta
         pedir_prev = bool(prev.get("Necesita Compra", False))
+        pedir_borr = bool(datos.get("p", False))
 
-        # Comparar
-        hay_diff = (abs(neto_borr - neto_prev) > 0.01 or
-                    abs(tara_borr - tara_prev) > 0.01 or
-                    datos.get("p", False) != pedir_prev)
+        hay_diff = (
+            abs(neto_borr - neto_prev) > 0.01 or
+            abs(tara_borr - tara_prev) > 0.01 or
+            pedir_borr != pedir_prev
+        )
 
         if hay_diff:
             filas_diff.append({
@@ -79,7 +80,7 @@ def _mostrar_preview_borrador(borrador, df_actual):
                 "Tara Ant.": f"{tara_prev:.2f}",
                 "Tara Borr.": f"{tara_borr:.2f}",
                 "Pedir Ant.": "Sí" if pedir_prev else "No",
-                "Pedir Borr.": "Sí" if datos.get("p", False) else "No"
+                "Pedir Borr.": "Sí" if pedir_borr else "No"
             })
 
     if filas_diff:
@@ -123,7 +124,6 @@ def show_inventario():
         r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx,
                              disabled=(st.session_state.user_role != "admin"))
 
-    # Limpiar estado si cambia la unidad
     if "ultima_unidad_inv" not in st.session_state:
         st.session_state.ultima_unidad_inv = u_sel
 
@@ -136,10 +136,8 @@ def show_inventario():
     usuario = st.session_state.current_user
     hoy_str = ts_hermosillo().split(" ")[0]
 
-    # Calcular inventario actual temprano para preview
     df_actual = obtener_ultimo_inventario(df_historial, u_sel)
 
-    # Preguntar por borrador si existe y es de hoy
     if "borrador_consultado" not in st.session_state:
         borrador = _cargar_borrador_inventario(usuario, u_sel)
         if borrador and borrador["fecha_captura"] == hoy_str:
@@ -166,7 +164,6 @@ def show_inventario():
         else:
             st.session_state.borrador_consultado = True
 
-    # Mostrar preview si se solicitó
     if st.session_state.get("preview_borrador", False):
         if "borrador" in locals() and borrador:
             _mostrar_preview_borrador(borrador, df_actual)
@@ -189,7 +186,6 @@ def show_inventario():
         st.info("Selecciona al menos un grupo para mostrar insumos.")
         return
 
-    # Inicializar estructura centralizada con TODA la unidad
     if "inv_campos" not in st.session_state:
         inv_campos = {}
         for _, row in df_u.iterrows():
@@ -288,7 +284,6 @@ def show_inventario():
 
         st.session_state.inv_bulk_data = edited_df.to_dict(orient="records")
 
-        # Autoguardado silencioso al final (para bulk)
         if "ultimo_autoguardado_inv" not in st.session_state:
             st.session_state.ultimo_autoguardado_inv = time.time()
         if time.time() - st.session_state.ultimo_autoguardado_inv >= 300:
@@ -371,7 +366,6 @@ def show_inventario():
         if "mostrar_vista_previa" not in st.session_state:
             st.session_state.mostrar_vista_previa = False
 
-        # Encabezados
         h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
         headers = [
             ("Insumo / Ref", "Nombre del insumo y su unidad esperada."),
@@ -397,7 +391,6 @@ def show_inventario():
             nom      = str(row.get("Nombre del Insumo",""))
             safe_nom = _normalizar_nombre_archivo(nom)
 
-            # Tomar de inv_campos
             campos = st.session_state.inv_campos.get(safe_nom)
             if campos is None:
                 prev = buscar_insumo_en_actual(df_actual, nom)
@@ -455,7 +448,6 @@ def show_inventario():
             with c8:
                 v_c = st.text_input("Obs", value=str(campos.get("c","")), key=f"c_{safe_nom}", label_visibility="collapsed")
 
-            # Actualizar inv_campos con los valores actuales
             st.session_state.inv_campos[safe_nom] = {
                 "a": v_a,
                 "b": v_b,
@@ -479,14 +471,12 @@ def show_inventario():
                 "anterior": v_prev,
             }
 
-        # Autoguardado silencioso al final (para manual)
         if "ultimo_autoguardado_inv" not in st.session_state:
             st.session_state.ultimo_autoguardado_inv = time.time()
         if time.time() - st.session_state.ultimo_autoguardado_inv >= 300:
             _guardar_borrador_inventario(usuario, u_sel, hoy_str, "manual", {"campos": st.session_state.inv_campos})
             st.session_state.ultimo_autoguardado_inv = time.time()
 
-        # Botones
         revisar = st.button("🔍 Revisar captura", width="stretch")
         if revisar:
             st.session_state.mostrar_vista_previa = True
