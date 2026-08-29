@@ -861,7 +861,7 @@ def show_base_costos():
                     key="bulk_edit_recetas"
                 )
 
-                if st.button("💾 Guardar cambios de recetas", key="btn_guardar_recetas_bulk", type="primary", width="stretch"):
+                              if st.button("💾 Guardar cambios de recetas", key="btn_guardar_recetas_bulk", type="primary", width="stretch"):
                     ws_rec_bulk, err_rec_bulk = _asegurar_hoja_recetas()
                     if err_rec_bulk:
                         st.error(err_rec_bulk)
@@ -876,9 +876,10 @@ def show_base_costos():
                             if col not in df_all.columns:
                                 df_all[col] = ""
 
-                                         # Convertir columnas numéricas antes de asignar
-                        df_all["Precio_Venta"] = pd.to_numeric(df_all["Precio_Venta"], errors="coerce").fillna(0)
-                        df_all["Costo_Ingrediente"] = pd.to_numeric(df_all["Costo_Ingrediente"], errors="coerce").fillna(0)
+                        # ✅ Convertir columnas numéricas a float
+                        for col_num in ["Precio_Venta", "Costo_Ingrediente", "Food_Cost_Pct", "Costo_Neto_Receta"]:
+                            if col_num in df_all.columns:
+                                df_all[col_num] = pd.to_numeric(df_all[col_num], errors="coerce").fillna(0.0)
 
                         for _, row in edited_recetas.iterrows():
                             nombre_receta_bulk = row["Receta"]
@@ -886,10 +887,11 @@ def show_base_costos():
                             if mask.any():
                                 df_all.loc[mask, "Linea"] = row["Linea"]
                                 df_all.loc[mask, "Presentacion"] = row["Presentacion"]
-                                df_all.loc[mask, "Precio_Venta"] = float(row["Precio_Venta"])
-                                df_all.loc[mask, "Food_Cost_Pct"] = df_all.loc[mask, "Costo_Ingrediente"].apply(
-                                    lambda c: round((float(c) / float(row["Precio_Venta"]) * 100) if float(row["Precio_Venta"]) > 0 else 0.0, 2)
-                                )
+                                precio_float = float(row["Precio_Venta"])
+                                df_all.loc[mask, "Precio_Venta"] = precio_float
+                                df_all.loc[mask, "Food_Cost_Pct"] = df_all.loc[mask, "Costo_Ingrediente"] / precio_float * 100
+
+                        df_all["Food_Cost_Pct"] = df_all["Food_Cost_Pct"].round(2)
 
                         ws_rec_bulk.clear()
                         ws_rec_bulk.append_row(COLS_RECETAS)
@@ -899,7 +901,6 @@ def show_base_costos():
                         st.success("✅ Precios y datos de recetas actualizados.")
                         time.sleep(0.5)
                         st.rerun()
-
         # Analítica por Línea
         if not df_rec.empty and "Linea" in df_rec.columns:
             st.divider()
