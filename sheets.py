@@ -8,6 +8,7 @@ from config import (
     COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_COMBOS, COLS_MERMA, COLS_CALENDARIO,
     COLS_MENUS, COLS_MENUS_HISTORIAL
 )
+from utils import ts_hermosillo
 
 @st.cache_resource
 def conectar_google_sheets():
