@@ -303,7 +303,7 @@ def show_base_costos():
                     key="bulk_edit_costos"
                 )
 
-                if st.button("💾 Guardar cambios de costos", type="primary", width="stretch"):
+                if st.button("💾 Guardar cambios de costos", key="btn_guardar_costos_bulk", type="primary", width="stretch"):
                     ws_costos_bulk, err_bulk = _asegurar_hoja_costos_insumos()
                     if err_bulk:
                         st.error(err_bulk)
@@ -384,7 +384,7 @@ def show_base_costos():
         if "receta_original" not in st.session_state:
             st.session_state.receta_original = ""
 
-        # Importación (sin cambios en lógica)
+        # Importación desde Excel
         with st.expander("📥 Importar recetas desde Excel", expanded=False):
             st.markdown("""
             **Formato simple de 5 columnas:**  
@@ -430,7 +430,7 @@ def show_base_costos():
                             key="import_fecha_revision"
                         )
 
-                        if st.button("🔍 Previsualizar recetas importadas"):
+                        if st.button("🔍 Previsualizar recetas importadas", key="btn_previsualizar_import"):
                             if not mapeo:
                                 st.warning("Asigna al menos un ingrediente.")
                             else:
@@ -447,7 +447,7 @@ def show_base_costos():
                     st.error(f"Error al leer el archivo: {e}")
 
             if "import_preview" in st.session_state and st.session_state["import_preview"] is not None:
-                if st.button("💾 GUARDAR TODAS LAS RECETAS IMPORTADAS", type="primary"):
+                if st.button("💾 GUARDAR TODAS LAS RECETAS IMPORTADAS", key="btn_guardar_import", type="primary"):
                     ws_rec, err = _asegurar_hoja_recetas()
                     if err:
                         st.error(err)
@@ -493,7 +493,7 @@ def show_base_costos():
         # Botones de acción
         col_acc1, col_acc2, col_acc3 = st.columns(3)
         with col_acc1:
-            if st.button("🧹 Nueva receta (limpiar)", width="stretch"):
+            if st.button("🧹 Nueva receta (limpiar)", key="btn_limpiar_receta", width="stretch"):
                 st.session_state.ingredientes_receta = []
                 st.session_state.receta_nombre = ""
                 st.session_state.receta_linea = ""
@@ -505,7 +505,7 @@ def show_base_costos():
                 st.session_state.receta_original = ""
                 st.rerun()
         with col_acc2:
-            if st.button("➕ Agregar componente", width="stretch"):
+            if st.button("➕ Agregar componente", key="btn_agregar_componente_receta", width="stretch"):
                 st.session_state.ingredientes_receta.append({
                     "tipo": "Insumo",
                     "referencia": "",
@@ -516,7 +516,7 @@ def show_base_costos():
                 })
                 st.rerun()
         with col_acc3:
-            if st.session_state.ingredientes_receta and st.button("🗑️ Quitar último", width="stretch"):
+            if st.session_state.ingredientes_receta and st.button("🗑️ Quitar último", key="btn_quitar_ultimo_receta", width="stretch"):
                 st.session_state.ingredientes_receta.pop()
                 st.rerun()
 
@@ -533,7 +533,7 @@ def show_base_costos():
             with col_rec2:
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("📂 Cargar", width="stretch"):
+                    if st.button("📂 Cargar", key="btn_cargar_receta", width="stretch"):
                         df_edit = df_rec[df_rec["Receta"] == receta_seleccionada]
                         if not df_edit.empty:
                             nuevos_ingredientes = []
@@ -557,7 +557,7 @@ def show_base_costos():
                             st.session_state.receta_modo = "Editar receta existente"
                             st.rerun()
                 with col_btn2:
-                    if st.button("📋 Duplicar", width="stretch"):
+                    if st.button("📋 Duplicar", key="btn_duplicar_receta", width="stretch"):
                         df_dup = df_rec[df_rec["Receta"] == receta_seleccionada]
                         if not df_dup.empty:
                             nuevos_ingredientes = []
@@ -759,7 +759,7 @@ def show_base_costos():
 
             st.markdown(f"**Margen Bruto por porción:** ${margen_final:,.2f} ({margen_pct_final:.0f}%)")
 
-            if st.button("💾 GUARDAR RECETA COMPLETA", type="primary", width="stretch"):
+            if st.button("💾 GUARDAR RECETA COMPLETA", key="btn_guardar_receta", type="primary", width="stretch"):
                 nombre_final = st.session_state.receta_nombre.strip()
                 if not nombre_final:
                     st.error("Escribe el nombre de la receta.")
@@ -861,7 +861,7 @@ def show_base_costos():
                     key="bulk_edit_recetas"
                 )
 
-                if st.button("💾 Guardar cambios de recetas", type="primary", width="stretch"):
+                if st.button("💾 Guardar cambios de recetas", key="btn_guardar_recetas_bulk", type="primary", width="stretch"):
                     ws_rec_bulk, err_rec_bulk = _asegurar_hoja_recetas()
                     if err_rec_bulk:
                         st.error(err_rec_bulk)
@@ -961,7 +961,7 @@ def show_base_costos():
 
         col_acc_combo1, col_acc_combo2, col_acc_combo3 = st.columns(3)
         with col_acc_combo1:
-            if st.button("🧹 Nuevo combo (limpiar)", width="stretch"):
+            if st.button("🧹 Nuevo combo (limpiar)", key="btn_limpiar_combo", width="stretch"):
                 st.session_state.componentes_combo = []
                 st.session_state.combo_nombre = ""
                 st.session_state.combo_linea = ""
@@ -972,7 +972,7 @@ def show_base_costos():
                 st.session_state.combo_original = ""
                 st.rerun()
         with col_acc_combo2:
-            if st.button("➕ Agregar componente", width="stretch"):
+            if st.button("➕ Agregar componente", key="btn_agregar_componente_combo", width="stretch"):
                 st.session_state.componentes_combo.append({
                     "tipo": "Receta",
                     "referencia": "",
@@ -983,7 +983,7 @@ def show_base_costos():
                 })
                 st.rerun()
         with col_acc_combo3:
-            if st.session_state.componentes_combo and st.button("🗑️ Quitar último", width="stretch"):
+            if st.session_state.componentes_combo and st.button("🗑️ Quitar último", key="btn_quitar_ultimo_combo", width="stretch"):
                 st.session_state.componentes_combo.pop()
                 st.rerun()
 
@@ -995,7 +995,7 @@ def show_base_costos():
             with col_combo_btn:
                 cbtn1, cbtn2 = st.columns(2)
                 with cbtn1:
-                    if st.button("📂 Cargar combo", width="stretch"):
+                    if st.button("📂 Cargar combo", key="btn_cargar_combo", width="stretch"):
                         df_combo_edit = df_combos[df_combos["Combo"] == combo_seleccionado]
                         if not df_combo_edit.empty:
                             comps = []
@@ -1018,7 +1018,7 @@ def show_base_costos():
                             st.session_state.combo_modo = "Editar combo existente"
                             st.rerun()
                 with cbtn2:
-                    if st.button("📋 Duplicar combo", width="stretch"):
+                    if st.button("📋 Duplicar combo", key="btn_duplicar_combo", width="stretch"):
                         df_combo_dup = df_combos[df_combos["Combo"] == combo_seleccionado]
                         if not df_combo_dup.empty:
                             comps = []
@@ -1220,7 +1220,7 @@ def show_base_costos():
             c3.metric("Food Cost %", f"{fc_final_combo:.1f}%")
             c4.metric("Margen Bruto", f"${margen_final_combo:,.2f} ({margen_pct_final_combo:.0f}%)")
 
-            if st.button("💾 GUARDAR COMBO", type="primary", width="stretch"):
+            if st.button("💾 GUARDAR COMBO", key="btn_guardar_combo", type="primary", width="stretch"):
                 nombre_final_combo = st.session_state.combo_nombre.strip()
                 if not nombre_final_combo:
                     st.error("Escribe el nombre del combo.")
