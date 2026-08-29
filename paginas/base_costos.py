@@ -584,21 +584,22 @@ def show_base_costos():
         else:
             st.info("No hay recetas guardadas todavía.")
 
-        st.divider()
+             st.divider()
         st.subheader("🧩 Componentes de la receta")
         if not st.session_state.ingredientes_receta:
             st.info("Presiona '➕ Agregar componente' para comenzar.")
         else:
-            col_h1, col_h2, col_h3, col_h4, col_h5, col_h6 = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8])
+            col_h1, col_h2, col_h3, col_h4, col_h5, col_h6, col_h7 = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8, 0.3])
             col_h1.write("**Tipo**")
             col_h2.write("**Componente**")
             col_h3.write("**Cant.**")
             col_h4.write("**Unidad**")
             col_h5.write("**Costo Unit.**")
             col_h6.write("**Total**")
+            col_h7.write("")
 
             for i, comp in enumerate(st.session_state.ingredientes_receta):
-                cols = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8])
+                cols = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8, 0.3])
                 with cols[0]:
                     tipo_comp = st.selectbox(
                         "Tipo",
@@ -676,6 +677,10 @@ def show_base_costos():
                 with cols[5]:
                     total = round(cantidad * costo_unitario, 4)
                     st.write(f"**${total:.2f}**")
+                with cols[6]:
+                    if st.button("🗑️", key=f"del_receta_{i}", help="Eliminar este componente"):
+                        st.session_state.ingredientes_receta.pop(i)
+                        st.rerun()
 
                 st.session_state.ingredientes_receta[i] = {
                     "tipo": tipo_comp,
