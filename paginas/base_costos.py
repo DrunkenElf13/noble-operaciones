@@ -364,6 +364,7 @@ def show_base_costos():
 
         recetas_lista = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
 
+        # Inicialización de estado
         if "ingredientes_receta" not in st.session_state:
             st.session_state.ingredientes_receta = []
         if "receta_nombre" not in st.session_state:
@@ -384,8 +385,10 @@ def show_base_costos():
             st.session_state.receta_modo = "Nueva receta"
         if "receta_original" not in st.session_state:
             st.session_state.receta_original = ""
+        if "receta_version" not in st.session_state:
+            st.session_state.receta_version = 0
 
-        # Importación desde Excel
+        # ── IMPORTACIÓN DESDE EXCEL ──
         with st.expander("📥 Importar recetas desde Excel", expanded=False):
             st.markdown("""
             **Formato simple de 5 columnas:**  
@@ -471,18 +474,17 @@ def show_base_costos():
         # Encabezado de receta
         col_r1, col_r2, col_r3, col_r4 = st.columns([2, 1.5, 1.5, 1.0])
         with col_r1:
-            nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre, key="receta_nombre_input")
+            nombre_receta = st.text_input("Nombre de la receta:", value=st.session_state.receta_nombre)  # sin key
         with col_r2:
-            linea_final = st.text_input("Línea / Categoría:", value=st.session_state.receta_linea, placeholder="Ej: Bebidas, Alimentos...")
+            linea_final = st.text_input("Línea / Categoría:", value=st.session_state.receta_linea, placeholder="Ej: Bebidas, Alimentos...")  # sin key
         with col_r3:
-            presentacion = st.text_input("Presentación / Tamaño:", value=st.session_state.receta_presentacion, placeholder="12oz, 16oz...")
+            presentacion = st.text_input("Presentación / Tamaño:", value=st.session_state.receta_presentacion, placeholder="12oz, 16oz...")  # sin key
             fecha_revision = st.date_input(
                 "Fecha Revisión:",
-                value=pd.to_datetime(st.session_state.receta_fecha_revision),
-                key="receta_fecha_revision_input"
-            )
+                value=pd.to_datetime(st.session_state.receta_fecha_revision)
+            )  # sin key
         with col_r4:
-            rinde = st.number_input("Rinde (porciones):", min_value=0, step=1, value=int(st.session_state.receta_rinde), key="receta_rinde_input")
+            rinde = st.number_input("Rinde (porciones):", min_value=0, step=1, value=int(st.session_state.receta_rinde))  # sin key
             st.caption("0 = 1 porción")
 
         st.session_state.receta_nombre = nombre_receta
@@ -504,6 +506,7 @@ def show_base_costos():
                 st.session_state.receta_rinde = 1
                 st.session_state.receta_modo = "Nueva receta"
                 st.session_state.receta_original = ""
+                st.session_state.receta_version += 1
                 st.rerun()
         with col_acc2:
             if st.button("➕ Agregar componente", key="btn_agregar_componente_receta", width="stretch"):
@@ -515,10 +518,12 @@ def show_base_costos():
                     "costo_unit": 0.0,
                     "total": 0.0
                 })
+                st.session_state.receta_version += 1
                 st.rerun()
         with col_acc3:
             if st.session_state.ingredientes_receta and st.button("🗑️ Quitar último", key="btn_quitar_ultimo_receta", width="stretch"):
                 st.session_state.ingredientes_receta.pop()
+                st.session_state.receta_version += 1
                 st.rerun()
 
         # Selector de receta existente
@@ -556,6 +561,7 @@ def show_base_costos():
                             st.session_state.receta_rinde = int(limpiar_valor(df_edit.iloc[0].get("Rinde", 1)))
                             st.session_state.receta_original = receta_seleccionada
                             st.session_state.receta_modo = "Editar receta existente"
+                            st.session_state.receta_version += 1
                             st.rerun()
                 with col_btn2:
                     if st.button("📋 Duplicar", key="btn_duplicar_receta", width="stretch"):
@@ -580,6 +586,7 @@ def show_base_costos():
                             st.session_state.receta_rinde = int(limpiar_valor(df_dup.iloc[0].get("Rinde", 1)))
                             st.session_state.receta_original = ""
                             st.session_state.receta_modo = "Nueva receta"
+                            st.session_state.receta_version += 1
                             st.rerun()
         else:
             st.info("No hay recetas guardadas todavía.")
@@ -589,23 +596,23 @@ def show_base_costos():
         if not st.session_state.ingredientes_receta:
             st.info("Presiona '➕ Agregar componente' para comenzar.")
         else:
-            col_h1, col_h2, col_h3, col_h4, col_h5, col_h6, col_h7 = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8, 0.3])
+            col_h1, col_h2, col_h3, col_h4, col_h5, col_h6 = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8])
             col_h1.write("**Tipo**")
             col_h2.write("**Componente**")
             col_h3.write("**Cant.**")
             col_h4.write("**Unidad**")
             col_h5.write("**Costo Unit.**")
             col_h6.write("**Total**")
-            col_h7.write("")
 
+            version = st.session_state.receta_version
             for i, comp in enumerate(st.session_state.ingredientes_receta):
-                cols = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8, 0.3])
+                cols = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8])
                 with cols[0]:
                     tipo_comp = st.selectbox(
                         "Tipo",
                         options=["Insumo", "Receta"],
                         index=0 if comp.get("tipo", "Insumo") == "Insumo" else 1,
-                        key=f"receta_tipo_{i}",
+                        key=f"receta_tipo_{i}_{version}",
                         label_visibility="collapsed"
                     )
                 with cols[1]:
@@ -617,7 +624,7 @@ def show_base_costos():
                             "Insumo",
                             options=[""] + insumos_con_costo,
                             index=0 if not referencia_actual else ([""] + insumos_con_costo).index(referencia_actual),
-                            key=f"receta_ref_{i}",
+                            key=f"receta_ref_{i}_{version}",
                             label_visibility="collapsed"
                         )
                         if referencia:
@@ -644,7 +651,7 @@ def show_base_costos():
                             "Receta",
                             options=[""] + recetas_lista,
                             index=0 if not referencia_actual else ([""] + recetas_lista).index(referencia_actual),
-                            key=f"receta_ref_{i}",
+                            key=f"receta_ref_{i}_{version}",
                             label_visibility="collapsed"
                         )
                         if referencia:
@@ -661,7 +668,7 @@ def show_base_costos():
                         min_value=0.0,
                         step=0.1,
                         value=float(comp.get("cantidad", 0.0)),
-                        key=f"receta_cant_{i}",
+                        key=f"receta_cant_{i}_{version}",
                         label_visibility="collapsed"
                     )
                 with cols[3]:
@@ -669,7 +676,7 @@ def show_base_costos():
                         "Unidad",
                         options=UNIDADES_MED,
                         index=UNIDADES_MED.index(unidad_auto) if unidad_auto in UNIDADES_MED else 0,
-                        key=f"receta_unidad_{i}",
+                        key=f"receta_unidad_{i}_{version}",
                         label_visibility="collapsed"
                     )
                 with cols[4]:
@@ -677,10 +684,6 @@ def show_base_costos():
                 with cols[5]:
                     total = round(cantidad * costo_unitario, 4)
                     st.write(f"**${total:.2f}**")
-                with cols[6]:
-                    if st.button("🗑️", key=f"del_receta_{i}", help="Eliminar este componente"):
-                        st.session_state.ingredientes_receta.pop(i)
-                        st.rerun()
 
                 st.session_state.ingredientes_receta[i] = {
                     "tipo": tipo_comp,
@@ -830,6 +833,7 @@ def show_base_costos():
                                             "receta_modo","receta_original"]:
                                     if key in st.session_state:
                                         st.session_state[key] = [] if key == "ingredientes_receta" else ""
+                                st.session_state.receta_version += 1
                                 time.sleep(0.5)
                                 st.rerun()
                             else:
@@ -954,19 +958,20 @@ def show_base_costos():
             st.session_state.combo_original = ""
         if "componentes_combo" not in st.session_state:
             st.session_state.componentes_combo = []
+        if "combo_version" not in st.session_state:
+            st.session_state.combo_version = 0
 
         col_c1, col_c2, col_c3 = st.columns(3)
         with col_c1:
-            nombre_combo = st.text_input("Nombre del combo:", value=st.session_state.combo_nombre, key="combo_nombre_input")
+            nombre_combo = st.text_input("Nombre del combo:", value=st.session_state.combo_nombre)  # sin key
         with col_c2:
-            linea_combo = st.text_input("Línea / Categoría:", value=st.session_state.combo_linea, placeholder="Ej: Desayunos, Almuerzos...")
+            linea_combo = st.text_input("Línea / Categoría:", value=st.session_state.combo_linea, placeholder="Ej: Desayunos, Almuerzos...")  # sin key
         with col_c3:
-            presentacion_combo = st.text_input("Presentación / Tamaño:", value=st.session_state.combo_presentacion, placeholder="Ej: Regular, Grande")
+            presentacion_combo = st.text_input("Presentación / Tamaño:", value=st.session_state.combo_presentacion, placeholder="Ej: Regular, Grande")  # sin key
             fecha_revision_combo = st.date_input(
                 "Fecha Revisión:",
-                value=pd.to_datetime(st.session_state.combo_fecha_revision),
-                key="combo_fecha_revision_input"
-            )
+                value=pd.to_datetime(st.session_state.combo_fecha_revision)
+            )  # sin key
 
         st.session_state.combo_nombre = nombre_combo
         st.session_state.combo_linea = linea_combo
@@ -984,6 +989,7 @@ def show_base_costos():
                 st.session_state.combo_factor_manual = 2.5
                 st.session_state.combo_modo = "Nuevo combo"
                 st.session_state.combo_original = ""
+                st.session_state.combo_version += 1
                 st.rerun()
         with col_acc_combo2:
             if st.button("➕ Agregar componente", key="btn_agregar_componente_combo", width="stretch"):
@@ -995,10 +1001,12 @@ def show_base_costos():
                     "costo_unit": 0.0,
                     "total": 0.0
                 })
+                st.session_state.combo_version += 1
                 st.rerun()
         with col_acc_combo3:
             if st.session_state.componentes_combo and st.button("🗑️ Quitar último", key="btn_quitar_ultimo_combo", width="stretch"):
                 st.session_state.componentes_combo.pop()
+                st.session_state.combo_version += 1
                 st.rerun()
 
         combos_existentes = sorted(df_combos["Combo"].unique()) if not df_combos.empty else []
@@ -1030,6 +1038,7 @@ def show_base_costos():
                             st.session_state.combo_precio = limpiar_valor(df_combo_edit.iloc[0].get("Precio_Venta", 0))
                             st.session_state.combo_original = combo_seleccionado
                             st.session_state.combo_modo = "Editar combo existente"
+                            st.session_state.combo_version += 1
                             st.rerun()
                 with cbtn2:
                     if st.button("📋 Duplicar combo", key="btn_duplicar_combo", width="stretch"):
@@ -1053,6 +1062,7 @@ def show_base_costos():
                             st.session_state.combo_precio = limpiar_valor(df_combo_dup.iloc[0].get("Precio_Venta", 0))
                             st.session_state.combo_original = ""
                             st.session_state.combo_modo = "Nuevo combo"
+                            st.session_state.combo_version += 1
                             st.rerun()
         else:
             st.info("No hay combos guardados todavía.")
@@ -1072,6 +1082,7 @@ def show_base_costos():
             recetas_lista = sorted(df_rec3["Receta"].unique()) if not df_rec3.empty else []
             insumos_lista = sorted(df_ci3["Nombre_Insumo"].dropna().unique()) if not df_ci3.empty else []
 
+            version_combo = st.session_state.combo_version
             for i, comp in enumerate(st.session_state.componentes_combo):
                 cols = st.columns([1.5,2.0,1.0,1.0,1.0])
                 with cols[0]:
@@ -1079,7 +1090,7 @@ def show_base_costos():
                         "Tipo",
                         options=["Receta", "Insumo"],
                         index=0 if comp.get("tipo", "Receta") == "Receta" else 1,
-                        key=f"combo_tipo_{i}",
+                        key=f"combo_tipo_{i}_{version_combo}",
                         label_visibility="collapsed"
                     )
                 with cols[1]:
@@ -1091,7 +1102,7 @@ def show_base_costos():
                             "Receta",
                             options=[""] + recetas_lista,
                             index=0 if not referencia_actual else ([""] + recetas_lista).index(referencia_actual),
-                            key=f"combo_ref_{i}",
+                            key=f"combo_ref_{i}_{version_combo}",
                             label_visibility="collapsed"
                         )
                         if referencia:
@@ -1111,7 +1122,7 @@ def show_base_costos():
                             "Insumo",
                             options=[""] + insumos_lista,
                             index=0 if not referencia_actual else ([""] + insumos_lista).index(referencia_actual),
-                            key=f"combo_ref_{i}",
+                            key=f"combo_ref_{i}_{version_combo}",
                             label_visibility="collapsed"
                         )
                         if referencia:
@@ -1139,7 +1150,7 @@ def show_base_costos():
                         min_value=0.0,
                         step=1.0,
                         value=float(cantidad_auto),
-                        key=f"combo_cant_{i}",
+                        key=f"combo_cant_{i}_{version_combo}",
                         label_visibility="collapsed"
                     )
                 with cols[3]:
@@ -1147,7 +1158,7 @@ def show_base_costos():
                         "Unidad",
                         options=UNIDADES_MED,
                         index=UNIDADES_MED.index(unidad_auto) if unidad_auto in UNIDADES_MED else 0,
-                        key=f"combo_unidad_{i}",
+                        key=f"combo_unidad_{i}_{version_combo}",
                         label_visibility="collapsed"
                     )
                 with cols[4]:
@@ -1285,6 +1296,7 @@ def show_base_costos():
                                             "combo_modo","combo_original"]:
                                     if key in st.session_state:
                                         st.session_state[key] = [] if key == "componentes_combo" else ""
+                                st.session_state.combo_version += 1
                                 time.sleep(0.5)
                                 st.rerun()
                             else:
