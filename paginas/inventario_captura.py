@@ -39,30 +39,31 @@ def _mostrar_preview_borrador(borrador, df_actual):
             filas_diff.append({
                 "Insumo": nombre,
                 "Anterior Neto": "—",
-                "Borrador Neto": f"{datos.get('a', 0) + max(0, datos.get('b', 0) - datos.get('tara', 0)):.2f}",
+                "Borrador Neto": f"{float(datos.get('a', 0)) + float(datos.get('b', 0)):.2f}",
                 "Dif. Neto": "Nuevo",
-                "Tara Ant.": "—",
-                "Tara Borr.": f"{datos.get('tara', 0):.2f}",
                 "Pedir Ant.": "—",
                 "Pedir Borr.": "Sí" if datos.get('p', False) else "No"
             })
             continue
 
-        # ✅ CORRECCIÓN: usar el Stock Neto guardado en el último inventario
-        neto_prev = limpiar_valor(prev.get("Stock Neto", 0))
+        # ✅ CORRECCIÓN: usar Stock Neto real del último inventario
+        if "Stock Neto" in prev:
+            neto_prev = limpiar_valor(prev["Stock Neto"])
+        elif "Stock Neto Calculado" in prev:
+            neto_prev = limpiar_valor(prev["Stock Neto Calculado"])
+        else:
+            neto_prev = limpiar_valor(prev["Alm"]) + limpiar_valor(prev["Barra"])
 
+        # ✅ CORRECCIÓN: en el borrador, b ya es neta, NO se resta tara
         a_borr = float(datos.get("a", 0))
         b_borr = float(datos.get("b", 0))
-        tara_borr = float(datos.get("tara", 0))
-        neto_borr = a_borr + max(0.0, b_borr - tara_borr)
+        neto_borr = a_borr + b_borr
 
-        tara_prev = limpiar_valor(prev.get("Tara", 0))
         pedir_prev = bool(prev.get("Necesita Compra", False))
         pedir_borr = bool(datos.get("p", False))
 
         hay_diff = (
             abs(neto_borr - neto_prev) > 0.01 or
-            abs(tara_borr - tara_prev) > 0.01 or
             pedir_borr != pedir_prev
         )
 
@@ -72,8 +73,6 @@ def _mostrar_preview_borrador(borrador, df_actual):
                 "Anterior Neto": f"{neto_prev:.2f}",
                 "Borrador Neto": f"{neto_borr:.2f}",
                 "Dif. Neto": f"{neto_borr - neto_prev:+.2f}",
-                "Tara Ant.": f"{tara_prev:.2f}",
-                "Tara Borr.": f"{tara_borr:.2f}",
                 "Pedir Ant.": "Sí" if pedir_prev else "No",
                 "Pedir Borr.": "Sí" if pedir_borr else "No"
             })
