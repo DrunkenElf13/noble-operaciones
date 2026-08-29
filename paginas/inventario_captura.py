@@ -17,6 +17,78 @@ from config import UNIDADES, UNIDADES_MED, GRUPOS
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
+def _normalizar_nombre_archivo(nombre: str) -> str:
+    """Convierte nombre de insumo a clave segura."""
+    return re.sub(r'[^a-zA-Z0-9]', '_', nombre)[:35]
+
+def _mostrar_preview_borrador(borrador, df_actual):
+    """Muestra diferencias entre borrador y último inventario."""
+    if not borrador or "campos" not in borrador.get("data", {}):
+        st.info("No hay borrador para comparar.")
+        return
+
+    campos = borrador["data"]["campos"]
+    filas_diff = []
+
+    for safe_nom, datos in campos.items():
+        # Obtener nombre del insumo
+        nombre = datos.get("nombre", "")
+        if not nombre:
+            continue
+
+        # Buscar en inventario actual
+        prev = buscar_insumo_en_actual(df_actual, nombre)
+        if prev is None:
+            # Si no existe en actual, es nuevo en borrador
+            filas_diff.append({
+                "Insumo": nombre,
+                "Anterior Neto": "—",
+                "Borrador Neto": f"{datos.get('a', 0) + max(0, datos.get('b', 0) - datos.get('tara', 0)):.2f}",
+                "Dif. Neto": "Nuevo",
+                "Tara Ant.": "—",
+                "Tara Borr.": f"{datos.get('tara', 0):.2f}",
+                "Pedir Ant.": "—",
+                "Pedir Borr.": "Sí" if datos.get('p', False) else "No"
+            })
+            continue
+
+        # Calcular neto del borrador
+        a_borr = float(datos.get("a", 0))
+        b_borr = float(datos.get("b", 0))
+        tara_borr = float(datos.get("tara", 0))
+        neto_borr = a_borr + max(0.0, b_borr - tara_borr)
+
+        # Valores del inventario actual
+        a_prev = limpiar_valor(prev["Alm"])
+        b_prev = limpiar_valor(prev["Barra"])
+        tara_prev = limpiar_valor(prev.get("Tara", 0))
+        neto_prev = a_prev + b_prev  # ya que Barra en actual es neta
+        pedir_prev = bool(prev.get("Necesita Compra", False))
+
+        # Comparar
+        hay_diff = (abs(neto_borr - neto_prev) > 0.01 or
+                    abs(tara_borr - tara_prev) > 0.01 or
+                    datos.get("p", False) != pedir_prev)
+
+        if hay_diff:
+            filas_diff.append({
+                "Insumo": nombre,
+                "Anterior Neto": f"{neto_prev:.2f}",
+                "Borrador Neto": f"{neto_borr:.2f}",
+                "Dif. Neto": f"{neto_borr - neto_prev:+.2f}",
+                "Tara Ant.": f"{tara_prev:.2f}",
+                "Tara Borr.": f"{tara_borr:.2f}",
+                "Pedir Ant.": "Sí" if pedir_prev else "No",
+                "Pedir Borr.": "Sí" if datos.get("p", False) else "No"
+            })
+
+    if filas_diff:
+        st.subheader("🔍 Diferencias entre borrador y último inventario")
+        df_diff = pd.DataFrame(filas_diff)
+        st.dataframe(df_diff, hide_index=True, width="stretch")
+    else:
+        st.success("No se encontraron diferencias entre el borrador y el inventario actual.")
+
 def show_inventario():
     if not tiene_permiso("Inventario"):
         st.error("No tienes permiso para esta página.")
@@ -36,7 +108,7 @@ def show_inventario():
         st.success("✅ Inventario registrado correctamente.")
         if st.button("➕ Nueva captura", width="stretch"):
             for key in list(st.session_state.keys()):
-                if key.startswith(("inv_campos", "inv_bulk_data", "borrador_consultado")):
+                if key.startswith(("inv_campos", "inv_bulk_data", "borrador_consultado", "preview_borrador")):
                     del st.session_state[key]
             st.session_state.inventario_guardado = False
             st.rerun()
@@ -57,19 +129,22 @@ def show_inventario():
 
     if st.session_state.ultima_unidad_inv != u_sel:
         for key in list(st.session_state.keys()):
-            if key.startswith(("inv_campos", "inv_bulk_data", "borrador_consultado")):
+            if key.startswith(("inv_campos", "inv_bulk_data", "borrador_consultado", "preview_borrador")):
                 del st.session_state[key]
         st.session_state.ultima_unidad_inv = u_sel
 
     usuario = st.session_state.current_user
     hoy_str = ts_hermosillo().split(" ")[0]
 
+    # Calcular inventario actual temprano para preview
+    df_actual = obtener_ultimo_inventario(df_historial, u_sel)
+
     # Preguntar por borrador si existe y es de hoy
     if "borrador_consultado" not in st.session_state:
         borrador = _cargar_borrador_inventario(usuario, u_sel)
         if borrador and borrador["fecha_captura"] == hoy_str:
             st.warning("📋 Hay un borrador de inventario del día de hoy para esta unidad.")
-            col_bor1, col_bor2 = st.columns(2)
+            col_bor1, col_bor2, col_bor3 = st.columns(3)
             with col_bor1:
                 if st.button("✅ Cargar borrador", width="stretch"):
                     if borrador["modo"] == "bulk":
@@ -77,13 +152,26 @@ def show_inventario():
                     else:
                         st.session_state.inv_campos = borrador["data"].get("campos", {})
                     st.session_state.borrador_consultado = True
+                    st.session_state.preview_borrador = False
                     st.rerun()
             with col_bor2:
                 if st.button("❌ Ignorar", width="stretch"):
                     st.session_state.borrador_consultado = True
+                    st.session_state.preview_borrador = False
+                    st.rerun()
+            with col_bor3:
+                if st.button("🔍 Ver diferencias", width="stretch"):
+                    st.session_state.preview_borrador = True
                     st.rerun()
         else:
             st.session_state.borrador_consultado = True
+
+    # Mostrar preview si se solicitó
+    if st.session_state.get("preview_borrador", False):
+        if "borrador" in locals() and borrador:
+            _mostrar_preview_borrador(borrador, df_actual)
+        else:
+            st.session_state.preview_borrador = False
 
     df_u = df_raw[df_raw["Unidad de Negocio"] == u_sel] if not df_raw.empty else pd.DataFrame()
     with col_g:
@@ -91,7 +179,6 @@ def show_inventario():
         g_sel = st.multiselect("📂 Grupos a contar", grps, default=grps[:1] if grps else [])
     st.divider()
     busqueda_inv = st.text_input("🔍 Buscar insumo:", placeholder="Escribe el nombre...")
-    df_actual = obtener_ultimo_inventario(df_historial, u_sel)
     df_f = (
         df_u[df_u["Grupo"].isin(g_sel)].sort_values(["Grupo","Nombre del Insumo"]).reset_index(drop=True)
         if not df_u.empty and g_sel else pd.DataFrame()
@@ -107,7 +194,7 @@ def show_inventario():
         inv_campos = {}
         for _, row in df_u.iterrows():
             nom = str(row.get("Nombre del Insumo",""))
-            safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]
+            safe_nom = _normalizar_nombre_archivo(nom)
             prev = buscar_insumo_en_actual(df_actual, nom)
             v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
             v_bar_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
@@ -308,7 +395,7 @@ def show_inventario():
         regs_form = {}
         for idx_row, row in df_f.iterrows():
             nom      = str(row.get("Nombre del Insumo",""))
-            safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]
+            safe_nom = _normalizar_nombre_archivo(nom)
 
             # Tomar de inv_campos
             campos = st.session_state.inv_campos.get(safe_nom)
