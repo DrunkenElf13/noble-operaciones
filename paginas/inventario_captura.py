@@ -1,14 +1,82 @@
 import streamlit as st
 import pandas as pd
 import re
+import json
+import uuid
 import data_loaders as dl
 
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
-from sheets import safe_worksheet, sh, append_rows_con_retry
+from sheets import safe_worksheet, sh, append_rows_con_retry, _asegurar_hoja_borradores
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
 from config import UNIDADES, UNIDADES_MED, GRUPOS
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
+
+def _generar_session_id():
+    if "inv_session_id" not in st.session_state:
+        st.session_state.inv_session_id = str(uuid.uuid4())
+    return st.session_state.inv_session_id
+
+def _guardar_borrador_inventario(session_id, u_sel, fecha, modo, data_dict):
+    ws, err = _asegurar_hoja_borradores()
+    if err:
+        return False
+    try:
+        datos_json = json.dumps(data_dict)
+        # Buscar fila existente
+        todos = ws.get_all_values()
+        fila_idx = None
+        for i, fila in enumerate(todos[1:], start=2):
+            if fila[0] == session_id and fila[1] == u_sel:
+                fila_idx = i
+                break
+        if fila_idx:
+            ws.update(range_name=f"A{fila_idx}:F{fila_idx}",
+                      values=[[session_id, u_sel, fecha, modo, datos_json, ts_hermosillo()]])
+        else:
+            ws.append_row([session_id, u_sel, fecha, modo, datos_json, ts_hermosillo()],
+                          value_input_option="USER_ENTERED")
+        return True
+    except Exception as e:
+        st.warning(f"No se pudo autoguardar borrador: {e}")
+        return False
+
+def _cargar_borrador_inventario(session_id, u_sel):
+    ws, err = _asegurar_hoja_borradores()
+    if err:
+        return None
+    try:
+        datos = ws.get_all_values()
+        for fila in reversed(datos[1:]):
+            if fila[0] == session_id and fila[1] == u_sel:
+                fecha_captura = fila[2]
+                modo = fila[3]
+                data_json = fila[4]
+                if data_json:
+                    return {
+                        "fecha_captura": fecha_captura,
+                        "modo": modo,
+                        "data": json.loads(data_json)
+                    }
+        return None
+    except Exception:
+        return None
+
+def _eliminar_borrador_inventario(session_id, u_sel):
+    ws, err = _asegurar_hoja_borradores()
+    if err:
+        return
+    try:
+        todos = ws.get_all_values()
+        fila_idx = None
+        for i, fila in enumerate(todos[1:], start=2):
+            if fila[0] == session_id and fila[1] == u_sel:
+                fila_idx = i
+                break
+        if fila_idx:
+            ws.delete_rows(fila_idx)
+    except Exception:
+        pass
 
 def show_inventario():
     if not tiene_permiso("Inventario"):
@@ -44,7 +112,7 @@ def show_inventario():
         r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx,
                              disabled=(st.session_state.user_role != "admin"))
 
-    # ✅ Limpiar estado si cambia la unidad (evita precarga obsoleta)
+    # Limpiar estado si cambia la unidad
     if "ultima_unidad_inv" not in st.session_state:
         st.session_state.ultima_unidad_inv = u_sel
 
@@ -53,6 +121,32 @@ def show_inventario():
             if key.startswith(("a_", "b_", "u_", "tara_", "p_", "c_")):
                 del st.session_state[key]
         st.session_state.ultima_unidad_inv = u_sel
+        st.session_state.pop("borrador_consultado", None)
+
+    session_id = _generar_session_id()
+    hoy_str = ts_hermosillo().split(" ")[0]
+
+    # Preguntar por borrador si existe y es de hoy
+    if "borrador_consultado" not in st.session_state:
+        borrador = _cargar_borrador_inventario(session_id, u_sel)
+        if borrador and borrador["fecha_captura"] == hoy_str:
+            st.warning("📋 Hay un borrador de inventario del día de hoy para esta unidad.")
+            col_bor1, col_bor2 = st.columns(2)
+            with col_bor1:
+                if st.button("✅ Cargar borrador", width="stretch"):
+                    if borrador["modo"] == "bulk":
+                        st.session_state.inv_bulk_data = borrador["data"].get("bulk_data")
+                    else:
+                        for key, valor in borrador["data"].get("campos", {}).items():
+                            st.session_state[key] = valor
+                    st.session_state.borrador_consultado = True
+                    st.rerun()
+            with col_bor2:
+                if st.button("❌ Ignorar", width="stretch"):
+                    st.session_state.borrador_consultado = True
+                    st.rerun()
+        else:
+            st.session_state.borrador_consultado = True
 
     df_u = df_raw[df_raw["Unidad de Negocio"] == u_sel] if not df_raw.empty else pd.DataFrame()
     with col_g:
@@ -72,6 +166,19 @@ def show_inventario():
         return
 
     modo_bulk_inv = st.toggle("🚀 Activar Captura Masiva (Bulk)")
+
+    # Autoguardado silencioso cada 5 minutos
+    @st.fragment(run_every=300)
+    def autoguardar_inventario():
+        if modo_bulk_inv:
+            data = {"modo": "bulk", "bulk_data": st.session_state.get("inv_bulk_data")}
+        else:
+            campos = {k: st.session_state[k] for k in st.session_state if k.startswith(("a_","b_","u_","tara_","p_","c_"))}
+            data = {"modo": "manual", "campos": campos}
+        _guardar_borrador_inventario(session_id, u_sel, hoy_str, data["modo"], data)
+
+    autoguardar_inventario()
+
     diferencias_grandes = False
     lista_sospechosos = []
 
@@ -207,6 +314,7 @@ def show_inventario():
                     dl.cargar_datos_integrales.clear()
                     st.session_state.inventario_guardado = True
                     st.session_state.inv_bulk_data = None
+                    _eliminar_borrador_inventario(session_id, u_sel)
                     st.rerun()
                 else:
                     st.error(msg)
@@ -218,7 +326,7 @@ def show_inventario():
             st.session_state.mostrar_vista_previa = False
 
         with st.form("form_inventario", clear_on_submit=False):
-            # Encabezados con tooltips HTML
+            # Encabezados
             h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
             headers = [
                 ("Insumo / Ref", "Nombre del insumo y su unidad esperada."),
@@ -242,8 +350,8 @@ def show_inventario():
             regs_form = {}
             for idx_row, row in df_f.iterrows():
                 nom      = str(row.get("Nombre del Insumo",""))
-                # 🔥 CLAVE ESTABLE: no depende del índice ni de filtros
-                safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]  # sin idx_row
+                # Clave estable
+                safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]
 
                 prev        = buscar_insumo_en_actual(df_actual, nom)
                 v_prev      = prev["Stock Neto Calculado"] if prev is not None else 0.0
@@ -325,10 +433,16 @@ def show_inventario():
                     "anterior": v_prev,
                 }
 
-            # Vista previa
+            # Botones del form
             revisar = st.form_submit_button("🔍 Revisar captura", width="stretch")
             if revisar:
                 st.session_state.mostrar_vista_previa = True
+                # Guardar borrador automáticamente al revisar
+                campos_guardar = {}
+                for key in list(st.session_state.keys()):
+                    if key.startswith(("a_","b_","u_","tara_","p_","c_")):
+                        campos_guardar[key] = st.session_state[key]
+                _guardar_borrador_inventario(session_id, u_sel, hoy_str, "manual", {"campos": campos_guardar})
                 st.rerun()
 
             if st.session_state.mostrar_vista_previa:
@@ -386,7 +500,7 @@ def show_inventario():
                     df_diff = pd.DataFrame(filas_diff)
                     st.dataframe(df_diff, hide_index=True, width="stretch")
 
-            # Botón de procesar, siempre habilitado
+            # Botón procesar
             btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", width="stretch", type="primary")
 
             if btn_inv:
@@ -412,6 +526,7 @@ def show_inventario():
                         dl.cargar_datos_integrales.clear()
                         st.session_state.inventario_guardado = True
                         st.session_state.mostrar_vista_previa = False
+                        _eliminar_borrador_inventario(session_id, u_sel)
                         st.rerun()
                     else:
                         st.error(msg)
