@@ -4,7 +4,8 @@ import time
 from google.oauth2.service_account import Credentials
 from config import (
     SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO,
-    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_COMBOS, COLS_MERMA, COLS_CALENDARIO
+    COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_COMBOS, COLS_MERMA, COLS_CALENDARIO,
+    COLS_MENUS, COLS_MENUS_HISTORIAL
 )
 
 @st.cache_resource
@@ -95,7 +96,11 @@ def _asegurar_hoja_costos_insumos():
 
 def _asegurar_hoja_recetas():
     try:
-        return sh.worksheet("Recetas"), None
+        ws = sh.worksheet("Recetas")
+        encabezados_actuales = ws.row_values(1)
+        if len(encabezados_actuales) < len(COLS_RECETAS):
+            ws.update(range_name="A1:Q1", values=[COLS_RECETAS])
+        return ws, None
     except gspread.exceptions.WorksheetNotFound:
         try:
             ws = sh.add_worksheet(title="Recetas", rows="2000", cols=str(len(COLS_RECETAS)))
@@ -115,6 +120,28 @@ def _asegurar_hoja_combos():
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja Combos: {e}"
+    return ws, None
+
+def _asegurar_hoja_menus():
+    ws, err = safe_worksheet(sh, "Menus")
+    if err:
+        try:
+            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(COLS_MENUS)))
+            ws.append_row(COLS_MENUS)
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja Menus: {e}"
+    return ws, None
+
+def _asegurar_hoja_historial_menus():
+    ws, err = safe_worksheet(sh, "Menus_Historial")
+    if err:
+        try:
+            ws = sh.add_worksheet(title="Menus_Historial", rows="2000", cols=str(len(COLS_MENUS_HISTORIAL)))
+            ws.append_row(COLS_MENUS_HISTORIAL)
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja Menus_Historial: {e}"
     return ws, None
 
 def _asegurar_hoja_merma():
@@ -166,7 +193,6 @@ def _asegurar_hoja_canal_ventas(nombre_canal: str):
     return ws, None
 
 def _asegurar_hoja_mapeo_xml():
-    """Crea o devuelve la hoja MapeoXML con encabezados incluyendo NoIdentificacion y Factor_Conversion."""
     encabezados_esperados = [
         "Texto_Buscado", "NoIdentificacion", "Insumo", "Marca", "Proveedor",
         "Unidad_Medida", "Factor_Conversion", "Unidad_Base", "Contenido_Base_por_Unidad"
