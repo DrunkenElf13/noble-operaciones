@@ -216,7 +216,7 @@ def _asegurar_hoja_mapeo_xml():
         return None, f"Error accediendo a MapeoXML: {e}"
 
 def _asegurar_hoja_borradores():
-    encabezados = ["session_id", "unidad", "fecha_captura", "modo", "parte", "datos_json", "timestamp"]
+    encabezados = ["usuario", "unidad", "fecha_captura", "modo", "parte", "datos_json", "timestamp"]
     try:
         ws = sh.worksheet("Borradores_Inventario")
         actuales = ws.row_values(1)
@@ -233,7 +233,7 @@ def _asegurar_hoja_borradores():
     except Exception as e:
         return None, f"Error accediendo a Borradores_Inventario: {e}"
 
-def _guardar_borrador_inventario(session_id, u_sel, fecha, modo, data_dict):
+def _guardar_borrador_inventario(usuario, u_sel, fecha, modo, data_dict):
     ws, err = _asegurar_hoja_borradores()
     if err:
         return False
@@ -242,15 +242,14 @@ def _guardar_borrador_inventario(session_id, u_sel, fecha, modo, data_dict):
         max_chars = 20000
         partes = [json_completo[i:i+max_chars] for i in range(0, len(json_completo), max_chars)]
 
-        # Eliminar filas anteriores de esta sesión/unidad
         todos = ws.get_all_values()
-        filas_a_eliminar = [i for i, fila in enumerate(todos[1:], start=2) if fila[0] == session_id and fila[1] == u_sel]
+        filas_a_eliminar = [i for i, fila in enumerate(todos[1:], start=2) if fila[0] == usuario and fila[1] == u_sel]
         for i in sorted(filas_a_eliminar, reverse=True):
             ws.delete_rows(i)
 
         filas_nuevas = []
         for idx, parte in enumerate(partes, start=1):
-            filas_nuevas.append([session_id, u_sel, fecha, modo, idx, parte, ts_hermosillo()])
+            filas_nuevas.append([usuario, u_sel, fecha, modo, idx, parte, ts_hermosillo()])
         if filas_nuevas:
             ws.append_rows(filas_nuevas, value_input_option="USER_ENTERED")
         return True
@@ -258,33 +257,33 @@ def _guardar_borrador_inventario(session_id, u_sel, fecha, modo, data_dict):
         st.warning(f"No se pudo autoguardar borrador: {e}")
         return False
 
-def _cargar_borrador_inventario(session_id, u_sel):
+def _cargar_borrador_inventario(usuario, u_sel):
     ws, err = _asegurar_hoja_borradores()
     if err:
         return None
     try:
         datos = ws.get_all_values()
-        filas_sesion = [fila for fila in datos[1:] if fila[0] == session_id and fila[1] == u_sel]
-        if not filas_sesion:
+        filas_usuario = [fila for fila in datos[1:] if fila[0] == usuario and fila[1] == u_sel]
+        if not filas_usuario:
             return None
-        filas_sesion.sort(key=lambda x: int(x[4]) if x[4].isdigit() else 0)
-        json_completo = ''.join(fila[5] for fila in filas_sesion)
+        filas_usuario.sort(key=lambda x: int(x[4]) if x[4].isdigit() else 0)
+        json_completo = ''.join(fila[5] for fila in filas_usuario)
         data = json.loads(json_completo)
         return {
-            "fecha_captura": filas_sesion[0][2],
-            "modo": filas_sesion[0][3],
+            "fecha_captura": filas_usuario[0][2],
+            "modo": filas_usuario[0][3],
             "data": data
         }
     except Exception:
         return None
 
-def _eliminar_borrador_inventario(session_id, u_sel):
+def _eliminar_borrador_inventario(usuario, u_sel):
     ws, err = _asegurar_hoja_borradores()
     if err:
         return
     try:
         todos = ws.get_all_values()
-        filas_a_eliminar = [i for i, fila in enumerate(todos[1:], start=2) if fila[0] == session_id and fila[1] == u_sel]
+        filas_a_eliminar = [i for i, fila in enumerate(todos[1:], start=2) if fila[0] == usuario and fila[1] == u_sel]
         for i in sorted(filas_a_eliminar, reverse=True):
             ws.delete_rows(i)
     except Exception:
