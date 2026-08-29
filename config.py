@@ -49,7 +49,7 @@ COLS_RECETAS = [
     "Receta", "Ingrediente", "Cantidad", "Unidad_Medida", "Costo_Ingrediente",
     "Precio_Venta", "Food_Cost_Pct", "Fecha_Captura", "Responsable",
     "Linea", "Presentacion", "Fecha_Revision", "Precio_Insumo",
-    "Costo_Neto_Receta"
+    "Costo_Neto_Receta", "Rinde", "Costo_Porcion", "Tipo_Componente"
 ]
 COLS_COMBOS = [
     "Combo", "Linea", "Presentacion", "Fecha_Revision",
@@ -57,6 +57,15 @@ COLS_COMBOS = [
     "Cantidad", "Unidad_Medida", "Costo_Unitario",
     "Costo_Total_Componente", "Costo_Neto_Combo",
     "Food_Cost_Pct", "Fecha_Captura", "Responsable"
+]
+COLS_MENUS = [
+    "Menu_ID", "Nombre_Menu", "Categoria_Menu", "Tipo_Producto", "Producto",
+    "Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto",
+    "Activo", "Fecha_Captura", "Responsable"
+]
+COLS_MENUS_HISTORIAL = [
+    "ID", "Nombre_Menu", "Producto", "Precio_Anterior", "Precio_Nuevo",
+    "Fecha_Cambio", "Responsable"
 ]
 COLS_CALENDARIO = [
     "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
