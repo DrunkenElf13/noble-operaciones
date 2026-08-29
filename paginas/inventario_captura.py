@@ -18,7 +18,6 @@ from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
 def _normalizar_nombre_archivo(nombre: str) -> str:
-    """Convierte nombre de insumo a clave segura."""
     return re.sub(r'[^a-zA-Z0-9]', '_', nombre)[:35]
 
 def _mostrar_preview_borrador(borrador, df_actual):
@@ -49,13 +48,9 @@ def _mostrar_preview_borrador(borrador, df_actual):
             })
             continue
 
-        # Neto del inventario anterior: usar Stock Neto Calculado si está disponible
-        if "Stock Neto Calculado" in prev:
-            neto_prev = limpiar_valor(prev["Stock Neto Calculado"])
-        else:
-            neto_prev = limpiar_valor(prev["Alm"]) + limpiar_valor(prev["Barra"])
+        # ✅ CORRECCIÓN: usar el Stock Neto guardado en el último inventario
+        neto_prev = limpiar_valor(prev.get("Stock Neto", 0))
 
-        # Neto del borrador: Alm + (Barra bruta - Tara)
         a_borr = float(datos.get("a", 0))
         b_borr = float(datos.get("b", 0))
         tara_borr = float(datos.get("tara", 0))
