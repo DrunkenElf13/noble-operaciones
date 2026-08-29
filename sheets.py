@@ -1,6 +1,7 @@
 import streamlit as st
 import gspread
 import time
+import json
 from google.oauth2.service_account import Credentials
 from config import (
     SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO,
@@ -214,19 +215,76 @@ def _asegurar_hoja_mapeo_xml():
         return None, f"Error accediendo a MapeoXML: {e}"
 
 def _asegurar_hoja_borradores():
-    """Crea o devuelve la hoja Borradores_Inventario."""
+    encabezados = ["session_id", "unidad", "fecha_captura", "modo", "parte", "datos_json", "timestamp"]
     try:
         ws = sh.worksheet("Borradores_Inventario")
-        encabezados_actuales = ws.row_values(1)
-        if encabezados_actuales != ["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"]:
-            ws.update(range_name="A1:F1", values=[["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"]])
+        actuales = ws.row_values(1)
+        if actuales != encabezados:
+            ws.update(range_name="A1:G1", values=[encabezados])
         return ws, None
     except gspread.exceptions.WorksheetNotFound:
         try:
-            ws = sh.add_worksheet(title="Borradores_Inventario", rows="100", cols="6")
-            ws.append_row(["session_id", "unidad", "fecha_captura", "modo", "datos_json", "timestamp"])
+            ws = sh.add_worksheet(title="Borradores_Inventario", rows="100", cols="7")
+            ws.append_row(encabezados)
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja Borradores_Inventario: {e}"
     except Exception as e:
         return None, f"Error accediendo a Borradores_Inventario: {e}"
+
+def _guardar_borrador_inventario(session_id, u_sel, fecha, modo, data_dict):
+    ws, err = _asegurar_hoja_borradores()
+    if err:
+        return False
+    try:
+        json_completo = json.dumps(data_dict)
+        max_chars = 20000
+        partes = [json_completo[i:i+max_chars] for i in range(0, len(json_completo), max_chars)]
+
+        # Eliminar filas anteriores de esta sesión/unidad
+        todos = ws.get_all_values()
+        filas_a_eliminar = [i for i, fila in enumerate(todos[1:], start=2) if fila[0] == session_id and fila[1] == u_sel]
+        for i in sorted(filas_a_eliminar, reverse=True):
+            ws.delete_rows(i)
+
+        filas_nuevas = []
+        for idx, parte in enumerate(partes, start=1):
+            filas_nuevas.append([session_id, u_sel, fecha, modo, idx, parte, ts_hermosillo()])
+        if filas_nuevas:
+            ws.append_rows(filas_nuevas, value_input_option="USER_ENTERED")
+        return True
+    except Exception as e:
+        st.warning(f"No se pudo autoguardar borrador: {e}")
+        return False
+
+def _cargar_borrador_inventario(session_id, u_sel):
+    ws, err = _asegurar_hoja_borradores()
+    if err:
+        return None
+    try:
+        datos = ws.get_all_values()
+        filas_sesion = [fila for fila in datos[1:] if fila[0] == session_id and fila[1] == u_sel]
+        if not filas_sesion:
+            return None
+        filas_sesion.sort(key=lambda x: int(x[4]) if x[4].isdigit() else 0)
+        json_completo = ''.join(fila[5] for fila in filas_sesion)
+        data = json.loads(json_completo)
+        return {
+            "fecha_captura": filas_sesion[0][2],
+            "modo": filas_sesion[0][3],
+            "data": data
+        }
+    except Exception:
+        return None
+
+def _eliminar_borrador_inventario(session_id, u_sel):
+    ws, err = _asegurar_hoja_borradores()
+    if err:
+        return
+    try:
+        todos = ws.get_all_values()
+        filas_a_eliminar = [i for i, fila in enumerate(todos[1:], start=2) if fila[0] == session_id and fila[1] == u_sel]
+        for i in sorted(filas_a_eliminar, reverse=True):
+            ws.delete_rows(i)
+    except Exception:
+        pass
