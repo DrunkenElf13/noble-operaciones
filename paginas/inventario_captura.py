@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import re
-import uuid
 import data_loaders as dl
 
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
@@ -16,11 +15,6 @@ from utils import limpiar_valor, ts_hermosillo
 from config import UNIDADES, UNIDADES_MED, GRUPOS
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
-
-def _generar_session_id():
-    if "inv_session_id" not in st.session_state:
-        st.session_state.inv_session_id = str(uuid.uuid4())
-    return st.session_state.inv_session_id
 
 def show_inventario():
     if not tiene_permiso("Inventario"):
@@ -56,7 +50,6 @@ def show_inventario():
         r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx,
                              disabled=(st.session_state.user_role != "admin"))
 
-    # Limpiar estado si cambia la unidad
     if "ultima_unidad_inv" not in st.session_state:
         st.session_state.ultima_unidad_inv = u_sel
 
@@ -66,12 +59,12 @@ def show_inventario():
                 del st.session_state[key]
         st.session_state.ultima_unidad_inv = u_sel
 
-    session_id = _generar_session_id()
+    usuario = st.session_state.current_user
     hoy_str = ts_hermosillo().split(" ")[0]
 
     # Preguntar por borrador si existe y es de hoy
     if "borrador_consultado" not in st.session_state:
-        borrador = _cargar_borrador_inventario(session_id, u_sel)
+        borrador = _cargar_borrador_inventario(usuario, u_sel)
         if borrador and borrador["fecha_captura"] == hoy_str:
             st.warning("📋 Hay un borrador de inventario del día de hoy para esta unidad.")
             col_bor1, col_bor2 = st.columns(2)
@@ -143,7 +136,7 @@ def show_inventario():
             data = {"modo": "bulk", "bulk_data": st.session_state.get("inv_bulk_data")}
         else:
             data = {"modo": "manual", "campos": st.session_state.get("inv_campos", {})}
-        _guardar_borrador_inventario(session_id, u_sel, hoy_str, data["modo"], data)
+        _guardar_borrador_inventario(usuario, u_sel, hoy_str, data["modo"], data)
 
     autoguardar_inventario()
 
@@ -282,7 +275,7 @@ def show_inventario():
                     dl.cargar_datos_integrales.clear()
                     st.session_state.inventario_guardado = True
                     st.session_state.inv_bulk_data = None
-                    _eliminar_borrador_inventario(session_id, u_sel)
+                    _eliminar_borrador_inventario(usuario, u_sel)
                     st.rerun()
                 else:
                     st.error(msg)
@@ -404,7 +397,7 @@ def show_inventario():
             revisar = st.form_submit_button("🔍 Revisar captura", width="stretch")
             if revisar:
                 st.session_state.mostrar_vista_previa = True
-                _guardar_borrador_inventario(session_id, u_sel, hoy_str, "manual", {"campos": st.session_state.inv_campos})
+                _guardar_borrador_inventario(usuario, u_sel, hoy_str, "manual", {"campos": st.session_state.inv_campos})
                 st.rerun()
 
             if st.session_state.mostrar_vista_previa:
@@ -486,7 +479,7 @@ def show_inventario():
                         dl.cargar_datos_integrales.clear()
                         st.session_state.inventario_guardado = True
                         st.session_state.mostrar_vista_previa = False
-                        _eliminar_borrador_inventario(session_id, u_sel)
+                        _eliminar_borrador_inventario(usuario, u_sel)
                         st.rerun()
                     else:
                         st.error(msg)
