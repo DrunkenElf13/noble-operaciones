@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import time
 import data_loaders as dl
 
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
@@ -130,17 +131,6 @@ def show_inventario():
 
     modo_bulk_inv = st.toggle("🚀 Activar Captura Masiva (Bulk)")
 
-    # Autoguardado silencioso cada 5 minutos
-    @st.fragment(run_every=300)
-    def autoguardar_inventario():
-        if modo_bulk_inv:
-            data = {"modo": "bulk", "bulk_data": st.session_state.get("inv_bulk_data")}
-        else:
-            data = {"modo": "manual", "campos": st.session_state.get("inv_campos", {})}
-        _guardar_borrador_inventario(usuario, u_sel, hoy_str, data["modo"], data)
-
-    autoguardar_inventario()
-
     diferencias_grandes = False
     lista_sospechosos = []
 
@@ -210,6 +200,13 @@ def show_inventario():
                     st.warning(f"⚠️ {row['Insumo']}: diferencia del {diff_pct:.0f}% respecto al anterior ({anterior:.1f} → {neto_actual:.1f})")
 
         st.session_state.inv_bulk_data = edited_df.to_dict(orient="records")
+
+        # Autoguardado silencioso al final (para bulk)
+        if "ultimo_autoguardado_inv" not in st.session_state:
+            st.session_state.ultimo_autoguardado_inv = time.time()
+        if time.time() - st.session_state.ultimo_autoguardado_inv >= 300:
+            _guardar_borrador_inventario(usuario, u_sel, hoy_str, "bulk", {"bulk_data": edited_df.to_dict(orient="records")})
+            st.session_state.ultimo_autoguardado_inv = time.time()
 
         if lista_sospechosos:
             st.divider()
@@ -371,7 +368,7 @@ def show_inventario():
             with c8:
                 v_c = st.text_input("Obs", value=str(campos.get("c","")), key=f"c_{safe_nom}", label_visibility="collapsed")
 
-            # Actualizar inv_campos
+            # Actualizar inv_campos con los valores actuales
             st.session_state.inv_campos[safe_nom] = {
                 "a": v_a,
                 "b": v_b,
@@ -395,7 +392,14 @@ def show_inventario():
                 "anterior": v_prev,
             }
 
-        # Botones (ya no están dentro del form)
+        # Autoguardado silencioso al final (para manual)
+        if "ultimo_autoguardado_inv" not in st.session_state:
+            st.session_state.ultimo_autoguardado_inv = time.time()
+        if time.time() - st.session_state.ultimo_autoguardado_inv >= 300:
+            _guardar_borrador_inventario(usuario, u_sel, hoy_str, "manual", {"campos": st.session_state.inv_campos})
+            st.session_state.ultimo_autoguardado_inv = time.time()
+
+        # Botones
         revisar = st.button("🔍 Revisar captura", width="stretch")
         if revisar:
             st.session_state.mostrar_vista_previa = True
