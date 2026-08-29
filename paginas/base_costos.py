@@ -584,7 +584,7 @@ def show_base_costos():
         else:
             st.info("No hay recetas guardadas todavía.")
 
-             st.divider()
+        st.divider()
         st.subheader("🧩 Componentes de la receta")
         if not st.session_state.ingredientes_receta:
             st.info("Presiona '➕ Agregar componente' para comenzar.")
