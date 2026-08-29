@@ -194,7 +194,6 @@ def cargar_costos_insumos():
         for col in COLS_COSTOS_INSUMOS:
             if col not in df.columns:
                 df[col] = ""
-        # Columnas numéricas a limpiar
         for col in ["Costo_Presentacion","Costo_Unitario","Contenido_Base_por_Unidad","Costo_Base_Unitario"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
@@ -217,12 +216,13 @@ def cargar_recetas():
         df = pd.DataFrame(data[1:], columns=data[0])
         for col in COLS_RECETAS:
             if col not in df.columns:
-                df[col] = ""
-        # Limpieza numérica
+                df[col] = "" if col not in ["Rinde","Costo_Porcion"] else 1.0
         for col in ["Cantidad","Costo_Ingrediente","Precio_Venta","Food_Cost_Pct",
-                    "Precio_Insumo","Costo_Neto_Receta"]:
+                    "Precio_Insumo","Costo_Neto_Receta","Rinde","Costo_Porcion"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
+        if "Tipo_Componente" in df.columns:
+            df["Tipo_Componente"] = df["Tipo_Componente"].replace("", "Insumo")
         return df
     except Exception as e:
         st.warning(f"Error cargando recetas: {e}")
