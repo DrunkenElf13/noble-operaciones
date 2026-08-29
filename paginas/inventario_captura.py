@@ -50,6 +50,7 @@ def show_inventario():
         r_sel = st.selectbox("👤 Responsable", responsables, index=resp_idx,
                              disabled=(st.session_state.user_role != "admin"))
 
+    # Limpiar estado si cambia la unidad
     if "ultima_unidad_inv" not in st.session_state:
         st.session_state.ultima_unidad_inv = u_sel
 
@@ -286,200 +287,201 @@ def show_inventario():
         if "mostrar_vista_previa" not in st.session_state:
             st.session_state.mostrar_vista_previa = False
 
-        with st.form("form_inventario", clear_on_submit=False):
-            h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
-            headers = [
-                ("Insumo / Ref", "Nombre del insumo y su unidad esperada."),
-                ("Almacén", "Cantidad de producto cerrado. Se registra en la unidad definida para este insumo. Ej. 3 pz."),
-                ("Barra (bruto)", "Peso bruto del producto abierto en uso. Aquí se descuenta la tara. Ej. 250 gr."),
-                ("Medida", "Unidad en la que se está capturando este valor: pz, gr, ml, kg o lt. Debe coincidir con la unidad del catálogo."),
-                ("Tara (gr)", "Peso del envase/empaque que se descuenta de la Barra. Si no hay tara, dejar en 0."),
-                ("Neto*", "Resultado automático: Almacén + (Barra − Tara). No se escribe manualmente."),
-                ("¿Pedir?", "Actívalo si el insumo necesita reabastecimiento. Se reflejará en la Lista de Compra."),
-                ("Observaciones", "Cualquier nota adicional para este conteo.")
-            ]
-            columnas = [h1,h2,h3,h4,h5,h6,h7,h8]
-            for col, (label, tooltip) in zip(columnas, headers):
-                with col:
-                    st.markdown(
-                        f'<span title="{tooltip}"><strong>{label}</strong></span>',
-                        unsafe_allow_html=True
-                    )
-            st.markdown("*Neto = Alm + (Barra − Tara). La Tara se descuenta solo de Barra.")
-            st.divider()
-            regs_form = {}
-            for idx_row, row in df_f.iterrows():
-                nom      = str(row.get("Nombre del Insumo",""))
-                safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]
+        # Encabezados
+        h1,h2,h3,h4,h5,h6,h7,h8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
+        headers = [
+            ("Insumo / Ref", "Nombre del insumo y su unidad esperada."),
+            ("Almacén", "Cantidad de producto cerrado. Se registra en la unidad definida para este insumo. Ej. 3 pz."),
+            ("Barra (bruto)", "Peso bruto del producto abierto en uso. Aquí se descuenta la tara. Ej. 250 gr."),
+            ("Medida", "Unidad en la que se está capturando este valor: pz, gr, ml, kg o lt. Debe coincidir con la unidad del catálogo."),
+            ("Tara (gr)", "Peso del envase/empaque que se descuenta de la Barra. Si no hay tara, dejar en 0."),
+            ("Neto*", "Resultado automático: Almacén + (Barra − Tara). No se escribe manualmente."),
+            ("¿Pedir?", "Actívalo si el insumo necesita reabastecimiento. Se reflejará en la Lista de Compra."),
+            ("Observaciones", "Cualquier nota adicional para este conteo.")
+        ]
+        columnas = [h1,h2,h3,h4,h5,h6,h7,h8]
+        for col, (label, tooltip) in zip(columnas, headers):
+            with col:
+                st.markdown(
+                    f'<span title="{tooltip}"><strong>{label}</strong></span>',
+                    unsafe_allow_html=True
+                )
+        st.markdown("*Neto = Alm + (Barra − Tara). La Tara se descuenta solo de Barra.")
+        st.divider()
+        regs_form = {}
+        for idx_row, row in df_f.iterrows():
+            nom      = str(row.get("Nombre del Insumo",""))
+            safe_nom = re.sub(r'[^a-zA-Z0-9]','_', nom)[:35]
 
-                # Tomar de inv_campos
-                campos = st.session_state.inv_campos.get(safe_nom)
-                if campos is None:
-                    prev = buscar_insumo_en_actual(df_actual, nom)
-                    v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
-                    v_bar_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
-                    v_tara_hist = limpiar_valor(prev.get("Tara",0)) if prev is not None else 0.0
-                    v_tara_cat = limpiar_valor(row.get("Tara",0))
-                    v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
-                    ud_cat = str(row.get("Unidad de Medida","pz")).lower()
-                    campos = {
-                        "a": v_alm_prev,
-                        "b": v_bar_prev,
-                        "u": ud_cat,
-                        "tara": v_tara_init,
-                        "p": bool(prev.get("Necesita Compra", False)) if prev is not None else False,
-                        "c": "",
-                        "nombre": nom,
-                        "row": row.to_dict()
-                    }
-                    st.session_state.inv_campos[safe_nom] = campos
-
-                c1,c2,c3,c4,c5,c6,c7,c8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
-                with c1:
-                    st.write(f"**{nom}** *({campos['u']})*")
-                    st.caption(f"Marca: {row.get('Marca','-')} | Prov: {row.get('Proveedor','-')}")
-                    v_prev = campos.get("a",0.0) + max(0.0, campos.get("b",0.0) - campos.get("tara",0.0))
-                    v_min = limpiar_valor(row.get("Stock Mínimo",0))
-                    diff = v_prev - v_min
-                    color = "green" if diff >= 0 else "red"
-                    tara_txt = f" | Tara: {campos.get('tara',0.0)}" if campos.get('tara',0.0) > 0 else ""
-                    st.markdown(
-                        f"<small>Anterior: {v_prev} | Mín: {v_min} (<span style='color:{color}'>{diff:+.1f}</span>){tara_txt}</small>",
-                        unsafe_allow_html=True
-                    )
-                with c2:
-                    v_a = st.number_input("Alm", min_value=0.0, step=1.0, value=float(campos.get("a",0.0)),
-                                          key=f"a_{safe_nom}", label_visibility="collapsed")
-                with c3:
-                    v_b = st.number_input("Bar", min_value=0.0, step=1.0, value=float(campos.get("b",0.0)),
-                                          key=f"b_{safe_nom}", label_visibility="collapsed")
-                with c4:
-                    u_actual = str(campos.get("u","pz")).lower()
-                    v_u = st.selectbox("U", UNIDADES_MED,
-                                       index=UNIDADES_MED.index(u_actual) if u_actual in UNIDADES_MED else 0,
-                                       key=f"u_{safe_nom}", label_visibility="collapsed")
-                with c5:
-                    v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1, value=float(campos.get("tara",0.0)),
-                                                    key=f"tara_{safe_nom}", label_visibility="collapsed")
-                with c6:
-                    v_b_neto = max(0.0, v_b - v_tara_manual)
-                    v_n_display = v_a + v_b_neto
-                    st.write(f"**{v_n_display:.1f}**")
-                with c7:
-                    v_p = st.checkbox("🛒", value=bool(campos.get("p", False)), key=f"p_{safe_nom}")
-                with c8:
-                    v_c = st.text_input("Obs", value=str(campos.get("c","")), key=f"c_{safe_nom}", label_visibility="collapsed")
-
-                # Actualizar inv_campos
-                st.session_state.inv_campos[safe_nom] = {
-                    "a": v_a,
-                    "b": v_b,
-                    "u": v_u,
-                    "tara": v_tara_manual,
-                    "p": v_p,
-                    "c": v_c,
+            # Tomar de inv_campos
+            campos = st.session_state.inv_campos.get(safe_nom)
+            if campos is None:
+                prev = buscar_insumo_en_actual(df_actual, nom)
+                v_alm_prev = limpiar_valor(prev["Alm"]) if prev is not None else 0.0
+                v_bar_prev = limpiar_valor(prev["Barra"]) if prev is not None else 0.0
+                v_tara_hist = limpiar_valor(prev.get("Tara",0)) if prev is not None else 0.0
+                v_tara_cat = limpiar_valor(row.get("Tara",0))
+                v_tara_init = v_tara_hist if v_tara_hist > 0 else v_tara_cat
+                ud_cat = str(row.get("Unidad de Medida","pz")).lower()
+                campos = {
+                    "a": v_alm_prev,
+                    "b": v_bar_prev,
+                    "u": ud_cat,
+                    "tara": v_tara_init,
+                    "p": bool(prev.get("Necesita Compra", False)) if prev is not None else False,
+                    "c": "",
                     "nombre": nom,
                     "row": row.to_dict()
                 }
+                st.session_state.inv_campos[safe_nom] = campos
 
-                regs_form[nom] = {
-                    "a": v_a,
-                    "b": v_b_neto,
-                    "n": v_n_display,
-                    "u": v_u,
-                    "p": v_p,
-                    "c": v_c,
-                    "tara": v_tara_manual,
-                    "row": row,
-                    "anterior": v_prev,
-                }
+            c1,c2,c3,c4,c5,c6,c7,c8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
+            with c1:
+                st.write(f"**{nom}** *({campos['u']})*")
+                st.caption(f"Marca: {row.get('Marca','-')} | Prov: {row.get('Proveedor','-')}")
+                v_prev = campos.get("a",0.0) + max(0.0, campos.get("b",0.0) - campos.get("tara",0.0))
+                v_min = limpiar_valor(row.get("Stock Mínimo",0))
+                diff = v_prev - v_min
+                color = "green" if diff >= 0 else "red"
+                tara_txt = f" | Tara: {campos.get('tara',0.0)}" if campos.get('tara',0.0) > 0 else ""
+                st.markdown(
+                    f"<small>Anterior: {v_prev} | Mín: {v_min} (<span style='color:{color}'>{diff:+.1f}</span>){tara_txt}</small>",
+                    unsafe_allow_html=True
+                )
+            with c2:
+                v_a = st.number_input("Alm", min_value=0.0, step=1.0, value=float(campos.get("a",0.0)),
+                                      key=f"a_{safe_nom}", label_visibility="collapsed")
+            with c3:
+                v_b = st.number_input("Bar", min_value=0.0, step=1.0, value=float(campos.get("b",0.0)),
+                                      key=f"b_{safe_nom}", label_visibility="collapsed")
+            with c4:
+                u_actual = str(campos.get("u","pz")).lower()
+                v_u = st.selectbox("U", UNIDADES_MED,
+                                   index=UNIDADES_MED.index(u_actual) if u_actual in UNIDADES_MED else 0,
+                                   key=f"u_{safe_nom}", label_visibility="collapsed")
+            with c5:
+                v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1, value=float(campos.get("tara",0.0)),
+                                                key=f"tara_{safe_nom}", label_visibility="collapsed")
+            with c6:
+                v_b_neto = max(0.0, v_b - v_tara_manual)
+                v_n_display = v_a + v_b_neto
+                st.write(f"**{v_n_display:.1f}**")
+            with c7:
+                v_p = st.checkbox("🛒", value=bool(campos.get("p", False)), key=f"p_{safe_nom}")
+            with c8:
+                v_c = st.text_input("Obs", value=str(campos.get("c","")), key=f"c_{safe_nom}", label_visibility="collapsed")
 
-            revisar = st.form_submit_button("🔍 Revisar captura", width="stretch")
-            if revisar:
-                st.session_state.mostrar_vista_previa = True
-                _guardar_borrador_inventario(usuario, u_sel, hoy_str, "manual", {"campos": st.session_state.inv_campos})
-                st.rerun()
+            # Actualizar inv_campos
+            st.session_state.inv_campos[safe_nom] = {
+                "a": v_a,
+                "b": v_b,
+                "u": v_u,
+                "tara": v_tara_manual,
+                "p": v_p,
+                "c": v_c,
+                "nombre": nom,
+                "row": row.to_dict()
+            }
 
-            if st.session_state.mostrar_vista_previa:
-                st.divider()
-                st.subheader("📋 Resumen de captura")
-                filas_vp = []
-                for n, info in regs_form.items():
-                    anterior = info.get("anterior", 0.0)
-                    nuevo = info["n"]
-                    if anterior > 0 and nuevo > 0:
-                        diff_pct = (nuevo - anterior) / anterior * 100
-                    else:
-                        diff_pct = 0
-                    if diff_pct > 20:
-                        color = "🔴"
-                    elif diff_pct > 10:
-                        color = "🟡"
-                    else:
-                        color = "⚪"
-                    filas_vp.append({
-                        "Insumo": n,
-                        "Anterior": f"{anterior:.1f}",
-                        "Nuevo": f"{nuevo:.1f}",
-                        "Dif. %": f"{diff_pct:+.1f}%",
-                        "Alerta": color
-                    })
-                df_vp = pd.DataFrame(filas_vp)
-                st.dataframe(df_vp, hide_index=True, width="stretch")
-                st.caption("🔴 >20% de diferencia  |  🟡 >10%  |  ⚪ ≤10%")
+            regs_form[nom] = {
+                "a": v_a,
+                "b": v_b_neto,
+                "n": v_n_display,
+                "u": v_u,
+                "p": v_p,
+                "c": v_c,
+                "tara": v_tara_manual,
+                "row": row,
+                "anterior": v_prev,
+            }
 
-            if lista_sospechosos:
-                st.divider()
-                st.subheader("📋 Insumos con diferencias grandes")
-                st.caption("Revisa estos valores antes de procesar. No se bloquea el guardado.")
-                filas_diff = []
-                for s in lista_sospechosos:
-                    try:
-                        partes = s.split(": ")
-                        nombre_diff = partes[0]
-                        resto = partes[1]
-                        anterior_diff = float(resto.split("anterior ")[1].split(",")[0])
-                        nuevo_diff = float(resto.split("nuevo ")[1].split(" ")[0])
-                        pct_diff = float(resto.split("+")[1].rstrip("%)"))
-                    except Exception:
-                        continue
-                    color_diff = "🔴" if pct_diff > 100 else "🟡"
-                    filas_diff.append({
-                        "Insumo": nombre_diff,
-                        "Anterior": f"{anterior_diff:.1f}",
-                        "Nuevo": f"{nuevo_diff:.1f}",
-                        "Dif. %": f"+{pct_diff:.1f}%",
-                        "Alerta": color_diff
-                    })
-                if filas_diff:
-                    df_diff = pd.DataFrame(filas_diff)
-                    st.dataframe(df_diff, hide_index=True, width="stretch")
+        # Botones (ya no están dentro del form)
+        revisar = st.button("🔍 Revisar captura", width="stretch")
+        if revisar:
+            st.session_state.mostrar_vista_previa = True
+            _guardar_borrador_inventario(usuario, u_sel, hoy_str, "manual", {"campos": st.session_state.inv_campos})
+            st.rerun()
 
-            btn_inv = st.form_submit_button("📥 PROCESAR INVENTARIO", width="stretch", type="primary")
-            if btn_inv:
-                ws_his, err = safe_worksheet(sh, "Historial")
-                if err:
-                    st.error(err)
+        if st.session_state.mostrar_vista_previa:
+            st.divider()
+            st.subheader("📋 Resumen de captura")
+            filas_vp = []
+            for n, info in regs_form.items():
+                anterior = info.get("anterior", 0.0)
+                nuevo = info["n"]
+                if anterior > 0 and nuevo > 0:
+                    diff_pct = (nuevo - anterior) / anterior * 100
                 else:
-                    fh = ts_hermosillo()
-                    filas = []
-                    for n, info in regs_form.items():
-                        dm = info["row"]
-                        filas.append(construir_fila_historial(
-                            unidad=u_sel, nombre=n, marca=dm.get("Marca",""),
-                            proveedor=dm.get("Proveedor",""), grupo=dm.get("Grupo",""),
-                            fecha_entrada="", presentacion=dm.get("Presentación de Compra",""),
-                            unidad_medida=info["u"], alm=info["a"], barra=info["b"],
-                            stock_neto=info["n"], stock_minimo=dm.get("Stock Mínimo",0),
-                            comprar=info["p"], responsable=r_sel, fecha_inventario=fh,
-                            tara=info["tara"], observaciones=info["c"],
-                        ))
-                    ok, msg = append_rows_con_retry(ws_his, filas)
-                    if ok:
-                        dl.cargar_datos_integrales.clear()
-                        st.session_state.inventario_guardado = True
-                        st.session_state.mostrar_vista_previa = False
-                        _eliminar_borrador_inventario(usuario, u_sel)
-                        st.rerun()
-                    else:
-                        st.error(msg)
+                    diff_pct = 0
+                if diff_pct > 20:
+                    color = "🔴"
+                elif diff_pct > 10:
+                    color = "🟡"
+                else:
+                    color = "⚪"
+                filas_vp.append({
+                    "Insumo": n,
+                    "Anterior": f"{anterior:.1f}",
+                    "Nuevo": f"{nuevo:.1f}",
+                    "Dif. %": f"{diff_pct:+.1f}%",
+                    "Alerta": color
+                })
+            df_vp = pd.DataFrame(filas_vp)
+            st.dataframe(df_vp, hide_index=True, width="stretch")
+            st.caption("🔴 >20% de diferencia  |  🟡 >10%  |  ⚪ ≤10%")
+
+        if lista_sospechosos:
+            st.divider()
+            st.subheader("📋 Insumos con diferencias grandes")
+            st.caption("Revisa estos valores antes de procesar. No se bloquea el guardado.")
+            filas_diff = []
+            for s in lista_sospechosos:
+                try:
+                    partes = s.split(": ")
+                    nombre_diff = partes[0]
+                    resto = partes[1]
+                    anterior_diff = float(resto.split("anterior ")[1].split(",")[0])
+                    nuevo_diff = float(resto.split("nuevo ")[1].split(" ")[0])
+                    pct_diff = float(resto.split("+")[1].rstrip("%)"))
+                except Exception:
+                    continue
+                color_diff = "🔴" if pct_diff > 100 else "🟡"
+                filas_diff.append({
+                    "Insumo": nombre_diff,
+                    "Anterior": f"{anterior_diff:.1f}",
+                    "Nuevo": f"{nuevo_diff:.1f}",
+                    "Dif. %": f"+{pct_diff:.1f}%",
+                    "Alerta": color_diff
+                })
+            if filas_diff:
+                df_diff = pd.DataFrame(filas_diff)
+                st.dataframe(df_diff, hide_index=True, width="stretch")
+
+        btn_inv = st.button("📥 PROCESAR INVENTARIO", width="stretch", type="primary")
+        if btn_inv:
+            ws_his, err = safe_worksheet(sh, "Historial")
+            if err:
+                st.error(err)
+            else:
+                fh = ts_hermosillo()
+                filas = []
+                for n, info in regs_form.items():
+                    dm = info["row"]
+                    filas.append(construir_fila_historial(
+                        unidad=u_sel, nombre=n, marca=dm.get("Marca",""),
+                        proveedor=dm.get("Proveedor",""), grupo=dm.get("Grupo",""),
+                        fecha_entrada="", presentacion=dm.get("Presentación de Compra",""),
+                        unidad_medida=info["u"], alm=info["a"], barra=info["b"],
+                        stock_neto=info["n"], stock_minimo=dm.get("Stock Mínimo",0),
+                        comprar=info["p"], responsable=r_sel, fecha_inventario=fh,
+                        tara=info["tara"], observaciones=info["c"],
+                    ))
+                ok, msg = append_rows_con_retry(ws_his, filas)
+                if ok:
+                    dl.cargar_datos_integrales.clear()
+                    st.session_state.inventario_guardado = True
+                    st.session_state.mostrar_vista_previa = False
+                    _eliminar_borrador_inventario(usuario, u_sel)
+                    st.rerun()
+                else:
+                    st.error(msg)
