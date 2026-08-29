@@ -364,7 +364,6 @@ def show_base_costos():
 
         recetas_lista = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
 
-        # Inicialización de estado
         if "ingredientes_receta" not in st.session_state:
             st.session_state.ingredientes_receta = []
         if "receta_nombre" not in st.session_state:
@@ -388,7 +387,7 @@ def show_base_costos():
         if "receta_version" not in st.session_state:
             st.session_state.receta_version = 0
 
-        # ── IMPORTACIÓN DESDE EXCEL ──
+        # Importación desde Excel
         with st.expander("📥 Importar recetas desde Excel", expanded=False):
             st.markdown("""
             **Formato simple de 5 columnas:**  
@@ -617,17 +616,18 @@ def show_base_costos():
         if not st.session_state.ingredientes_receta:
             st.info("Presiona '➕ Agregar componente' para comenzar.")
         else:
-            col_h1, col_h2, col_h3, col_h4, col_h5, col_h6 = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8])
+            col_h1, col_h2, col_h3, col_h4, col_h5, col_h6, col_h7 = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8, 0.3])
             col_h1.write("**Tipo**")
             col_h2.write("**Componente**")
             col_h3.write("**Cant.**")
             col_h4.write("**Unidad**")
             col_h5.write("**Costo Unit.**")
             col_h6.write("**Total**")
+            col_h7.write("")
 
             version = st.session_state.receta_version
             for i, comp in enumerate(st.session_state.ingredientes_receta):
-                cols = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8])
+                cols = st.columns([1.2, 2.0, 1.0, 0.8, 0.8, 0.8, 0.3])
                 with cols[0]:
                     tipo_comp = st.selectbox(
                         "Tipo",
@@ -705,6 +705,11 @@ def show_base_costos():
                 with cols[5]:
                     total = round(cantidad * costo_unitario, 4)
                     st.write(f"**${total:.2f}**")
+                with cols[6]:
+                    if st.button("🗑️", key=f"del_receta_{i}_{version}", help="Eliminar este componente"):
+                        st.session_state.ingredientes_receta.pop(i)
+                        st.session_state.receta_version += 1
+                        st.rerun()
 
                 st.session_state.ingredientes_receta[i] = {
                     "tipo": tipo_comp,
@@ -1108,19 +1113,20 @@ def show_base_costos():
         if not st.session_state.componentes_combo:
             st.info("Presiona '➕ Agregar componente' para comenzar.")
         else:
-            col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([1.5,2.0,1.0,1.0,1.0])
+            col_h1, col_h2, col_h3, col_h4, col_h5, col_h6 = st.columns([1.5,2.0,1.0,1.0,1.0,0.3])
             col_h1.write("**Tipo**")
             col_h2.write("**Componente**")
             col_h3.write("**Cant.**")
             col_h4.write("**Unidad**")
             col_h5.write("**Total**")
+            col_h6.write("")
 
             recetas_lista = sorted(df_rec3["Receta"].unique()) if not df_rec3.empty else []
             insumos_lista = sorted(df_ci3["Nombre_Insumo"].dropna().unique()) if not df_ci3.empty else []
 
             version_combo = st.session_state.combo_version
             for i, comp in enumerate(st.session_state.componentes_combo):
-                cols = st.columns([1.5,2.0,1.0,1.0,1.0])
+                cols = st.columns([1.5,2.0,1.0,1.0,1.0,0.3])
                 with cols[0]:
                     tipo_comp = st.selectbox(
                         "Tipo",
@@ -1200,6 +1206,11 @@ def show_base_costos():
                 with cols[4]:
                     total = round(cantidad * costo_unitario, 4)
                     st.write(f"**${total:.2f}**")
+                with cols[5]:
+                    if st.button("🗑️", key=f"del_combo_{i}_{version_combo}", help="Eliminar este componente"):
+                        st.session_state.componentes_combo.pop(i)
+                        st.session_state.combo_version += 1
+                        st.rerun()
 
                 st.session_state.componentes_combo[i] = {
                     "tipo": tipo_comp,
