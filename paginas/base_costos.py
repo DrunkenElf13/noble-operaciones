@@ -96,6 +96,7 @@ def procesar_importacion_recetas(archivo, mapeo_ingredientes, precio_default=0.0
     except Exception as e:
         st.error(f"Error al procesar el archivo: {e}")
         return None
+
 def show_base_costos():
     if not tiene_permiso("BaseCostos"):
         st.error("No tienes permiso para esta página.")
@@ -346,6 +347,7 @@ def show_base_costos():
                                 st.rerun()
                             else:
                                 st.error(msg_bulk)
+
     # ==================== TAB RECETAS ====================
     with tab_recetas:
         st.subheader("🍽️ Editor de Recetas")
@@ -362,7 +364,6 @@ def show_base_costos():
 
         recetas_lista = sorted(df_rec["Receta"].unique()) if not df_rec.empty else []
 
-        # Inicialización de estado
         if "ingredientes_receta" not in st.session_state:
             st.session_state.ingredientes_receta = []
         if "receta_nombre" not in st.session_state:
@@ -582,6 +583,7 @@ def show_base_costos():
                             st.rerun()
         else:
             st.info("No hay recetas guardadas todavía.")
+
         st.divider()
         st.subheader("🧩 Componentes de la receta")
         if not st.session_state.ingredientes_receta:
@@ -683,6 +685,7 @@ def show_base_costos():
                     "costo_unit": costo_unitario,
                     "total": total
                 }
+
         if st.session_state.ingredientes_receta:
             costo_neto_batch = sum(limpiar_valor(c["total"]) for c in st.session_state.ingredientes_receta)
             rinde_final = st.session_state.receta_rinde if st.session_state.receta_rinde > 0 else 1
@@ -831,7 +834,7 @@ def show_base_costos():
         else:
             st.info("Presiona '➕ Agregar componente' para comenzar la captura.")
 
-        # ⚡ EDICIÓN MASIVA DE PRECIOS DE RECETAS (sin cambios)
+        # ⚡ EDICIÓN MASIVA DE PRECIOS DE RECETAS
         if not df_rec.empty:
             st.divider()
             with st.expander("⚡ Edición masiva de precios de recetas", expanded=False):
@@ -861,7 +864,7 @@ def show_base_costos():
                     key="bulk_edit_recetas"
                 )
 
-                              if st.button("💾 Guardar cambios de recetas", key="btn_guardar_recetas_bulk", type="primary", width="stretch"):
+                if st.button("💾 Guardar cambios de recetas", key="btn_guardar_recetas_bulk", type="primary", width="stretch"):
                     ws_rec_bulk, err_rec_bulk = _asegurar_hoja_recetas()
                     if err_rec_bulk:
                         st.error(err_rec_bulk)
@@ -876,7 +879,6 @@ def show_base_costos():
                             if col not in df_all.columns:
                                 df_all[col] = ""
 
-                        # ✅ Convertir columnas numéricas a float
                         for col_num in ["Precio_Venta", "Costo_Ingrediente", "Food_Cost_Pct", "Costo_Neto_Receta"]:
                             if col_num in df_all.columns:
                                 df_all[col_num] = pd.to_numeric(df_all[col_num], errors="coerce").fillna(0.0)
@@ -901,6 +903,7 @@ def show_base_costos():
                         st.success("✅ Precios y datos de recetas actualizados.")
                         time.sleep(0.5)
                         st.rerun()
+
         # Analítica por Línea
         if not df_rec.empty and "Linea" in df_rec.columns:
             st.divider()
@@ -919,6 +922,7 @@ def show_base_costos():
                     Margen_Promedio=("Precio_Venta", lambda x: (x - df_por_receta.loc[x.index, "Costo_Neto_Receta"]).mean())
                 ).reset_index()
                 st.dataframe(df_agrup_linea, hide_index=True, width="stretch")
+
     # ==================== TAB COMBOS ====================
     with tab_combos:
         st.subheader("🍱 Combos de Productos")
