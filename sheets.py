@@ -15,7 +15,6 @@ def conectar_google_sheets():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets"]
         creds_info = st.secrets["gcp_service_account"]
-        # CORRECCIÓN: si el secreto es string, convertirlo a diccionario
         if isinstance(creds_info, str):
             creds_info = json.loads(creds_info)
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
@@ -222,7 +221,7 @@ def _asegurar_hoja_mapeo_xml():
         except Exception as e:
             return None, f"No se pudo crear hoja MapeoXML: {e}"
     except Exception as e:
-        return None, f"Error accediendo a MapeoXML: {e}"}
+        return None, f"Error accediendo a MapeoXML: {e}"
 def _asegurar_hoja_borradores():
     encabezados = ["usuario", "unidad", "fecha_captura", "modo", "parte", "datos_json", "timestamp"]
     try:
