@@ -653,3 +653,34 @@ def show_menu_maker():
 
                 if not df_no_kpi.empty:
                     st.caption(f"⚠️ {len(df_no_kpi)} producto(s) excluido(s) de los KPIs.")
+
+            # 🗑️ Eliminar producto del menú
+            st.divider()
+            with st.expander("🗑️ Eliminar producto del menú", expanded=False):
+                if not df_menus.empty:
+                    opciones_eliminar = df_menus["Nombre_Menu"].tolist()
+                    prod_eliminar = st.selectbox("Selecciona producto a eliminar:", opciones_eliminar, key="menu_eliminar_sel")
+                    if st.button("❌ Eliminar definitivamente", key="btn_eliminar_menu", width="stretch"):
+                        ws_menu_elim, err_elim = _asegurar_hoja_menus()
+                        if err_elim:
+                            st.error(err_elim)
+                        else:
+                            try:
+                                todos_elim = ws_menu_elim.get_all_values()
+                                fila_elim = None
+                                for i, fila in enumerate(todos_elim[1:], start=2):
+                                    if fila[1] == prod_eliminar:  # columna B = Nombre_Menu
+                                        fila_elim = i
+                                        break
+                                if fila_elim:
+                                    ws_menu_elim.delete_rows(fila_elim)
+                                    cargar_menus.clear()
+                                    st.success(f"Producto '{prod_eliminar}' eliminado.")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("Producto no encontrado.")
+                            except Exception as e:
+                                st.error(f"Error al eliminar: {e}")
+                else:
+                    st.info("No hay productos para eliminar.")
