@@ -14,9 +14,11 @@ from utils import ts_hermosillo
 def conectar_google_sheets():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], scopes=scope
-        )
+        creds_info = st.secrets["gcp_service_account"]
+        # CORRECCIÓN: si el secreto es string, convertirlo a diccionario
+        if isinstance(creds_info, str):
+            creds_info = json.loads(creds_info)
+        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
         return client.open_by_key(SPREADSHEET_ID)
     except Exception as e:
@@ -133,11 +135,9 @@ def _asegurar_hoja_menus():
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja Menus: {e}"
-    # Si ya existe, verificar que tenga la columna Incluir_KPI
     try:
         actuales = ws.row_values(1)
         if "Incluir_KPI" not in actuales:
-            # Agregar encabezado en la primera fila, columna siguiente
             col_idx = len(actuales) + 1
             ws.update_cell(1, col_idx, "Incluir_KPI")
     except Exception:
@@ -222,7 +222,7 @@ def _asegurar_hoja_mapeo_xml():
         except Exception as e:
             return None, f"No se pudo crear hoja MapeoXML: {e}"
     except Exception as e:
-        return None, f"Error accediendo a MapeoXML: {e}"
+        return None, f"Error accediendo a MapeoXML: {e}"}
 def _asegurar_hoja_borradores():
     encabezados = ["usuario", "unidad", "fecha_captura", "modo", "parte", "datos_json", "timestamp"]
     try:
