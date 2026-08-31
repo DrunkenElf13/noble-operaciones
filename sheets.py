@@ -123,7 +123,6 @@ def _asegurar_hoja_combos():
         except Exception as e:
             return None, f"No se pudo crear hoja Combos: {e}"
     return ws, None
-
 def _asegurar_hoja_menus():
     ws, err = safe_worksheet(sh, "Menus")
     if err:
@@ -224,7 +223,6 @@ def _asegurar_hoja_mapeo_xml():
             return None, f"No se pudo crear hoja MapeoXML: {e}"
     except Exception as e:
         return None, f"Error accediendo a MapeoXML: {e}"
-
 def _asegurar_hoja_borradores():
     encabezados = ["usuario", "unidad", "fecha_captura", "modo", "parte", "datos_json", "timestamp"]
     try:
@@ -298,3 +296,4 @@ def _eliminar_borrador_inventario(usuario, u_sel):
             ws.delete_rows(i)
     except Exception:
         pass
+# Fin del archivo sheets.py
