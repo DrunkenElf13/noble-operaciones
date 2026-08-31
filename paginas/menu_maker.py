@@ -4,7 +4,7 @@ import time
 import uuid
 from data_loaders import cargar_recetas, cargar_costos_insumos, cargar_combos
 from sheets import _asegurar_hoja_menus, _asegurar_hoja_historial_menus, append_rows_con_retry, safe_worksheet, sh
-from utils import limpiar_valor, ts_hermosillo
+from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
 from config import COLS_MENUS, COLS_MENUS_HISTORIAL
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
@@ -23,13 +23,11 @@ def cargar_menus():
         datos = ws.get_all_values()
         if len(datos) <= 1:
             return pd.DataFrame(columns=COLS_MENUS + ["Incluir_KPI"])
-        # Obtener encabezados reales
         headers = datos[0]
         df = pd.DataFrame(datos[1:], columns=headers)
         for col in COLS_MENUS + ["Incluir_KPI"]:
             if col not in df.columns:
                 df[col] = "TRUE" if col == "Incluir_KPI" else ""
-        # Convertir columnas numéricas
         for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
@@ -40,7 +38,6 @@ def cargar_menus():
 
 
 def _guardar_historial_menu(menu_id, nombre_menu, producto, precio_anterior, precio_nuevo, responsable):
-    """Registra el cambio de precio en Menus_Historial."""
     ws_hist, err = _asegurar_hoja_historial_menus()
     if err:
         return
@@ -69,7 +66,6 @@ def show_menu_maker():
     df_combos = cargar_combos()
     df_menus = cargar_menus()
 
-    # Si no hay recetas ni combos, avisar
     if df_rec.empty and df_combos.empty:
         st.warning("No hay recetas ni combos capturados. Primero crea recetas o combos en 'Base de Costos'.")
         st.stop()
@@ -79,6 +75,107 @@ def show_menu_maker():
     # ==================== TAB AGREGAR / EDITAR ====================
     with tab_crear:
         st.subheader("Agregar o actualizar producto del menú")
+
+        # ⚡ CARGAR MENÚ DESDE LISTADO
+        with st.expander("⚡ Cargar menú desde listado", expanded=False):
+            st.markdown("""
+            Pega una lista de nombres de productos (uno por línea).  
+            El sistema buscará coincidencias con recetas y combos existentes.  
+            Podrás guardar automáticamente los que encuentre.
+            """)
+            texto_menu = st.text_area("Lista de productos:", height=200, key="menu_carga_texto")
+
+            if st.button("🔍 Previsualizar coincidencias"):
+                nombres = [n.strip() for n in texto_menu.splitlines() if n.strip()]
+                if not nombres:
+                    st.error("Pega al menos un nombre.")
+                else:
+                    recetas_norm = {normalizar_nombre(r): r for r in df_rec["Receta"].unique()} if not df_rec.empty else {}
+                    combos_norm = {normalizar_nombre(c): c for c in df_combos["Combo"].unique()} if not df_combos.empty else {}
+                    resultados = []
+                    for n in nombres:
+                        n_norm = normalizar_nombre(n)
+                        tipo = None
+                        nombre_real = ""
+                        precio = 0.0
+                        if n_norm in recetas_norm:
+                            tipo = "Receta"
+                            nombre_real = recetas_norm[n_norm]
+                            df_fila = df_rec[df_rec["Receta"] == nombre_real].iloc[0]
+                            precio = limpiar_valor(df_fila.get("Precio_Venta", 0))
+                        elif n_norm in combos_norm:
+                            tipo = "Combo"
+                            nombre_real = combos_norm[n_norm]
+                            df_fila = df_combos[df_combos["Combo"] == nombre_real].iloc[0]
+                            precio = limpiar_valor(df_fila.get("Precio_Venta", 0))
+                        resultados.append({"nombre": n, "tipo": tipo, "nombre_real": nombre_real, "precio": precio})
+                    st.session_state["menu_carga_resultados"] = resultados
+                    st.rerun()
+
+            if "menu_carga_resultados" in st.session_state and st.session_state["menu_carga_resultados"]:
+                st.write("**Resultados**")
+                for res in st.session_state["menu_carga_resultados"]:
+                    col1, col2, col3 = st.columns([2,1,1])
+                    with col1:
+                        st.write(res["nombre"])
+                    with col2:
+                        st.write(res["tipo"] if res["tipo"] else "No encontrado")
+                    with col3:
+                        if res["tipo"]:
+                            st.write(f"${res['precio']:,.2f}")
+                        else:
+                            st.write("—")
+
+                if st.button("💾 Guardar coincidencias en menú"):
+                    ws_menu, err_menu = _asegurar_hoja_menus()
+                    if err_menu:
+                        st.error(err_menu)
+                    else:
+                        guardados = 0
+                        for res in st.session_state["menu_carga_resultados"]:
+                            if res["tipo"] not in ["Receta", "Combo"]:
+                                continue
+                            nombre_producto = res["nombre_real"]
+                            tipo_interno = res["tipo"]
+                            if tipo_interno == "Receta":
+                                df_fila = df_rec[df_rec["Receta"] == nombre_producto].iloc[0]
+                                categoria = str(df_fila.get("Linea", ""))
+                                costo_neto = limpiar_valor(df_fila.get("Costo_Neto_Receta", 0)) or limpiar_valor(df_fila.get("Costo_Ingrediente", 0))
+                            else:
+                                df_fila = df_combos[df_combos["Combo"] == nombre_producto].iloc[0]
+                                categoria = str(df_fila.get("Linea", ""))
+                                costo_neto = limpiar_valor(df_fila.get("Costo_Neto_Combo", 0))
+                            precio_venta = res["precio"]
+                            if precio_venta <= 0:
+                                continue
+                            food_cost = (costo_neto / precio_venta * 100) if precio_venta > 0 else 0.0
+                            margen_bruto = precio_venta - costo_neto
+                            menu_id = str(uuid.uuid4())[:8]
+                            nueva_fila = [
+                                menu_id,
+                                nombre_producto,
+                                categoria,
+                                tipo_interno,
+                                nombre_producto,
+                                precio_venta,
+                                costo_neto,
+                                round(food_cost, 2),
+                                margen_bruto,
+                                "TRUE",
+                                ts_hermosillo(),
+                                st.session_state.current_user,
+                                "",
+                                "TRUE"
+                            ]
+                            append_rows_con_retry(ws_menu, [nueva_fila])
+                            guardados += 1
+                        cargar_menus.clear()
+                        st.success(f"{guardados} productos guardados en el menú.")
+                        del st.session_state["menu_carga_resultados"]
+                        time.sleep(0.5)
+                        st.rerun()
+
+        st.divider()
 
         tipo_producto_sel = st.radio(
             "¿Qué tipo de producto quieres agregar?",
@@ -106,21 +203,19 @@ def show_menu_maker():
         if tipo_producto_sel in ["Receta", "Combo"]:
             prod_sel = st.selectbox(titulo_opciones, opciones, key="menu_prod_sel")
 
-            # Obtener datos del producto seleccionado
             if tipo_producto_sel == "Receta":
                 df_fila = df_rec[df_rec["Receta"] == prod_sel].iloc[0]
                 costo_neto_prod = limpiar_valor(df_fila.get("Costo_Neto_Receta", 0)) or limpiar_valor(df_fila.get("Costo_Ingrediente", 0))
                 precio_prod = limpiar_valor(df_fila.get("Precio_Venta", 0))
                 linea_prod = str(df_fila.get("Linea", ""))
                 nombre_producto = prod_sel
-            else:  # Combo
+            else:
                 df_fila = df_combos[df_combos["Combo"] == prod_sel].iloc[0]
                 costo_neto_prod = limpiar_valor(df_fila.get("Costo_Neto_Combo", 0))
                 precio_prod = limpiar_valor(df_fila.get("Precio_Venta", 0))
                 linea_prod = str(df_fila.get("Linea", ""))
                 nombre_producto = prod_sel
 
-            # Ver si ya existe en menú
             existe_menu = False
             menu_previo = None
             if not df_menus.empty:
@@ -250,11 +345,37 @@ def show_menu_maker():
                         except Exception as e:
                             st.error(f"Error al guardar en Menú: {e}")
 
-        else:  # Reventa
+        else:  # REVENTA
             st.markdown("Producto de reventa (no requiere receta ni combo).")
-            # Ver si ya existe un producto de reventa con el mismo nombre
-            # Para simplificar, se buscará por nombre exacto y tipo "Reventa"
-            producto_nombre_reventa = st.text_input("Nombre del producto:", key="rev_nombre")
+
+            # --- Vinculación opcional con catálogo ---
+            df_costos_rev = cargar_costos_insumos()
+            if not df_costos_rev.empty:
+                ultimos_costos_rev = df_costos_rev.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
+                lista_insumos_rev = sorted(ultimos_costos_rev["Nombre_Insumo"].dropna().unique().tolist())
+            else:
+                ultimos_costos_rev = pd.DataFrame()
+                lista_insumos_rev = []
+
+            usar_vinculo = st.checkbox("Vincular con insumo existente (precargar costo)", key="rev_vinculo")
+            costo_sugerido = 0.0
+            nombre_sugerido = ""
+            if usar_vinculo and lista_insumos_rev:
+                insumo_vinculado = st.selectbox("Insumo:", [""] + lista_insumos_rev, key="rev_insumo_sel")
+                if insumo_vinculado:
+                    mask = ultimos_costos_rev["Nombre_Insumo"] == insumo_vinculado
+                    if mask.any():
+                        fila_costo = ultimos_costos_rev[mask].iloc[0]
+                        costo_sugerido = limpiar_valor(fila_costo.get("Costo_Unitario", 0))
+                        nombre_sugerido = insumo_vinculado
+            elif usar_vinculo:
+                st.info("No hay insumos con costo registrado para vincular.")
+
+            producto_nombre_reventa = st.text_input(
+                "Nombre del producto:",
+                value=nombre_sugerido,
+                key="rev_nombre"
+            )
 
             existe_menu = False
             menu_previo = None
@@ -295,11 +416,12 @@ def show_menu_maker():
                         step=1.0,
                         value=float(menu_previo.get("Precio_Venta", 0.0)) if existe_menu else 0.0
                     )
+                    costo_compra_default = float(menu_previo.get("Costo_Neto", costo_sugerido)) if existe_menu else float(costo_sugerido)
                     costo_compra = st.number_input(
                         "Costo de compra ($):",
                         min_value=0.0,
                         step=0.5,
-                        value=float(menu_previo.get("Costo_Neto", 0.0)) if existe_menu else 0.0,
+                        value=costo_compra_default,
                         help="Lo que pagas por el producto para revenderlo."
                     )
                     if precio_venta > 0 and costo_compra > 0:
@@ -392,7 +514,7 @@ def show_menu_maker():
                         except Exception as e:
                             st.error(f"Error al guardar en Menú: {e}")
 
-        # Mostrar tabla de productos existentes
+        # Tabla de productos existentes
         if not df_menus.empty:
             st.divider()
             st.subheader("📋 Productos existentes")
@@ -408,7 +530,6 @@ def show_menu_maker():
         if df_menus.empty:
             st.info("No hay productos en el menú. Agrega uno en la pestaña anterior.")
         else:
-            # Filtro de categoría
             categorias_disponibles = sorted(df_menus["Categoria_Menu"].dropna().unique().tolist())
             filtro_cat = st.selectbox("Filtrar por categoría:", ["Todas"] + categorias_disponibles, key="menu_filtro_cat")
 
@@ -416,19 +537,14 @@ def show_menu_maker():
             if filtro_cat != "Todas":
                 df_filtrado = df_filtrado[df_filtrado["Categoria_Menu"] == filtro_cat]
 
-            # Filtrar solo activos para KPIs y visualización principal
             df_activos = df_filtrado[df_filtrado["Activo"].astype(str).str.upper() == "TRUE"].copy()
 
             if df_activos.empty:
                 st.warning("No hay productos activos en este filtro.")
             else:
-                # Marcar si incluir en KPIs
                 df_kpi = df_activos[df_activos["Incluir_KPI"].astype(str).str.upper() == "TRUE"].copy()
                 df_no_kpi = df_activos[df_activos["Incluir_KPI"].astype(str).str.upper() != "TRUE"]
 
-                st.markdown("#### 📊 KPIs del menú activo")
-
-                # Métricas globales (solo productos con Incluir_KPI=True)
                 total_prod_activos = len(df_activos)
                 total_prod_kpi = len(df_kpi)
                 if total_prod_kpi > 0:
@@ -473,7 +589,6 @@ def show_menu_maker():
                 cols_det_ok = [c for c in cols_det if c in df_activos.columns]
                 st.dataframe(df_activos[cols_det_ok].sort_values("Categoria_Menu"), hide_index=True, width="stretch")
 
-                # Mostrar productos inactivos
                 with st.expander("Ver productos inactivos", expanded=False):
                     df_inactivos = df_filtrado[df_filtrado["Activo"].astype(str).str.upper() != "TRUE"]
                     if not df_inactivos.empty:
@@ -481,6 +596,5 @@ def show_menu_maker():
                     else:
                         st.caption("No hay productos inactivos en este filtro.")
 
-                # Mostrar productos excluidos de KPIs
                 if not df_no_kpi.empty:
                     st.caption(f"⚠️ {len(df_no_kpi)} producto(s) excluido(s) de los KPIs.")
