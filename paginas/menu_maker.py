@@ -17,22 +17,21 @@ def cargar_menus():
     if err:
         ws, err2 = _asegurar_hoja_menus()
         if err2:
-            return pd.DataFrame(columns=COLS_MENUS + ["Incluir_KPI"])
-        return pd.DataFrame(columns=COLS_MENUS + ["Incluir_KPI"])
+            return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
+        return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
     try:
         datos = ws.get_all_values()
         if len(datos) <= 1:
-            return pd.DataFrame(columns=COLS_MENUS + ["Incluir_KPI"])
+            return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
         headers = datos[0]
         df = pd.DataFrame(datos[1:], columns=headers)
-        for col in COLS_MENUS + ["Incluir_KPI"]:
+        for col in COLS_MENUS + ["Notas", "Incluir_KPI"]:
             if col not in df.columns:
                 df[col] = "TRUE" if col == "Incluir_KPI" else ""
         for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
 
-        # Normalizar Incluir_KPI a booleano
         def _parse_bool(v):
             s = str(v).strip().upper()
             if s in ["TRUE", "1", "SÍ", "SI", "YES"]:
@@ -45,7 +44,7 @@ def cargar_menus():
         return df
     except Exception as e:
         st.warning(f"Error cargando menú: {e}")
-        return pd.DataFrame(columns=COLS_MENUS + ["Incluir_KPI"])
+        return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
 
 
 def _guardar_historial_menu(menu_id, nombre_menu, producto, precio_anterior, precio_nuevo, responsable):
@@ -81,6 +80,17 @@ def show_menu_maker():
         st.warning("No hay recetas ni combos capturados. Primero crea recetas o combos en 'Base de Costos'.")
         st.stop()
 
+    # Construir diccionarios de costo real sumando componentes
+    costo_por_receta = {}
+    if not df_rec.empty:
+        for receta, grupo in df_rec.groupby("Receta"):
+            costo_por_receta[receta] = grupo["Costo_Ingrediente"].apply(limpiar_valor).sum()
+
+    costo_por_combo = {}
+    if not df_combos.empty:
+        for combo, grupo in df_combos.groupby("Combo"):
+            costo_por_combo[combo] = grupo["Costo_Total_Componente"].apply(limpiar_valor).sum()
+
     tab_crear, tab_ver = st.tabs(["➕ Agregar / Editar Producto", "📋 Menú Actual"])
 
     # ==================== TAB AGREGAR / EDITAR ====================
@@ -111,14 +121,17 @@ def show_menu_maker():
                     tipo = "Receta" if "(Receta)" in s else "Combo"
                     nombre_real = s.split(" (")[0].replace("🍽️ ", "").replace("🍱 ", "")
                     if tipo == "Receta":
-                        df_fila = df_rec[df_rec["Receta"] == nombre_real].iloc[0]
-                        categoria = str(df_fila.get("Linea", ""))
-                        costo_neto = limpiar_valor(df_fila.get("Costo_Neto_Receta", 0)) or limpiar_valor(df_fila.get("Costo_Ingrediente", 0))
+                        categoria = str(df_rec[df_rec["Receta"] == nombre_real].iloc[0].get("Linea", ""))
+                        costo_neto = costo_por_receta.get(nombre_real, 0.0)
                     else:
-                        df_fila = df_combos[df_combos["Combo"] == nombre_real].iloc[0]
-                        categoria = str(df_fila.get("Linea", ""))
-                        costo_neto = limpiar_valor(df_fila.get("Costo_Neto_Combo", 0))
-                    precio_venta = limpiar_valor(df_fila.get("Precio_Venta", 0))
+                        categoria = str(df_combos[df_combos["Combo"] == nombre_real].iloc[0].get("Linea", ""))
+                        costo_neto = costo_por_combo.get(nombre_real, 0.0)
+
+                    precio_venta = limpiar_valor(
+                        df_rec[df_rec["Receta"] == nombre_real].iloc[0].get("Precio_Venta", 0)
+                        if tipo == "Receta"
+                        else df_combos[df_combos["Combo"] == nombre_real].iloc[0].get("Precio_Venta", 0)
+                    )
 
                     productos_seleccionados.append({
                         "Producto": nombre_real,
@@ -131,7 +144,6 @@ def show_menu_maker():
 
                 df_editor = pd.DataFrame(productos_seleccionados)
 
-                # Verificar duplicados con menú existente
                 if not df_menus.empty:
                     claves_existentes = set(
                         (str(r["Producto"]), str(r["Tipo_Producto"]))
@@ -161,7 +173,6 @@ def show_menu_maker():
                     key="editor_carga_visual"
                 )
 
-                # Mostrar aviso de duplicados
                 duplicados = edited_df[edited_df["_Existe"]].shape[0]
                 if duplicados > 0:
                     st.warning(f"⚠️ {duplicados} producto(s) ya existen en el menú y serán omitidos.")
@@ -202,7 +213,7 @@ def show_menu_maker():
                                 costo_neto,
                                 food_cost,
                                 margen_bruto,
-                                "TRUE",  # Activo
+                                "TRUE",
                                 ts_hermosillo(),
                                 st.session_state.current_user,
                                 "",
@@ -247,13 +258,13 @@ def show_menu_maker():
 
             if tipo_producto_sel == "Receta":
                 df_fila = df_rec[df_rec["Receta"] == prod_sel].iloc[0]
-                costo_neto_prod = limpiar_valor(df_fila.get("Costo_Neto_Receta", 0)) or limpiar_valor(df_fila.get("Costo_Ingrediente", 0))
+                costo_neto_prod = costo_por_receta.get(prod_sel, 0.0)
                 precio_prod = limpiar_valor(df_fila.get("Precio_Venta", 0))
                 linea_prod = str(df_fila.get("Linea", ""))
                 nombre_producto = prod_sel
             else:
                 df_fila = df_combos[df_combos["Combo"] == prod_sel].iloc[0]
-                costo_neto_prod = limpiar_valor(df_fila.get("Costo_Neto_Combo", 0))
+                costo_neto_prod = costo_por_combo.get(prod_sel, 0.0)
                 precio_prod = limpiar_valor(df_fila.get("Precio_Venta", 0))
                 linea_prod = str(df_fila.get("Linea", ""))
                 nombre_producto = prod_sel
@@ -389,7 +400,6 @@ def show_menu_maker():
         else:  # REVENTA
             st.markdown("Producto de reventa (no requiere receta ni combo).")
 
-            # --- Vinculación opcional con catálogo ---
             df_costos_rev = cargar_costos_insumos()
             if not df_costos_rev.empty:
                 ultimos_costos_rev = df_costos_rev.sort_values("Fecha_Captura").drop_duplicates(subset=["Nombre_Insumo"], keep="last")
@@ -555,7 +565,6 @@ def show_menu_maker():
                         except Exception as e:
                             st.error(f"Error al guardar en Menú: {e}")
 
-        # Tabla de productos existentes
         if not df_menus.empty:
             st.divider()
             st.subheader("📋 Productos existentes")
@@ -582,7 +591,6 @@ def show_menu_maker():
             if df_activos.empty:
                 st.warning("No hay productos activos en este filtro.")
             else:
-                # Ahora Incluir_KPI es booleano
                 df_kpi = df_activos[df_activos["Incluir_KPI"] == True].copy()
                 df_no_kpi = df_activos[df_activos["Incluir_KPI"] != True].copy()
 
@@ -629,7 +637,6 @@ def show_menu_maker():
                 st.subheader("📄 Detalle del menú activo")
                 df_activos_show = df_activos.copy()
                 df_activos_show["Factor"] = (df_activos_show["Precio_Venta"] / df_activos_show["Costo_Neto"].replace(0, float('nan'))).fillna(0).round(2)
-                # Columna visual para KPI
                 df_activos_show["Estado_KPI"] = df_activos_show["Incluir_KPI"].apply(lambda x: "✅" if x else "❌")
                 cols_det = ["Nombre_Menu", "Categoria_Menu", "Tipo_Producto", "Precio_Venta",
                             "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto", "Factor",
