@@ -76,68 +76,50 @@ def show_menu_maker():
     with tab_crear:
         st.subheader("Agregar o actualizar producto del menú")
 
-        # ⚡ CARGAR MENÚ DESDE LISTADO
-        with st.expander("⚡ Cargar menú desde listado", expanded=False):
-            st.markdown("""
-            Pega una lista de nombres de productos (uno por línea).  
-            El sistema buscará coincidencias con recetas y combos existentes.  
-            Podrás guardar automáticamente los que encuentre.
-            """)
-            texto_menu = st.text_area("Lista de productos:", height=200, key="menu_carga_texto")
+        # ⚡ CARGA VISUAL DE PRODUCTOS AL MENÚ
+        with st.expander("⚡ Cargar productos al menú (selección visual)", expanded=False):
+            st.markdown("Selecciona una o varias recetas/combos para agregarlos al menú actual.")
+            opciones_carga = []
+            if not df_rec.empty:
+                for _, r in df_rec.drop_duplicates(subset=["Receta"]).iterrows():
+                    opciones_carga.append(f"🍽️ {r['Receta']} (Receta)")
+            if not df_combos.empty:
+                for _, c in df_combos.drop_duplicates(subset=["Combo"]).iterrows():
+                    opciones_carga.append(f"🍱 {c['Combo']} (Combo)")
+            opciones_carga = sorted(opciones_carga)
 
-            if st.button("🔍 Previsualizar coincidencias"):
-                nombres = [n.strip() for n in texto_menu.splitlines() if n.strip()]
-                if not nombres:
-                    st.error("Pega al menos un nombre.")
-                else:
-                    recetas_norm = {normalizar_nombre(r): r for r in df_rec["Receta"].unique()} if not df_rec.empty else {}
-                    combos_norm = {normalizar_nombre(c): c for c in df_combos["Combo"].unique()} if not df_combos.empty else {}
-                    resultados = []
-                    for n in nombres:
-                        n_norm = normalizar_nombre(n)
-                        tipo = None
-                        nombre_real = ""
-                        precio = 0.0
-                        if n_norm in recetas_norm:
-                            tipo = "Receta"
-                            nombre_real = recetas_norm[n_norm]
-                            df_fila = df_rec[df_rec["Receta"] == nombre_real].iloc[0]
-                            precio = limpiar_valor(df_fila.get("Precio_Venta", 0))
-                        elif n_norm in combos_norm:
-                            tipo = "Combo"
-                            nombre_real = combos_norm[n_norm]
-                            df_fila = df_combos[df_combos["Combo"] == nombre_real].iloc[0]
-                            precio = limpiar_valor(df_fila.get("Precio_Venta", 0))
-                        resultados.append({"nombre": n, "tipo": tipo, "nombre_real": nombre_real, "precio": precio})
-                    st.session_state["menu_carga_resultados"] = resultados
-                    st.rerun()
+            seleccion = st.multiselect(
+                "Productos a agregar:",
+                opciones_carga,
+                key="menu_carga_multiselect"
+            )
 
-            if "menu_carga_resultados" in st.session_state and st.session_state["menu_carga_resultados"]:
-                st.write("**Resultados**")
-                for res in st.session_state["menu_carga_resultados"]:
-                    col1, col2, col3 = st.columns([2,1,1])
-                    with col1:
-                        st.write(res["nombre"])
-                    with col2:
-                        st.write(res["tipo"] if res["tipo"] else "No encontrado")
-                    with col3:
-                        if res["tipo"]:
-                            st.write(f"${res['precio']:,.2f}")
-                        else:
-                            st.write("—")
+            if seleccion:
+                st.write("**Resumen de selección:**")
+                resumen = []
+                for s in seleccion:
+                    tipo = "Receta" if "(Receta)" in s else "Combo"
+                    nombre_real = s.split(" (")[0].replace("🍽️ ", "").replace("🍱 ", "")
+                    if tipo == "Receta":
+                        df_fila = df_rec[df_rec["Receta"] == nombre_real].iloc[0]
+                        precio = limpiar_valor(df_fila.get("Precio_Venta", 0))
+                    else:
+                        df_fila = df_combos[df_combos["Combo"] == nombre_real].iloc[0]
+                        precio = limpiar_valor(df_fila.get("Precio_Venta", 0))
+                    resumen.append({"Producto": nombre_real, "Tipo": tipo, "Precio": precio})
+                df_resumen = pd.DataFrame(resumen)
+                st.dataframe(df_resumen, hide_index=True, width="stretch")
 
-                if st.button("💾 Guardar coincidencias en menú"):
+                if st.button("💾 Guardar seleccionados en menú", key="btn_guardar_carga_visual", type="primary", width="stretch"):
                     ws_menu, err_menu = _asegurar_hoja_menus()
                     if err_menu:
                         st.error(err_menu)
                     else:
                         guardados = 0
-                        for res in st.session_state["menu_carga_resultados"]:
-                            if res["tipo"] not in ["Receta", "Combo"]:
-                                continue
-                            nombre_producto = res["nombre_real"]
-                            tipo_interno = res["tipo"]
-                            if tipo_interno == "Receta":
+                        for s in seleccion:
+                            tipo = "Receta" if "(Receta)" in s else "Combo"
+                            nombre_producto = s.split(" (")[0].replace("🍽️ ", "").replace("🍱 ", "")
+                            if tipo == "Receta":
                                 df_fila = df_rec[df_rec["Receta"] == nombre_producto].iloc[0]
                                 categoria = str(df_fila.get("Linea", ""))
                                 costo_neto = limpiar_valor(df_fila.get("Costo_Neto_Receta", 0)) or limpiar_valor(df_fila.get("Costo_Ingrediente", 0))
@@ -145,7 +127,7 @@ def show_menu_maker():
                                 df_fila = df_combos[df_combos["Combo"] == nombre_producto].iloc[0]
                                 categoria = str(df_fila.get("Linea", ""))
                                 costo_neto = limpiar_valor(df_fila.get("Costo_Neto_Combo", 0))
-                            precio_venta = res["precio"]
+                            precio_venta = limpiar_valor(df_fila.get("Precio_Venta", 0))
                             if precio_venta <= 0:
                                 continue
                             food_cost = (costo_neto / precio_venta * 100) if precio_venta > 0 else 0.0
@@ -155,7 +137,7 @@ def show_menu_maker():
                                 menu_id,
                                 nombre_producto,
                                 categoria,
-                                tipo_interno,
+                                tipo,
                                 nombre_producto,
                                 precio_venta,
                                 costo_neto,
@@ -171,9 +153,10 @@ def show_menu_maker():
                             guardados += 1
                         cargar_menus.clear()
                         st.success(f"{guardados} productos guardados en el menú.")
-                        del st.session_state["menu_carga_resultados"]
                         time.sleep(0.5)
                         st.rerun()
+            else:
+                st.info("Selecciona al menos un producto.")
 
         st.divider()
 
