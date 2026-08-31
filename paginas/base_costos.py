@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
+import numpy as np
 from data_loaders import (
     cargar_costos_insumos, cargar_recetas, cargar_datos_integrales,
     cargar_combos
