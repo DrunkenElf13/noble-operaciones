@@ -120,6 +120,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
             st.divider()
             st.write("**🛠️ Administración Avanzada:**")
             if st.button("🔒 Corte de Mes", width="stretch"): cambiar_pagina("CorteMes")
+            if st.button("🍽️ Menú Maker", width="stretch"): cambiar_pagina("MenuMaker")
 
             st.divider()
             with st.expander("👤 Gestión de Accesos"):
@@ -244,7 +245,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                 st.write("Asigna qué páginas puede ver cada rol.")
                 all_pages = ["Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas","ImportarVentas",
                              "RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma","DashboardFinanciero",
-                             "Calendario","Impresion","ListaCompra","ReporteStock","CorteMes","CargaXML"]
+                             "Calendario","Impresion","ListaCompra","ReporteStock","CorteMes","CargaXML","MenuMaker"]
                 ws_perm, err_perm = safe_worksheet(sh, "Permisos")
                 if err_perm:
                     try:
