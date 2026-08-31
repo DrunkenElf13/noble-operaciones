@@ -128,14 +128,20 @@ def _asegurar_hoja_menus():
     ws, err = safe_worksheet(sh, "Menus")
     if err:
         try:
-            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(COLS_MENUS)+1))
-            encabezados = COLS_MENUS + ["Incluir_KPI"]
+            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(COLS_MENUS)+2))
+            encabezados = COLS_MENUS + ["Notas", "Incluir_KPI"]
             ws.append_row(encabezados)
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja Menus: {e}"
+    # Si ya existe, verificar/agregar columnas faltantes sin borrar datos
     try:
         actuales = ws.row_values(1)
+        # Añadir Notas si falta
+        if "Notas" not in actuales:
+            col_idx = len(actuales) + 1
+            ws.update_cell(1, col_idx, "Notas")
+        # Añadir Incluir_KPI si falta
         if "Incluir_KPI" not in actuales:
             col_idx = len(actuales) + 1
             ws.update_cell(1, col_idx, "Incluir_KPI")
