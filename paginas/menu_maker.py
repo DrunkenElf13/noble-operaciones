@@ -31,6 +31,17 @@ def cargar_menus():
         for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
+
+        # Normalizar Incluir_KPI a booleano
+        def _parse_bool(v):
+            s = str(v).strip().upper()
+            if s in ["TRUE", "1", "SÍ", "SI", "YES"]:
+                return True
+            return False
+
+        if "Incluir_KPI" in df.columns:
+            df["Incluir_KPI"] = df["Incluir_KPI"].apply(_parse_bool)
+
         return df
     except Exception as e:
         st.warning(f"Error cargando menú: {e}")
@@ -95,7 +106,6 @@ def show_menu_maker():
             )
 
             if seleccion:
-                # Construir lista de diccionarios para el editor
                 productos_seleccionados = []
                 for s in seleccion:
                     tipo = "Receta" if "(Receta)" in s else "Combo"
@@ -134,7 +144,6 @@ def show_menu_maker():
                 else:
                     df_editor["_Existe"] = False
 
-                # Editor interactivo
                 st.write("**Edita los valores antes de guardar:**")
                 edited_df = st.data_editor(
                     df_editor,
@@ -152,7 +161,7 @@ def show_menu_maker():
                     key="editor_carga_visual"
                 )
 
-                # Resumen de duplicados
+                # Mostrar aviso de duplicados
                 duplicados = edited_df[edited_df["_Existe"]].shape[0]
                 if duplicados > 0:
                     st.warning(f"⚠️ {duplicados} producto(s) ya existen en el menú y serán omitidos.")
@@ -279,7 +288,7 @@ def show_menu_maker():
                     )
                     incluir_kpi = st.toggle(
                         "Incluir en KPIs",
-                        value=bool(str(menu_previo.get("Incluir_KPI", "TRUE")).strip().upper() == "TRUE") if existe_menu else True,
+                        value=bool(menu_previo.get("Incluir_KPI", True)) if existe_menu else True,
                         help="Si está desactivado, este producto no se contará en los promedios ni totales de KPIs del menú."
                     )
                 with col2:
@@ -438,7 +447,7 @@ def show_menu_maker():
                     )
                     incluir_kpi = st.toggle(
                         "Incluir en KPIs",
-                        value=bool(str(menu_previo.get("Incluir_KPI", "TRUE")).strip().upper() == "TRUE") if existe_menu else True,
+                        value=bool(menu_previo.get("Incluir_KPI", True)) if existe_menu else True,
                         help="Si está desactivado, este producto no se contará en los promedios ni totales de KPIs."
                     )
                 with col2:
@@ -573,8 +582,9 @@ def show_menu_maker():
             if df_activos.empty:
                 st.warning("No hay productos activos en este filtro.")
             else:
-                df_kpi = df_activos[df_activos["Incluir_KPI"].astype(str).str.upper() == "TRUE"].copy()
-                df_no_kpi = df_activos[df_activos["Incluir_KPI"].astype(str).str.upper() != "TRUE"]
+                # Ahora Incluir_KPI es booleano
+                df_kpi = df_activos[df_activos["Incluir_KPI"] == True].copy()
+                df_no_kpi = df_activos[df_activos["Incluir_KPI"] != True].copy()
 
                 total_prod_activos = len(df_activos)
                 total_prod_kpi = len(df_kpi)
@@ -609,7 +619,6 @@ def show_menu_maker():
                         Margen_Bruto_Total=("Margen_Bruto", "sum")
                     ).reset_index()
                     df_cat["Margen_Promedio"] = df_cat["Margen_Bruto_Total"] / df_cat["Productos"]
-                    # Factor de multiplicación
                     df_cat["Factor_Promedio"] = df_cat["Precio_Promedio"] / df_cat["Costo_Promedio"].replace(0, float('nan'))
                     df_cat["Factor_Promedio"] = df_cat["Factor_Promedio"].fillna(0).round(2)
                     st.dataframe(df_cat, hide_index=True, width="stretch")
@@ -618,11 +627,13 @@ def show_menu_maker():
 
                 st.divider()
                 st.subheader("📄 Detalle del menú activo")
-                # Agregar factor de multiplicación en el detalle
                 df_activos_show = df_activos.copy()
                 df_activos_show["Factor"] = (df_activos_show["Precio_Venta"] / df_activos_show["Costo_Neto"].replace(0, float('nan'))).fillna(0).round(2)
+                # Columna visual para KPI
+                df_activos_show["Estado_KPI"] = df_activos_show["Incluir_KPI"].apply(lambda x: "✅" if x else "❌")
                 cols_det = ["Nombre_Menu", "Categoria_Menu", "Tipo_Producto", "Precio_Venta",
-                            "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto", "Factor", "Incluir_KPI", "Responsable"]
+                            "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto", "Factor",
+                            "Estado_KPI", "Responsable"]
                 cols_det_ok = [c for c in cols_det if c in df_activos_show.columns]
                 st.dataframe(df_activos_show[cols_det_ok].sort_values("Categoria_Menu"), hide_index=True, width="stretch")
 
