@@ -37,6 +37,7 @@ from paginas.merma import show_merma
 from paginas.dashboard_financiero import show_dashboard_financiero
 from paginas.calendario import show_calendario
 from paginas.carga_xml import show_carga_xml
+from paginas.menu_maker import show_menu_maker
 
 _defaults = {
     "auth_status": False,
@@ -113,3 +114,5 @@ elif pagina == "Calendario":
     show_calendario()   # ← sin verificación de permisos (acordado)
 elif pagina == "CargaXML":
     if tiene_permiso("BaseCostos"): show_carga_xml()
+elif pagina == "MenuMaker":
+    if tiene_permiso("MenuMaker"): show_menu_maker()
