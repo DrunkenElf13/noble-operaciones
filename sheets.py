@@ -134,17 +134,34 @@ def _asegurar_hoja_menus():
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja Menus: {e}"
-    # Si ya existe, verificar/agregar columnas faltantes sin borrar datos
+    # Si ya existe, reparar encabezados sin borrar datos
     try:
         actuales = ws.row_values(1)
-        # Añadir Notas si falta
+
+        # Si falta Notas, buscar una columna vacía entre Responsable e Incluir_KPI
         if "Notas" not in actuales:
-            col_idx = len(actuales) + 1
-            ws.update_cell(1, col_idx, "Notas")
-        # Añadir Incluir_KPI si falta
+            # Si existe Incluir_KPI y hay una columna vacía antes, la renombramos
+            if "Incluir_KPI" in actuales:
+                idx_kpi = actuales.index("Incluir_KPI")
+                if idx_kpi > 0 and (idx_kpi >= len(actuales) or actuales[idx_kpi - 1].strip() == ""):
+                    ws.update_cell(1, idx_kpi, "Notas")  # idx_kpi es 1-based, pero update_cell espera col 1-based
+            # Si no existe Incluir_KPI, agregar Notas al final
+            else:
+                col_notas = len(actuales) + 1
+                ws.update_cell(1, col_notas, "Notas")
+                actuales.append("Notas")
+
+        # Si falta Incluir_KPI, agregar al final
         if "Incluir_KPI" not in actuales:
-            col_idx = len(actuales) + 1
-            ws.update_cell(1, col_idx, "Incluir_KPI")
+            col_kpi = len(actuales) + 1
+            ws.update_cell(1, col_kpi, "Incluir_KPI")
+
+        # Corregir si Incluir_KPI está justo después de una columna vacía (la vacía debería ser Notas)
+        # Ya lo hicimos arriba, pero por si acaso verificamos nombres exactos
+        actuales_revisados = ws.row_values(1)
+        if "Notas" in actuales_revisados and "Incluir_KPI" in actuales_revisados:
+            if actuales_revisados.index("Incluir_KPI") == actuales_revisados.index("Notas") + 1:
+                pass  # correcto
     except Exception:
         pass
     return ws, None
