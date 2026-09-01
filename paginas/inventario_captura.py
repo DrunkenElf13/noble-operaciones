@@ -49,7 +49,6 @@ def _mostrar_preview_borrador(borrador, df_actual):
             })
             continue
 
-        # ✅ CORRECCIÓN: usar Stock Neto real del último inventario
         if "Stock Neto" in prev:
             neto_prev = limpiar_valor(prev["Stock Neto"])
         elif "Stock Neto Calculado" in prev:
@@ -57,7 +56,6 @@ def _mostrar_preview_borrador(borrador, df_actual):
         else:
             neto_prev = limpiar_valor(prev["Alm"]) + limpiar_valor(prev["Barra"])
 
-        # ✅ CORRECCIÓN: en el borrador, b ya es neta, NO se resta tara
         a_borr = float(datos.get("a", 0))
         b_borr = float(datos.get("b", 0))
         neto_borr = a_borr + b_borr
@@ -409,6 +407,19 @@ def show_inventario():
                 }
                 st.session_state.inv_campos[safe_nom] = campos
 
+            # Inicializar claves individuales si no existen
+            defaults = {
+                f"a_{safe_nom}": float(campos.get("a", 0.0)),
+                f"b_{safe_nom}": float(campos.get("b", 0.0)),
+                f"u_{safe_nom}": str(campos.get("u", "pz")).lower(),
+                f"tara_{safe_nom}": float(campos.get("tara", 0.0)),
+                f"p_{safe_nom}": bool(campos.get("p", False)),
+                f"c_{safe_nom}": str(campos.get("c", "")),
+            }
+            for key, val in defaults.items():
+                if key not in st.session_state:
+                    st.session_state[key] = val
+
             c1,c2,c3,c4,c5,c6,c7,c8 = st.columns([2.8,1.0,1.0,1.0,1.0,1.0,1.2,2.5])
             with c1:
                 st.write(f"**{nom}** *({campos['u']})*")
@@ -423,27 +434,24 @@ def show_inventario():
                     unsafe_allow_html=True
                 )
             with c2:
-                v_a = st.number_input("Alm", min_value=0.0, step=1.0, value=float(campos.get("a",0.0)),
-                                      key=f"a_{safe_nom}", label_visibility="collapsed")
+                v_a = st.number_input("Alm", min_value=0.0, step=1.0, key=f"a_{safe_nom}", label_visibility="collapsed")
             with c3:
-                v_b = st.number_input("Bar", min_value=0.0, step=1.0, value=float(campos.get("b",0.0)),
-                                      key=f"b_{safe_nom}", label_visibility="collapsed")
+                v_b = st.number_input("Bar", min_value=0.0, step=1.0, key=f"b_{safe_nom}", label_visibility="collapsed")
             with c4:
-                u_actual = str(campos.get("u","pz")).lower()
+                u_actual = str(st.session_state[f"u_{safe_nom}"]).lower()
                 v_u = st.selectbox("U", UNIDADES_MED,
                                    index=UNIDADES_MED.index(u_actual) if u_actual in UNIDADES_MED else 0,
                                    key=f"u_{safe_nom}", label_visibility="collapsed")
             with c5:
-                v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1, value=float(campos.get("tara",0.0)),
-                                                key=f"tara_{safe_nom}", label_visibility="collapsed")
+                v_tara_manual = st.number_input("Tara", min_value=0.0, step=0.1, key=f"tara_{safe_nom}", label_visibility="collapsed")
             with c6:
                 v_b_neto = max(0.0, v_b - v_tara_manual)
                 v_n_display = v_a + v_b_neto
                 st.write(f"**{v_n_display:.1f}**")
             with c7:
-                v_p = st.checkbox("🛒", value=bool(campos.get("p", False)), key=f"p_{safe_nom}")
+                v_p = st.checkbox("🛒", key=f"p_{safe_nom}")
             with c8:
-                v_c = st.text_input("Obs", value=str(campos.get("c","")), key=f"c_{safe_nom}", label_visibility="collapsed")
+                v_c = st.text_input("Obs", key=f"c_{safe_nom}", label_visibility="collapsed")
 
             st.session_state.inv_campos[safe_nom] = {
                 "a": v_a,
