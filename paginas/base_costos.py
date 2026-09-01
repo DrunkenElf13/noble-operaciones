@@ -1047,6 +1047,7 @@ def show_base_costos():
                         if len(todos) <= 1:
                             st.error("No hay recetas para actualizar.")
                         else:
+                            # Crear/actualizar hoja de historial
                             ws_hist, err_hist = safe_worksheet(sh, "Recetas_Historial")
                             if ws_hist is None:
                                 ws_hist = sh.add_worksheet(title="Recetas_Historial", rows="10000", cols="20")
@@ -1064,27 +1065,52 @@ def show_base_costos():
                             if df_costos_act.empty:
                                 st.error("No se pudo calcular costos actuales.")
                             else:
+                                # Mapa de costos actuales por receta
                                 costo_map = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"]))
+
+                                # Crear DataFrame desde la hoja actual
                                 df_old = pd.DataFrame(todos[1:], columns=todos[0])
-                                for col in ["Precio_Insumo","Costo_Ingrediente","Costo_Neto_Receta","Costo_Porcion","Food_Cost_Pct"]:
+
+                                # Asegurar que existan todas las columnas de COLS_RECETAS
+                                for col in COLS_RECETAS:
                                     if col not in df_old.columns:
-                                        df_old[col] = 0.0
-                                for idx, row in df_old.iterrows():
-                                    receta_nombre = row.get("Receta", "")
-                                    if receta_nombre in costo_map:
-                                        nuevo_costo = float(costo_map[receta_nombre])
-                                        cantidad = limpiar_valor(row.get("Cantidad", 0))
-                                        precio = limpiar_valor(row.get("Precio_Venta", 0))
-                                        df_old.at[idx, "Precio_Insumo"] = nuevo_costo / cantidad if cantidad > 0 else 0.0
-                                        df_old.at[idx, "Costo_Ingrediente"] = nuevo_costo
-                                        df_old.at[idx, "Costo_Neto_Receta"] = nuevo_costo
-                                        rinde = limpiar_valor(row.get("Rinde", 1))
-                                        df_old.at[idx, "Costo_Porcion"] = nuevo_costo / rinde if rinde > 0 else 0.0
-                                        df_old.at[idx, "Food_Cost_Pct"] = (nuevo_costo / precio * 100) if precio > 0 else 0.0
+                                        df_old[col] = 0.0 if col in ["Cantidad","Costo_Ingrediente","Precio_Venta","Food_Cost_Pct","Precio_Insumo","Costo_Neto_Receta","Rinde","Costo_Porcion"] else ""
+
+                                # Convertir columnas numéricas a float
+                                columnas_numericas = [
+                                    "Cantidad", "Costo_Ingrediente", "Precio_Venta",
+                                    "Food_Cost_Pct", "Precio_Insumo", "Costo_Neto_Receta",
+                                    "Rinde", "Costo_Porcion"
+                                ]
+                                for col in columnas_numericas:
+                                    if col in df_old.columns:
+                                        df_old[col] = pd.to_numeric(df_old[col], errors="coerce").fillna(0.0)
+
+                                # Actualizar costos usando máscaras para evitar dtype mixto
+                                for receta, nuevo_costo in costo_map.items():
+                                    mask = df_old["Receta"] == receta
+                                    if mask.any():
+                                        precio = df_old.loc[mask, "Precio_Venta"].astype(float)
+                                        cantidad = df_old.loc[mask, "Cantidad"].astype(float)
+                                        rinde = df_old.loc[mask, "Rinde"].astype(float)
+
+                                        df_old.loc[mask, "Precio_Insumo"] = nuevo_costo / cantidad.where(cantidad > 0, 1)
+                                        df_old.loc[mask, "Costo_Ingrediente"] = nuevo_costo
+                                        df_old.loc[mask, "Costo_Neto_Receta"] = nuevo_costo
+                                        df_old.loc[mask, "Costo_Porcion"] = nuevo_costo / rinde.where(rinde > 0, 1)
+                                        df_old.loc[mask, "Food_Cost_Pct"] = (nuevo_costo / precio.where(precio > 0, 1)) * 100
+
+                                # Redondear y convertir a tipos adecuados para Sheets
+                                df_old["Food_Cost_Pct"] = df_old["Food_Cost_Pct"].round(2)
+                                df_old["Costo_Porcion"] = df_old["Costo_Porcion"].round(4)
+                                df_old["Precio_Insumo"] = df_old["Precio_Insumo"].round(4)
+
+                                # Asegurar que solo escribimos columnas de COLS_RECETAS en el orden correcto
+                                df_final = df_old[COLS_RECETAS].copy()
 
                                 ws_rec.clear()
                                 ws_rec.append_row(COLS_RECETAS)
-                                ws_rec.append_rows(df_old.values.tolist(), value_input_option="USER_ENTERED")
+                                ws_rec.append_rows(df_final.values.tolist(), value_input_option="USER_ENTERED")
                                 cargar_recetas.clear()
                                 cargar_costos_actuales_recetas.clear()
                                 st.success("✅ Costos actualizados en hoja Recetas. Respaldo guardado en Recetas_Historial.")
