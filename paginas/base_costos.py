@@ -1035,7 +1035,6 @@ def show_base_costos():
                     r4.metric("Margen Promedio", f"${margen_prom:,.2f}")
 
         # 🔄 Sincronización manual a hoja Recetas
-        st.divider()
         with st.expander("🔄 Sincronizar costos a hoja Recetas", expanded=False):
             st.warning("Esta acción actualizará todas las filas de la hoja 'Recetas' con los costos actuales de insumos. Se creará una copia de respaldo en 'Recetas_Historial' antes de sobrescribir.")
             if st.button("🔄 Sincronizar ahora", key="btn_sync_recetas_costos"):
@@ -1068,13 +1067,21 @@ def show_base_costos():
                             else:
                                 costo_map = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"]))
                                 df_old = pd.DataFrame(todos[1:], columns=todos[0])
-                                for col in ["Precio_Insumo","Costo_Ingrediente","Costo_Neto_Receta","Costo_Porcion","Food_Cost_Pct"]:
-                                    if col not in df_old.columns:
-                                        df_old[col] = 0.0
+
+                                # Convertir columnas numéricas a float para evitar error de dtype
+                                columnas_numericas = [
+                                    "Cantidad", "Costo_Ingrediente", "Precio_Venta",
+                                    "Food_Cost_Pct", "Precio_Insumo", "Costo_Neto_Receta",
+                                    "Rinde", "Costo_Porcion"
+                                ]
+                                for col in columnas_numericas:
+                                    if col in df_old.columns:
+                                        df_old[col] = pd.to_numeric(df_old[col], errors='coerce').fillna(0.0)
+
                                 for idx, row in df_old.iterrows():
                                     receta_nombre = row.get("Receta", "")
                                     if receta_nombre in costo_map:
-                                        nuevo_costo = costo_map[receta_nombre]
+                                        nuevo_costo = float(costo_map[receta_nombre])
                                         cantidad = limpiar_valor(row.get("Cantidad", 0))
                                         precio = limpiar_valor(row.get("Precio_Venta", 0))
                                         df_old.at[idx, "Precio_Insumo"] = nuevo_costo / cantidad if cantidad > 0 else 0.0
@@ -1094,6 +1101,7 @@ def show_base_costos():
                                 st.rerun()
                     except Exception as e:
                         st.error(f"Error al sincronizar: {e}")
+                        
     # ==================== TAB COMBOS ====================
     with tab_combos:
         st.subheader("🍱 Combos de Productos")
