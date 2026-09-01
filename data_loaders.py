@@ -388,6 +388,7 @@ def cargar_todas_ventas():
         return df_total
     return pd.DataFrame(columns=COLS_VENTAS)
 
+@st.cache_data(ttl=120)
 def cargar_costos_actuales_recetas():
     """
     Devuelve un DataFrame con el costo actual de cada receta,
