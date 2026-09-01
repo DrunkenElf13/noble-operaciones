@@ -595,6 +595,27 @@ def show_menu_maker():
             if df_activos.empty:
                 st.warning("No hay productos activos en este filtro.")
             else:
+                # Construir DataFrame con costos dinámicos para recetas
+                # Para cada producto activo, si es Receta, tomar costo_por_receta; si es Combo, costo_por_combo; si Reventa, el guardado
+                def obtener_costo_dinamico(row):
+                    tipo = str(row.get("Tipo_Producto", ""))
+                    nombre = str(row.get("Producto", ""))
+                    if tipo == "Receta":
+                        return costo_por_receta.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
+                    elif tipo == "Combo":
+                        return costo_por_combo.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
+                    else:  # Reventa
+                        return limpiar_valor(row.get("Costo_Neto", 0))
+
+                df_activos["Costo_Actual_Dinamico"] = df_activos.apply(obtener_costo_dinamico, axis=1)
+                df_activos["Food_Cost_Actual_Dinamico"] = df_activos.apply(
+                    lambda row: round((row["Costo_Actual_Dinamico"] / row["Precio_Venta"] * 100), 2)
+                    if row["Precio_Venta"] > 0 else 0.0,
+                    axis=1
+                )
+                df_activos["Margen_Actual_Dinamico"] = df_activos["Precio_Venta"] - df_activos["Costo_Actual_Dinamico"]
+
+                # Ahora separar productos incluidos en KPIs
                 df_kpi = df_activos[df_activos["Incluir_KPI"] == True].copy()
                 df_no_kpi = df_activos[df_activos["Incluir_KPI"] != True].copy()
 
@@ -602,10 +623,10 @@ def show_menu_maker():
                 total_prod_kpi = len(df_kpi)
                 if total_prod_kpi > 0:
                     precio_prom = df_kpi["Precio_Venta"].mean()
-                    costo_prom = df_kpi["Costo_Neto"].mean()
-                    fc_prom = df_kpi["Food_Cost_Pct"].mean()
-                    margen_prom = df_kpi["Margen_Bruto"].mean()
-                    margen_pct_prom = ((df_kpi["Precio_Venta"] - df_kpi["Costo_Neto"]) / df_kpi["Precio_Venta"] * 100).replace([float('inf')], 0).fillna(0).mean()
+                    costo_prom = df_kpi["Costo_Actual_Dinamico"].mean()
+                    fc_prom = df_kpi["Food_Cost_Actual_Dinamico"].mean()
+                    margen_prom = df_kpi["Margen_Actual_Dinamico"].mean()
+                    margen_pct_prom = ((df_kpi["Precio_Venta"] - df_kpi["Costo_Actual_Dinamico"]) / df_kpi["Precio_Venta"] * 100).replace([float('inf')], 0).fillna(0).mean()
                 else:
                     precio_prom = costo_prom = fc_prom = margen_prom = margen_pct_prom = 0.0
 
@@ -626,9 +647,9 @@ def show_menu_maker():
                     df_cat = df_kpi.groupby("Categoria_Menu").agg(
                         Productos=("Menu_ID", "count"),
                         Precio_Promedio=("Precio_Venta", "mean"),
-                        Costo_Promedio=("Costo_Neto", "mean"),
-                        Food_Cost_Promedio=("Food_Cost_Pct", "mean"),
-                        Margen_Bruto_Total=("Margen_Bruto", "sum")
+                        Costo_Promedio=("Costo_Actual_Dinamico", "mean"),
+                        Food_Cost_Promedio=("Food_Cost_Actual_Dinamico", "mean"),
+                        Margen_Bruto_Total=("Margen_Actual_Dinamico", "sum")
                     ).reset_index()
                     df_cat["Margen_Promedio"] = df_cat["Margen_Bruto_Total"] / df_cat["Productos"]
                     df_cat["Factor_Promedio"] = df_cat["Precio_Promedio"] / df_cat["Costo_Promedio"].replace(0, float('nan'))
@@ -640,11 +661,11 @@ def show_menu_maker():
                 st.divider()
                 st.subheader("📄 Detalle del menú activo")
                 df_activos_show = df_activos.copy()
-                df_activos_show["Factor"] = (df_activos_show["Precio_Venta"] / df_activos_show["Costo_Neto"].replace(0, float('nan'))).fillna(0).round(2)
+                df_activos_show["Factor"] = (df_activos_show["Precio_Venta"] / df_activos_show["Costo_Actual_Dinamico"].replace(0, float('nan'))).fillna(0).round(2)
                 df_activos_show["Estado_KPI"] = df_activos_show["Incluir_KPI"].apply(lambda x: "✅" if x else "❌")
                 cols_det = ["Nombre_Menu", "Categoria_Menu", "Tipo_Producto", "Precio_Venta",
-                            "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto", "Factor",
-                            "Estado_KPI", "Responsable"]
+                            "Costo_Actual_Dinamico", "Food_Cost_Actual_Dinamico", "Margen_Actual_Dinamico",
+                            "Factor", "Estado_KPI", "Responsable"]
                 cols_det_ok = [c for c in cols_det if c in df_activos_show.columns]
                 st.dataframe(df_activos_show[cols_det_ok].sort_values("Categoria_Menu"), hide_index=True, width="stretch")
 
