@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import time
 import uuid
-from data_loaders import cargar_recetas, cargar_costos_insumos, cargar_combos
+from data_loaders import (
+    cargar_recetas, cargar_costos_insumos, cargar_combos,
+    cargar_costos_actuales_recetas
+)
 from sheets import _asegurar_hoja_menus, _asegurar_hoja_historial_menus, append_rows_con_retry, safe_worksheet, sh
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
 from config import COLS_MENUS, COLS_MENUS_HISTORIAL
@@ -80,11 +83,12 @@ def show_menu_maker():
         st.warning("No hay recetas ni combos capturados. Primero crea recetas o combos en 'Base de Costos'.")
         st.stop()
 
-    # Construir diccionarios de costo real sumando componentes
-    costo_por_receta = {}
-    if not df_rec.empty:
-        for receta, grupo in df_rec.groupby("Receta"):
-            costo_por_receta[receta] = grupo["Costo_Ingrediente"].apply(limpiar_valor).sum()
+    # Costos actuales dinámicos
+    df_costos_act = cargar_costos_actuales_recetas()
+    if not df_costos_act.empty:
+        costo_por_receta = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"]))
+    else:
+        costo_por_receta = {}
 
     costo_por_combo = {}
     if not df_combos.empty:
@@ -669,7 +673,7 @@ def show_menu_maker():
                                 todos_elim = ws_menu_elim.get_all_values()
                                 fila_elim = None
                                 for i, fila in enumerate(todos_elim[1:], start=2):
-                                    if fila[1] == prod_eliminar:  # columna B = Nombre_Menu
+                                    if fila[1] == prod_eliminar:
                                         fila_elim = i
                                         break
                                 if fila_elim:
