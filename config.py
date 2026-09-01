@@ -59,7 +59,7 @@ COLS_COMBOS = [
     "Food_Cost_Pct", "Fecha_Captura", "Responsable"
 ]
 COLS_MENUS = [
-    "Menu_ID", "Nombre_Menu", "Categoria_Menu", "Tipo_Producto", "Producto",
+    "Menu_ID", "Menu_Nombre", "Nombre_Menu", "Categoria_Menu", "Tipo_Producto", "Producto",
     "Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto",
     "Activo", "Fecha_Captura", "Responsable"
 ]
