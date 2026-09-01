@@ -189,7 +189,7 @@ def show_base_costos():
                     contenido_base_val = prec["contenido_base"]
                     costo_base_val = prec["costo_base"]
 
-                with st.form("f_costo_insumo", clear_on_submit=True):
+                with st.form("f_costo_insumo", clear_on_submit=False):
                     col_a, col_b = st.columns(2)
                     with col_a:
                         marca_ci = st.text_input("Marca:", value=marca_val)
@@ -268,37 +268,36 @@ def show_base_costos():
                                   if st.session_state.current_user in st.session_state.responsables else 0
                         )
 
-                    if st.form_submit_button("💾 Guardar Costo"):
-                        if costo_pres <= 0:
-                            st.error("El costo de la presentación debe ser mayor a cero.")
+                    enviar = st.form_submit_button("💾 Guardar Costo")
+
+                if enviar:
+                    if costo_pres <= 0:
+                        st.error("El costo de la presentación debe ser mayor a cero.")
+                    else:
+                        if costo_unit <= 0:
+                            try:
+                                pres_num = float(pres_ci) if pres_ci.strip() else 0.0
+                                if pres_num > 0:
+                                    costo_unit = round(costo_pres / pres_num, 4)
+                                else:
+                                    st.error("La presentación debe ser un número mayor que cero para calcular el costo unitario.")
+                            except ValueError:
+                                st.error("La presentación debe ser un número válido.")
+
+                        if unidad_base_ci != um_ci:
+                            if contenido_base_ci <= 0:
+                                st.error(
+                                    f"Debes indicar cuántas unidades de {unidad_base_ci} contiene 1 {um_ci}."
+                                )
+                            elif costo_base_ci <= 0:
+                                costo_base_ci = round(costo_unit / contenido_base_ci, 6)
                         else:
-                            if costo_unit <= 0:
-                                try:
-                                    pres_num = float(pres_ci) if pres_ci.strip() else 0.0
-                                    if pres_num > 0:
-                                        costo_unit = round(costo_pres / pres_num, 4)
-                                    else:
-                                        st.error("La presentación debe ser un número mayor que cero para calcular el costo unitario.")
-                                        st.stop()
-                                except ValueError:
-                                    st.error("La presentación debe ser un número válido.")
-                                    st.stop()
+                            contenido_base_ci = 1.0
+                            if costo_base_ci <= 0:
+                                costo_base_ci = costo_unit
 
-                            if unidad_base_ci != um_ci:
-                                if contenido_base_ci <= 0:
-                                    st.error(
-                                        f"Debes indicar cuántas unidades de {unidad_base_ci} contiene 1 {um_ci}."
-                                    )
-                                    st.stop()
-                                if costo_base_ci <= 0:
-                                    costo_base_ci = round(costo_unit / contenido_base_ci, 6)
-                            else:
-                                contenido_base_ci = 1.0
-                                if costo_base_ci <= 0:
-                                    costo_base_ci = costo_unit
-
+                        if costo_unit > 0 and contenido_base_ci > 0:
                             unidad_costo = f"$/{um_ci}"
-
                             ws_ci, err = _asegurar_hoja_costos_insumos()
                             if err:
                                 st.error(err)
@@ -1035,6 +1034,7 @@ def show_base_costos():
                     r4.metric("Margen Promedio", f"${margen_prom:,.2f}")
 
         # 🔄 Sincronización manual a hoja Recetas
+        st.divider()
         with st.expander("🔄 Sincronizar costos a hoja Recetas", expanded=False):
             st.warning("Esta acción actualizará todas las filas de la hoja 'Recetas' con los costos actuales de insumos. Se creará una copia de respaldo en 'Recetas_Historial' antes de sobrescribir.")
             if st.button("🔄 Sincronizar ahora", key="btn_sync_recetas_costos"):
@@ -1047,7 +1047,6 @@ def show_base_costos():
                         if len(todos) <= 1:
                             st.error("No hay recetas para actualizar.")
                         else:
-                            # Crear/actualizar hoja de historial
                             ws_hist, err_hist = safe_worksheet(sh, "Recetas_Historial")
                             if ws_hist is None:
                                 ws_hist = sh.add_worksheet(title="Recetas_Historial", rows="10000", cols="20")
@@ -1067,17 +1066,9 @@ def show_base_costos():
                             else:
                                 costo_map = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"]))
                                 df_old = pd.DataFrame(todos[1:], columns=todos[0])
-
-                                # Convertir columnas numéricas a float para evitar error de dtype
-                                columnas_numericas = [
-                                    "Cantidad", "Costo_Ingrediente", "Precio_Venta",
-                                    "Food_Cost_Pct", "Precio_Insumo", "Costo_Neto_Receta",
-                                    "Rinde", "Costo_Porcion"
-                                ]
-                                for col in columnas_numericas:
-                                    if col in df_old.columns:
-                                        df_old[col] = pd.to_numeric(df_old[col], errors='coerce').fillna(0.0)
-
+                                for col in ["Precio_Insumo","Costo_Ingrediente","Costo_Neto_Receta","Costo_Porcion","Food_Cost_Pct"]:
+                                    if col not in df_old.columns:
+                                        df_old[col] = 0.0
                                 for idx, row in df_old.iterrows():
                                     receta_nombre = row.get("Receta", "")
                                     if receta_nombre in costo_map:
@@ -1101,7 +1092,6 @@ def show_base_costos():
                                 st.rerun()
                     except Exception as e:
                         st.error(f"Error al sincronizar: {e}")
-                        
     # ==================== TAB COMBOS ====================
     with tab_combos:
         st.subheader("🍱 Combos de Productos")
