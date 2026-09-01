@@ -387,3 +387,63 @@ def cargar_todas_ventas():
                 df_total[col] = df_total[col].apply(limpiar_valor)
         return df_total
     return pd.DataFrame(columns=COLS_VENTAS)
+
+def cargar_costos_actuales_recetas():
+    """
+    Devuelve un DataFrame con el costo actual de cada receta,
+    calculado sumando el último costo de cada ingrediente.
+    """
+    df_rec = cargar_recetas()
+    df_costos = cargar_costos_insumos()
+    if df_rec.empty:
+        return pd.DataFrame()
+
+    # Obtener último costo por insumo
+    if df_costos.empty:
+        ultimo_costo = pd.DataFrame()
+    else:
+        ultimo_costo = (
+            df_costos.sort_values("Fecha_Captura")
+            .drop_duplicates(subset=["Nombre_Insumo"], keep="last")
+        )
+
+    # Mapear insumo -> costo unitario preferido (Costo_Base_Unitario si >0, si no Costo_Unitario)
+    costo_map = {}
+    if not ultimo_costo.empty:
+        for _, row in ultimo_costo.iterrows():
+            insumo = row["Nombre_Insumo"]
+            costo_base = limpiar_valor(row.get("Costo_Base_Unitario", 0))
+            if costo_base > 0:
+                costo_map[insumo] = costo_base
+            else:
+                costo_map[insumo] = limpiar_valor(row.get("Costo_Unitario", 0))
+
+    # Calcular costo por receta sumando ingredientes
+    filas_recetas = []
+    for receta, grupo in df_rec.groupby("Receta"):
+        costo_total = 0.0
+        for _, row in grupo.iterrows():
+            ing = row.get("Ingrediente", "")
+            cantidad = limpiar_valor(row.get("Cantidad", 0))
+            costo_unit = costo_map.get(ing, 0.0)
+            # Si no se encontró en el mapa, buscar en df_costos
+            if costo_unit == 0.0 and not df_costos.empty:
+                mask = df_costos["Nombre_Insumo"] == ing
+                if mask.any():
+                    ultimo_ing = df_costos[mask].sort_values("Fecha_Captura").iloc[-1]
+                    costo_unit = limpiar_valor(ultimo_ing.get("Costo_Unitario", 0))
+            costo_total += cantidad * costo_unit
+
+        precio_venta = limpiar_valor(grupo.iloc[0].get("Precio_Venta", 0))
+        food_cost = (costo_total / precio_venta * 100) if precio_venta > 0 else 0.0
+        filas_recetas.append({
+            "Receta": receta,
+            "Linea": str(grupo.iloc[0].get("Linea", "")),
+            "Presentacion": str(grupo.iloc[0].get("Presentacion", "")),
+            "Precio_Venta": precio_venta,
+            "Costo_Actual": round(costo_total, 4),
+            "Food_Cost_Actual": round(food_cost, 2),
+            "Margen_Actual": round(precio_venta - costo_total, 2),
+            "Factor_Actual": round(precio_venta / costo_total, 2) if costo_total > 0 else 0.0,
+        })
+    return pd.DataFrame(filas_recetas)
