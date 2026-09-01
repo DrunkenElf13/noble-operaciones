@@ -4,11 +4,11 @@ import time
 import numpy as np
 from data_loaders import (
     cargar_costos_insumos, cargar_recetas, cargar_datos_integrales,
-    cargar_combos
+    cargar_combos, cargar_costos_actuales_recetas
 )
 from sheets import (
     _asegurar_hoja_costos_insumos, _asegurar_hoja_recetas,
-    _asegurar_hoja_combos, append_rows_con_retry
+    _asegurar_hoja_combos, append_rows_con_retry, safe_worksheet, sh
 )
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
 from config import UNIDADES_MED, COLS_RECETAS, COLS_COMBOS
@@ -124,7 +124,6 @@ def show_base_costos():
             if not insumo_opts:
                 st.warning("El catálogo no tiene insumos.")
             else:
-                # Selector de insumo FUERA del formulario
                 if "ultimo_costo_sel" not in st.session_state:
                     st.session_state.ultimo_costo_sel = insumo_opts[0]
                 insumo_sel = st.selectbox(
@@ -133,7 +132,6 @@ def show_base_costos():
                     key="insumo_selector_costos"
                 )
 
-                # Al cambiar de insumo, precargar su último costo
                 if insumo_sel != st.session_state.ultimo_costo_sel:
                     st.session_state.ultimo_costo_sel = insumo_sel
                     df_ci_latest = df_ci.sort_values("Fecha_Captura") if not df_ci.empty else pd.DataFrame()
@@ -157,7 +155,6 @@ def show_base_costos():
                     else:
                         st.session_state.precarga_costo = None
 
-                # Obtener datos precargados o del catálogo
                 prec = st.session_state.get("precarga_costo", None)
                 mask_cat = df_cat["Nombre del Insumo"] == insumo_sel
                 info_cat = {}
@@ -171,7 +168,6 @@ def show_base_costos():
                     pres_val = ""
                     costo_pres_val = 0.0
                     costo_unit_val = 0.0
-                    # Unidad base por defecto según um
                     if um_val in ["pz"]:
                         unidad_base_val = "pz"
                     elif um_val == "kg":
@@ -233,7 +229,6 @@ def show_base_costos():
                     st.markdown("---")
                     st.write("**Conversión para recetas / food cost**")
 
-                    # Determinar unidad base por defecto según um_ci seleccionada
                     if um_ci in ["pz"]:
                         default_base = "pz"
                     elif um_ci == "kg":
@@ -318,7 +313,6 @@ def show_base_costos():
                                 if ok:
                                     cargar_costos_insumos.clear()
                                     cargar_recetas.clear()
-                                    # Limpiar precarga para no arrastrar datos
                                     st.session_state.pop("precarga_costo", None)
                                     st.session_state.ultimo_costo_sel = insumo_sel
                                     st.success(f"Costo de {insumo_sel} registrado.")
@@ -420,9 +414,11 @@ def show_base_costos():
     # ==================== TAB RECETAS ====================
     with tab_recetas:
         st.subheader("🍽️ Editor de Recetas")
+        st.info("ℹ️ Los costos mostrados aquí se calculan con el último costo de cada insumo. La hoja `Recetas` conserva la última sincronización manual.")
         df_rec = cargar_recetas()
         df_ci2 = cargar_costos_insumos()
         df_cat2 = cargar_datos_integrales()[0]
+        df_costos_actuales = cargar_costos_actuales_recetas()
 
         insumos_con_costo = []
         if not df_ci2.empty:
@@ -787,7 +783,6 @@ def show_base_costos():
                     "costo_unit": costo_unitario,
                     "total": total
                 }
-
         if st.session_state.ingredientes_receta:
             costo_neto_batch = sum(limpiar_valor(c["total"]) for c in st.session_state.ingredientes_receta)
             rinde_final = st.session_state.receta_rinde if st.session_state.receta_rinde > 0 else 1
@@ -922,6 +917,7 @@ def show_base_costos():
                             if ok:
                                 cargar_recetas.clear()
                                 cargar_costos_insumos.clear()
+                                cargar_costos_actuales_recetas.clear()
                                 st.success(f"Receta '{nombre_final}' guardada ({len(filas_guardar)} componentes).")
                                 for key in ["ingredientes_receta","receta_nombre","receta_precio",
                                             "receta_modo","receta_original"]:
@@ -1002,93 +998,102 @@ def show_base_costos():
                         ws_rec_bulk.append_rows(df_all[COLS_RECETAS].values.tolist(), value_input_option="USER_ENTERED")
                         cargar_recetas.clear()
                         cargar_costos_insumos.clear()
+                        cargar_costos_actuales_recetas.clear()
                         st.success("✅ Precios y datos de recetas actualizados.")
                         time.sleep(0.5)
                         st.rerun()
 
-        # Analítica por Línea
-        if not df_rec.empty and "Linea" in df_rec.columns:
-            st.divider()
-            st.subheader("📊 Analítica por Línea")
-            df_rec_linea = df_rec.copy()
-            df_rec_linea["Costo_Neto_Receta"] = df_rec_linea["Costo_Neto_Receta"].apply(limpiar_valor)
-            df_rec_linea["Precio_Venta"] = df_rec_linea["Precio_Venta"].apply(limpiar_valor)
-            df_rec_linea["Food_Cost_Pct"] = df_rec_linea["Food_Cost_Pct"].apply(limpiar_valor)
-
-            df_por_receta = df_rec_linea.drop_duplicates(subset=["Receta", "Linea"]).copy()
-            if not df_por_receta.empty:
-                df_agrup_linea = df_por_receta.groupby("Linea").agg(
-                    Num_Recetas=("Receta", "nunique"),
-                    Precio_Promedio=("Precio_Venta", "mean"),
-                    Food_Cost_Promedio=("Food_Cost_Pct", "mean"),
-                    Margen_Promedio=("Precio_Venta", lambda x: (x - df_por_receta.loc[x.index, "Costo_Neto_Receta"]).mean())
-                ).reset_index()
-                st.dataframe(df_agrup_linea, hide_index=True, width="stretch")
-
-        # 🔎 NUEVO: Visualizador de recetas por línea con KPIs
-        if not df_rec.empty:
+        # 📂 Visualizador de recetas con costos actualizados
+        if not df_costos_actuales.empty:
             st.divider()
             with st.expander("📂 Visualizador de recetas por línea", expanded=False):
-                st.markdown("Consulta rápida de recetas capturadas agrupadas por línea, con KPIs.")
-                df_rec_vis = df_rec.copy()
-                # Asegurar columnas numéricas
-                for col in ["Precio_Venta", "Costo_Neto_Receta", "Costo_Ingrediente", "Food_Cost_Pct"]:
-                    df_rec_vis[col] = df_rec_vis[col].apply(limpiar_valor)
-
-                lineas_disponibles = sorted(df_rec_vis["Linea"].dropna().unique().tolist())
+                st.markdown("Consulta rápida de recetas capturadas agrupadas por línea, con KPIs calculados al día de hoy.")
+                lineas_disponibles = sorted(df_costos_actuales["Linea"].dropna().unique().tolist())
                 if not lineas_disponibles:
-                    st.info("No hay líneas definidas en las recetas. Agrega una línea en el editor de recetas.")
+                    st.info("No hay líneas definidas en las recetas.")
                 else:
-                    linea_filtro = st.selectbox("Filtrar por línea:", ["Todas"] + lineas_disponibles, key="vis_linea")
+                    linea_filtro = st.selectbox("Filtrar por línea:", ["Todas"] + lineas_disponibles, key="vis_linea_din")
+                    df_vis = df_costos_actuales.copy()
                     if linea_filtro != "Todas":
-                        df_rec_vis = df_rec_vis[df_rec_vis["Linea"] == linea_filtro]
-
-                    # Agrupar por receta para KPIs
-                    df_por_receta_vis = df_rec_vis.groupby("Receta", as_index=False).agg(
-                        Linea=("Linea", "first"),
-                        Precio_Venta=("Precio_Venta", "max"),
-                        Costo_Neto_Receta=("Costo_Neto_Receta", "max"),
-                        Costo_Ingredientes=("Costo_Ingrediente", "sum")
-                    )
-                    df_por_receta_vis["Costo_Real"] = df_por_receta_vis.apply(
-                        lambda r: r["Costo_Neto_Receta"] if limpiar_valor(r["Costo_Neto_Receta"]) > 0
-                        else r["Costo_Ingredientes"], axis=1
-                    )
-                    df_por_receta_vis["Food_Cost_%"] = np.where(
-                        df_por_receta_vis["Precio_Venta"] > 0,
-                        df_por_receta_vis["Costo_Real"] / df_por_receta_vis["Precio_Venta"] * 100,
-                        0.0
-                    ).round(1)
-                    df_por_receta_vis["Margen_Bruto"] = df_por_receta_vis["Precio_Venta"] - df_por_receta_vis["Costo_Real"]
-                    df_por_receta_vis["Margen_%"] = np.where(
-                        df_por_receta_vis["Precio_Venta"] > 0,
-                        df_por_receta_vis["Margen_Bruto"] / df_por_receta_vis["Precio_Venta"] * 100,
-                        0.0
-                    ).round(1)
-                    df_por_receta_vis["Factor"] = np.where(
-                        df_por_receta_vis["Costo_Real"] > 0,
-                        df_por_receta_vis["Precio_Venta"] / df_por_receta_vis["Costo_Real"],
-                        0.0
-                    ).round(2)
+                        df_vis = df_vis[df_vis["Linea"] == linea_filtro]
 
                     st.dataframe(
-                        df_por_receta_vis[["Receta","Linea","Precio_Venta","Costo_Real",
-                                            "Food_Cost_%","Margen_Bruto","Margen_%","Factor"]],
+                        df_vis[["Receta","Linea","Precio_Venta","Costo_Actual",
+                                "Food_Cost_Actual","Margen_Actual","Factor_Actual"]],
                         hide_index=True,
                         width="stretch"
                     )
 
-                    # Resumen global
-                    st.markdown("**Resumen del filtro**")
-                    total_recetas = len(df_por_receta_vis)
-                    precio_prom = df_por_receta_vis["Precio_Venta"].mean()
-                    fc_prom = df_por_receta_vis["Food_Cost_%"].mean()
-                    margen_prom = df_por_receta_vis["Margen_%"].mean()
+                    total_recetas = len(df_vis)
+                    precio_prom = df_vis["Precio_Venta"].mean()
+                    fc_prom = df_vis["Food_Cost_Actual"].mean()
+                    margen_prom = df_vis["Margen_Actual"].mean()
                     r1, r2, r3, r4 = st.columns(4)
                     r1.metric("Recetas", total_recetas)
                     r2.metric("Precio Promedio", f"${precio_prom:,.2f}")
                     r3.metric("Food Cost Promedio", f"{fc_prom:.1f}%")
-                    r4.metric("Margen Promedio", f"{margen_prom:.1f}%")
+                    r4.metric("Margen Promedio", f"${margen_prom:,.2f}")
+
+        # 🔄 Sincronización manual a hoja Recetas
+        st.divider()
+        with st.expander("🔄 Sincronizar costos a hoja Recetas", expanded=False):
+            st.warning("Esta acción actualizará todas las filas de la hoja 'Recetas' con los costos actuales de insumos. Se creará una copia de respaldo en 'Recetas_Historial' antes de sobrescribir.")
+            if st.button("🔄 Sincronizar ahora", key="btn_sync_recetas_costos"):
+                ws_rec, err = _asegurar_hoja_recetas()
+                if err:
+                    st.error(err)
+                else:
+                    try:
+                        todos = ws_rec.get_all_values()
+                        if len(todos) <= 1:
+                            st.error("No hay recetas para actualizar.")
+                        else:
+                            # Crear/actualizar hoja de historial
+                            ws_hist, err_hist = safe_worksheet(sh, "Recetas_Historial")
+                            if ws_hist is None:
+                                ws_hist = sh.add_worksheet(title="Recetas_Historial", rows="10000", cols="20")
+                                ws_hist.append_row(COLS_RECETAS + ["Fecha_Sincronizacion"])
+                            else:
+                                actuales_hist = ws_hist.row_values(1)
+                                if len(actuales_hist) < len(COLS_RECETAS) + 1:
+                                    ws_hist.update(range_name="A1:T1", values=[COLS_RECETAS + ["Fecha_Sincronizacion"]])
+
+                            fecha_sync = ts_hermosillo()
+                            filas_respaldo = [fila + [fecha_sync] for fila in todos[1:]]
+                            append_rows_con_retry(ws_hist, filas_respaldo)
+
+                            df_costos_act = cargar_costos_actuales_recetas()
+                            if df_costos_act.empty:
+                                st.error("No se pudo calcular costos actuales.")
+                            else:
+                                costo_map = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"]))
+                                df_old = pd.DataFrame(todos[1:], columns=todos[0])
+                                for col in ["Precio_Insumo","Costo_Ingrediente","Costo_Neto_Receta","Costo_Porcion","Food_Cost_Pct"]:
+                                    if col not in df_old.columns:
+                                        df_old[col] = 0.0
+                                for idx, row in df_old.iterrows():
+                                    receta_nombre = row.get("Receta", "")
+                                    if receta_nombre in costo_map:
+                                        nuevo_costo = costo_map[receta_nombre]
+                                        cantidad = limpiar_valor(row.get("Cantidad", 0))
+                                        precio = limpiar_valor(row.get("Precio_Venta", 0))
+                                        df_old.at[idx, "Precio_Insumo"] = nuevo_costo / cantidad if cantidad > 0 else 0.0
+                                        df_old.at[idx, "Costo_Ingrediente"] = nuevo_costo
+                                        df_old.at[idx, "Costo_Neto_Receta"] = nuevo_costo
+                                        rinde = limpiar_valor(row.get("Rinde", 1))
+                                        df_old.at[idx, "Costo_Porcion"] = nuevo_costo / rinde if rinde > 0 else 0.0
+                                        df_old.at[idx, "Food_Cost_Pct"] = (nuevo_costo / precio * 100) if precio > 0 else 0.0
+
+                                ws_rec.clear()
+                                ws_rec.append_row(COLS_RECETAS)
+                                ws_rec.append_rows(df_old.values.tolist(), value_input_option="USER_ENTERED")
+                                cargar_recetas.clear()
+                                cargar_costos_actuales_recetas.clear()
+                                st.success("✅ Costos actualizados en hoja Recetas. Respaldo guardado en Recetas_Historial.")
+                                time.sleep(1)
+                                st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al sincronizar: {e}")
     # ==================== TAB COMBOS ====================
     with tab_combos:
         st.subheader("🍱 Combos de Productos")
@@ -1499,4 +1504,3 @@ def show_base_costos():
                     Margen_Promedio=("Precio_Venta", lambda x: (x - df_por_combo.loc[x.index, "Costo_Neto_Combo"]).mean())
                 ).reset_index()
                 st.dataframe(df_agrup_combo, hide_index=True, width="stretch")
-# Fin del archivo paginas/base_costos.py
