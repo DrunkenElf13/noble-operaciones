@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import time
+import hashlib
 import data_loaders as dl
 
 from inventario import obtener_ultimo_inventario, buscar_insumo_en_actual, construir_fila_historial
@@ -18,7 +19,9 @@ from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
 def _normalizar_nombre_archivo(nombre: str) -> str:
-    return re.sub(r'[^a-zA-Z0-9]', '_', nombre)[:35]
+    base = re.sub(r'[^a-zA-Z0-9]', '_', nombre)[:35]
+    h = hashlib.md5(nombre.encode('utf-8')).hexdigest()[:6]
+    return f"{base}_{h}"
 
 def _mostrar_preview_borrador(borrador, df_actual):
     """Muestra diferencias entre borrador y último inventario."""
