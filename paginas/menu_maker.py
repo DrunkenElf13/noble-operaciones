@@ -28,24 +28,20 @@ def cargar_menus():
             return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
         headers = datos[0]
         df = pd.DataFrame(datos[1:], columns=headers)
-        # Rellenar columnas faltantes
         for col in COLS_MENUS + ["Notas", "Incluir_KPI"]:
             if col not in df.columns:
-                if col == "Menu_Nombre":
-                    df[col] = "Menú Actual"
-                elif col == "Incluir_KPI":
-                    df[col] = "TRUE"
-                else:
-                    df[col] = ""
+                df[col] = "TRUE" if col == "Incluir_KPI" else ""
         for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
             if col in df.columns:
                 df[col] = df[col].apply(limpiar_valor)
-        # Normalizar Incluir_KPI a booleano
+
         def _parse_bool(v):
             s = str(v).strip().upper()
             return s in ["TRUE", "1", "SÍ", "SI", "YES"]
+
         if "Incluir_KPI" in df.columns:
             df["Incluir_KPI"] = df["Incluir_KPI"].apply(_parse_bool)
+
         return df
     except Exception as e:
         st.warning(f"Error cargando menú: {e}")
@@ -85,17 +81,29 @@ def show_menu_maker():
         st.warning("No hay recetas ni combos capturados. Primero crea recetas o combos en 'Base de Costos'.")
         st.stop()
 
-    # Costos actuales dinámicos
+    # Costos actuales dinámicos usando costo por porción
     df_costos_act = cargar_costos_actuales_recetas()
-    if not df_costos_act.empty:
-        costo_por_receta = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"]))
+    if not df_costos_act.empty and "Costo_Porcion_Actual" in df_costos_act.columns:
+        costo_por_receta = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Porcion_Actual"]))
     else:
-        costo_por_receta = {}
+        # Fallback si no existe la columna (por compatibilidad)
+        costo_por_receta = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"])) if not df_costos_act.empty else {}
 
     costo_por_combo = {}
     if not df_combos.empty:
         for combo, grupo in df_combos.groupby("Combo"):
             costo_por_combo[combo] = grupo["Costo_Total_Componente"].apply(limpiar_valor).sum()
+
+    # Función para obtener costo dinámico (definida una sola vez aquí)
+    def obtener_costo_dinamico(row):
+        tipo = str(row.get("Tipo_Producto", ""))
+        nombre = str(row.get("Producto", ""))
+        if tipo == "Receta":
+            return costo_por_receta.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
+        elif tipo == "Combo":
+            return costo_por_combo.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
+        else:
+            return limpiar_valor(row.get("Costo_Neto", 0))
 
     tab_crear, tab_ver, tab_comparar = st.tabs(["➕ Agregar / Editar Producto", "📋 Menú Actual", "📊 Comparar Menús"])
 
@@ -622,14 +630,12 @@ def show_menu_maker():
         if df_menus.empty:
             st.info("No hay productos en el menú. Agrega uno en la pestaña anterior.")
         else:
-            # Selector de menú
             menús_disponibles = sorted(df_menus["Menu_Nombre"].dropna().unique().tolist())
             if not menús_disponibles:
                 menús_disponibles = ["Menú Actual"]
             menu_sel_ver = st.selectbox("Seleccionar menú:", menús_disponibles, key="menu_sel_ver")
             df_menu_filtrado = df_menus[df_menus["Menu_Nombre"] == menu_sel_ver].copy()
 
-            # Filtro por categoría
             categorias_disponibles = sorted(df_menu_filtrado["Categoria_Menu"].dropna().unique().tolist())
             filtro_cat = st.selectbox("Filtrar por categoría:", ["Todas"] + categorias_disponibles, key="menu_filtro_cat")
             if filtro_cat != "Todas":
@@ -640,17 +646,6 @@ def show_menu_maker():
             if df_activos.empty:
                 st.warning("No hay productos activos en este menú con los filtros seleccionados.")
             else:
-                # Calcular costos dinámicos
-                def obtener_costo_dinamico(row):
-                    tipo = str(row.get("Tipo_Producto", ""))
-                    nombre = str(row.get("Producto", ""))
-                    if tipo == "Receta":
-                        return costo_por_receta.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
-                    elif tipo == "Combo":
-                        return costo_por_combo.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
-                    else:
-                        return limpiar_valor(row.get("Costo_Neto", 0))
-
                 df_activos["Costo_Actual_Dinamico"] = df_activos.apply(obtener_costo_dinamico, axis=1)
                 df_activos["Food_Cost_Actual_Dinamico"] = df_activos.apply(
                     lambda row: round((row["Costo_Actual_Dinamico"] / row["Precio_Venta"] * 100), 2)
@@ -668,16 +663,17 @@ def show_menu_maker():
                     costo_prom = df_kpi["Costo_Actual_Dinamico"].mean()
                     fc_prom = df_kpi["Food_Cost_Actual_Dinamico"].mean()
                     margen_prom = df_kpi["Margen_Actual_Dinamico"].mean()
-                    margen_pct_prom = ((df_kpi["Precio_Venta"] - df_kpi["Costo_Actual_Dinamico"]) / df_kpi["Precio_Venta"] * 100).replace([float('inf')], 0).fillna(0).mean()
+                    factor_prom = (df_kpi["Precio_Venta"] / df_kpi["Costo_Actual_Dinamico"].replace(0, float('nan'))).fillna(0).mean()
                 else:
-                    precio_prom = costo_prom = fc_prom = margen_prom = margen_pct_prom = 0.0
+                    precio_prom = costo_prom = fc_prom = margen_prom = factor_prom = 0.0
 
-                m1, m2, m3, m4, m5 = st.columns(5)
+                m1, m2, m3, m4, m5, m6 = st.columns(6)
                 m1.metric("Productos activos", total_prod_activos)
-                m2.metric("Incluidos en KPIs", total_prod_kpi)
+                m2.metric("Costo promedio", f"${costo_prom:,.2f}")
                 m3.metric("Precio promedio", f"${precio_prom:,.2f}")
                 m4.metric("Food Cost promedio", f"{fc_prom:.1f}%")
-                m5.metric("Margen bruto prom.", f"${margen_prom:,.2f}")
+                m5.metric("Factor x promedio", f"x{factor_prom:.2f}")
+                m6.metric("Margen bruto prom.", f"${margen_prom:,.2f}")
 
                 if total_prod_kpi == 0:
                     st.info("No hay productos que contribuyan a los KPIs. Activa 'Incluir en KPIs' en algunos productos para ver métricas.")
@@ -686,7 +682,6 @@ def show_menu_maker():
                 st.subheader("📊 KPIs por categoría (solo activos)")
 
                 if total_prod_kpi > 0:
-                    # Asegurar que solo categorías con productos activos e incluidos
                     df_cat = df_kpi.groupby("Categoria_Menu").agg(
                         Productos=("Menu_ID", "count"),
                         Precio_Promedio=("Precio_Venta", "mean"),
@@ -704,14 +699,12 @@ def show_menu_maker():
                 st.divider()
                 st.subheader("📄 Detalle del menú activo (filtrable)")
 
-                # Selector de categoría para el detalle (por defecto "Todas", pero con opción de limitar)
                 cat_detalle = st.selectbox("Mostrar productos de la categoría:", ["Todas"] + sorted(df_activos["Categoria_Menu"].dropna().unique().tolist()), key="cat_detalle")
                 if cat_detalle != "Todas":
                     df_detalle = df_activos[df_activos["Categoria_Menu"] == cat_detalle]
                 else:
                     df_detalle = df_activos
 
-                # Tabla con columnas calculadas
                 df_detalle_show = df_detalle.copy()
                 df_detalle_show["Factor"] = (df_detalle_show["Precio_Venta"] / df_detalle_show["Costo_Actual_Dinamico"].replace(0, float('nan'))).fillna(0).round(2)
                 df_detalle_show["Estado_KPI"] = df_detalle_show["Incluir_KPI"].apply(lambda x: "✅" if x else "❌")
@@ -721,7 +714,6 @@ def show_menu_maker():
                 cols_det_ok = [c for c in cols_det if c in df_detalle_show.columns]
                 st.dataframe(df_detalle_show[cols_det_ok].sort_values("Categoria_Menu"), hide_index=True, width="stretch")
 
-                # Editor de precios en tiempo real (solo para el menú seleccionado)
                 st.divider()
                 with st.expander("✏️ Editar precios de venta del menú", expanded=False):
                     st.markdown("Modifica los precios y guarda para actualizar KPIs. Los cambios no se aplican hasta presionar guardar.")
@@ -741,7 +733,6 @@ def show_menu_maker():
                         key="editor_precios_menu"
                     )
 
-                    # Mostrar KPIs calculados con precios editados (sin guardar)
                     if not editado.empty:
                         editado["Food_Cost"] = (editado["Costo_Neto"] / editado["Precio_Venta"] * 100).replace([float('inf')], 0).round(2)
                         editado["Margen"] = editado["Precio_Venta"] - editado["Costo_Neto"]
@@ -761,7 +752,6 @@ def show_menu_maker():
                                 for _, row in editado.iterrows():
                                     menu_id = row["Menu_ID"]
                                     nuevo_precio = row["Precio_Venta"]
-                                    # Buscar fila y actualizar precio y KPIs
                                     for i, fila in enumerate(todos_precios[1:], start=2):
                                         if fila[0] == menu_id:
                                             costo_neto = limpiar_valor(row["Costo_Neto"])
@@ -776,7 +766,6 @@ def show_menu_maker():
                             except Exception as e:
                                 st.error(f"Error al guardar precios: {e}")
 
-                # Productos inactivos
                 with st.expander("Ver productos inactivos de este menú", expanded=False):
                     df_inactivos = df_menu_filtrado[df_menu_filtrado["Activo"].astype(str).str.upper() != "TRUE"]
                     if not df_inactivos.empty:
@@ -802,11 +791,9 @@ def show_menu_maker():
             df_a = df_menus[df_menus["Menu_Nombre"] == menu_a].copy()
             df_b = df_menus[df_menus["Menu_Nombre"] == menu_b].copy()
 
-            # Filtrar activos
             df_a = df_a[df_a["Activo"].astype(str).str.upper() == "TRUE"]
             df_b = df_b[df_b["Activo"].astype(str).str.upper() == "TRUE"]
 
-            # Calcular costos dinámicos para cada uno
             def preparar_df_comparacion(df):
                 df["Costo_Actual_Dinamico"] = df.apply(obtener_costo_dinamico, axis=1)
                 df["Food_Cost_Actual"] = df.apply(lambda row: (row["Costo_Actual_Dinamico"] / row["Precio_Venta"] * 100) if row["Precio_Venta"] > 0 else 0.0, axis=1)
