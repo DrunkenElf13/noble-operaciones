@@ -126,34 +126,56 @@ def _asegurar_hoja_combos():
     return ws, None
 def _asegurar_hoja_menus():
     ws, err = safe_worksheet(sh, "Menus")
+    encabezados_correctos = COLS_MENUS + ["Notas", "Incluir_KPI"]
+
     if err:
         try:
-            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(COLS_MENUS)+2))
-            encabezados = COLS_MENUS + ["Notas", "Incluir_KPI"]
-            ws.append_row(encabezados)
+            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(encabezados_correctos)))
+            ws.append_row(encabezados_correctos)
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja Menus: {e}"
 
-    # Si ya existe, asegurar columnas adicionales sin borrar datos
     try:
         actuales = ws.row_values(1)
-        # Agregar Menu_Nombre si falta
-        if "Menu_Nombre" not in actuales:
-            col_idx = len(actuales) + 1
-            ws.update_cell(1, col_idx, "Menu_Nombre")
-            actuales.append("Menu_Nombre")
-        # Agregar Notas si falta
-        if "Notas" not in actuales:
-            col_idx = len(actuales) + 1
-            ws.update_cell(1, col_idx, "Notas")
-            actuales.append("Notas")
-        # Agregar Incluir_KPI si falta
-        if "Incluir_KPI" not in actuales:
-            col_idx = len(actuales) + 1
-            ws.update_cell(1, col_idx, "Incluir_KPI")
-    except Exception:
+        # Si los encabezados no coinciden exactamente con el orden correcto, reescribir hoja
+        if actuales != encabezados_correctos:
+            # Leer todos los datos actuales
+            datos = ws.get_all_values()
+            filas_datos = datos[1:] if len(datos) > 1 else []
+
+            # Crear un mapa de nombres de columna a índice (según hoja actual)
+            col_index = {}
+            for idx, nombre in enumerate(actuales):
+                col_index[str(nombre).strip()] = idx
+
+            # Construir filas en el orden correcto
+            nuevas_filas = []
+            for fila in filas_datos:
+                nueva_fila = []
+                for nombre_correcto in encabezados_correctos:
+                    if nombre_correcto in col_index:
+                        idx = col_index[nombre_correcto]
+                        nueva_fila.append(fila[idx] if idx < len(fila) else "")
+                    else:
+                        # Valor por defecto si la columna no existía
+                        if nombre_correcto == "Incluir_KPI":
+                            nueva_fila.append("TRUE")
+                        elif nombre_correcto == "Notas":
+                            nueva_fila.append("")
+                        else:
+                            nueva_fila.append("")
+                nuevas_filas.append(nueva_fila)
+
+            # Limpiar y escribir encabezados correctos
+            ws.clear()
+            ws.append_row(encabezados_correctos)
+            if nuevas_filas:
+                ws.append_rows(nuevas_filas, value_input_option="USER_ENTERED")
+    except Exception as e:
+        # Si algo falla, al menos devolver la worksheet
         pass
+
     return ws, None
 
 def _asegurar_hoja_historial_menus():
