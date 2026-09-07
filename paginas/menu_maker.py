@@ -15,13 +15,11 @@ from auth import tiene_permiso
 
 @st.cache_data(ttl=120)
 def cargar_menus():
-    """Lee la hoja Menus y devuelve un DataFrame con los productos del menú."""
-    ws, err = safe_worksheet(sh, "Menus")
-    if err:
-        ws, err2 = _asegurar_hoja_menus()
-        if err2:
-            return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
+    """Lee la hoja Menus, asegurando que las columnas estén en el orden correcto."""
+    ws, err = _asegurar_hoja_menus()
+    if ws is None:
         return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
+
     try:
         datos = ws.get_all_values()
         if len(datos) <= 1:
@@ -41,6 +39,11 @@ def cargar_menus():
 
         if "Incluir_KPI" in df.columns:
             df["Incluir_KPI"] = df["Incluir_KPI"].apply(_parse_bool)
+
+        return df
+    except Exception as e:
+        st.warning(f"Error cargando menú: {e}")
+        return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
 
         return df
     except Exception as e:
