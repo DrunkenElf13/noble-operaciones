@@ -138,32 +138,12 @@ def _asegurar_hoja_menus():
 
     try:
         actuales = ws.row_values(1)
+        # SOLO si los encabezados no coinciden exactamente, eliminar y recrear vacía
         if actuales != encabezados_correctos:
-            datos = ws.get_all_values()
-            filas_datos = datos[1:] if len(datos) > 1 else []
-
-            col_index = {str(nombre).strip(): idx for idx, nombre in enumerate(actuales)}
-
-            nuevas_filas = []
-            for fila in filas_datos:
-                nueva_fila = []
-                for nombre_correcto in encabezados_correctos:
-                    if nombre_correcto in col_index:
-                        idx = col_index[nombre_correcto]
-                        nueva_fila.append(fila[idx] if idx < len(fila) else "")
-                    else:
-                        if nombre_correcto == "Incluir_KPI":
-                            nueva_fila.append("TRUE")
-                        elif nombre_correcto == "Notas":
-                            nueva_fila.append("")
-                        else:
-                            nueva_fila.append("")
-                nuevas_filas.append(nueva_fila)
-
-            ws.clear()
+            sh.del_worksheet(ws)
+            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(encabezados_correctos)))
             ws.append_row(encabezados_correctos)
-            if nuevas_filas:
-                ws.append_rows(nuevas_filas, value_input_option="USER_ENTERED")
+            return ws, None
     except Exception:
         pass
 
