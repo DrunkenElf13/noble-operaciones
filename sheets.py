@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 from config import (
     SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO,
     COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_COMBOS, COLS_MERMA, COLS_CALENDARIO,
-    COLS_MENUS, COLS_MENUS_HISTORIAL
+    COLS_MENUS, COLS_MENUS_HISTORIAL, COLS_MENUS_CONFIG
 )
 from utils import ts_hermosillo
 
@@ -138,18 +138,12 @@ def _asegurar_hoja_menus():
 
     try:
         actuales = ws.row_values(1)
-        # Si los encabezados no coinciden exactamente con el orden correcto, reescribir hoja
         if actuales != encabezados_correctos:
-            # Leer todos los datos actuales
             datos = ws.get_all_values()
             filas_datos = datos[1:] if len(datos) > 1 else []
 
-            # Crear un mapa de nombres de columna a índice (según hoja actual)
-            col_index = {}
-            for idx, nombre in enumerate(actuales):
-                col_index[str(nombre).strip()] = idx
+            col_index = {str(nombre).strip(): idx for idx, nombre in enumerate(actuales)}
 
-            # Construir filas en el orden correcto
             nuevas_filas = []
             for fila in filas_datos:
                 nueva_fila = []
@@ -158,7 +152,6 @@ def _asegurar_hoja_menus():
                         idx = col_index[nombre_correcto]
                         nueva_fila.append(fila[idx] if idx < len(fila) else "")
                     else:
-                        # Valor por defecto si la columna no existía
                         if nombre_correcto == "Incluir_KPI":
                             nueva_fila.append("TRUE")
                         elif nombre_correcto == "Notas":
@@ -167,15 +160,30 @@ def _asegurar_hoja_menus():
                             nueva_fila.append("")
                 nuevas_filas.append(nueva_fila)
 
-            # Limpiar y escribir encabezados correctos
             ws.clear()
             ws.append_row(encabezados_correctos)
             if nuevas_filas:
                 ws.append_rows(nuevas_filas, value_input_option="USER_ENTERED")
-    except Exception as e:
-        # Si algo falla, al menos devolver la worksheet
+    except Exception:
         pass
 
+    return ws, None
+
+def _asegurar_hoja_menus_config():
+    ws, err = safe_worksheet(sh, "Menus_Config")
+    if err:
+        try:
+            ws = sh.add_worksheet(title="Menus_Config", rows="100", cols="2")
+            ws.append_row(COLS_MENUS_CONFIG)
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja Menus_Config: {e}"
+    try:
+        actuales = ws.row_values(1)
+        if actuales != COLS_MENUS_CONFIG:
+            ws.update(range_name="A1:B1", values=[COLS_MENUS_CONFIG])
+    except Exception:
+        pass
     return ws, None
 
 def _asegurar_hoja_historial_menus():
