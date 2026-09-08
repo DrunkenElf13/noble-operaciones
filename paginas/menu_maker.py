@@ -6,9 +6,12 @@ from data_loaders import (
     cargar_recetas, cargar_costos_insumos, cargar_combos,
     cargar_costos_actuales_recetas
 )
-from sheets import _asegurar_hoja_menus, _asegurar_hoja_historial_menus, append_rows_con_retry, safe_worksheet, sh
+from sheets import (
+    _asegurar_hoja_menus, _asegurar_hoja_historial_menus,
+    _asegurar_hoja_menus_config, append_rows_con_retry, safe_worksheet, sh
+)
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
-from config import COLS_MENUS, COLS_MENUS_HISTORIAL
+from config import COLS_MENUS, COLS_MENUS_HISTORIAL, COLS_MENUS_CONFIG
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
@@ -45,10 +48,25 @@ def cargar_menus():
         st.warning(f"Error cargando menú: {e}")
         return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
 
+
+@st.cache_data(ttl=120)
+def cargar_menus_config():
+    """Lee la hoja Menus_Config y devuelve un DataFrame."""
+    ws, err = _asegurar_hoja_menus_config()
+    if ws is None:
+        return pd.DataFrame(columns=COLS_MENUS_CONFIG)
+    try:
+        datos = ws.get_all_values()
+        if len(datos) <= 1:
+            return pd.DataFrame(columns=COLS_MENUS_CONFIG)
+        df = pd.DataFrame(datos[1:], columns=datos[0])
+        for col in COLS_MENUS_CONFIG:
+            if col not in df.columns:
+                df[col] = "" if col == "Menu_Nombre" else "FALSE"
         return df
     except Exception as e:
-        st.warning(f"Error cargando menú: {e}")
-        return pd.DataFrame(columns=COLS_MENUS + ["Notas", "Incluir_KPI"])
+        st.warning(f"Error cargando Menus_Config: {e}")
+        return pd.DataFrame(columns=COLS_MENUS_CONFIG)
 
 
 def _guardar_historial_menu(menu_id, nombre_menu, producto, precio_anterior, precio_nuevo, responsable):
@@ -79,6 +97,7 @@ def show_menu_maker():
     df_rec = cargar_recetas()
     df_combos = cargar_combos()
     df_menus = cargar_menus()
+    df_menus_config = cargar_menus_config()
 
     if df_rec.empty and df_combos.empty:
         st.warning("No hay recetas ni combos capturados. Primero crea recetas o combos en 'Base de Costos'.")
@@ -89,7 +108,6 @@ def show_menu_maker():
     if not df_costos_act.empty and "Costo_Porcion_Actual" in df_costos_act.columns:
         costo_por_receta = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Porcion_Actual"]))
     else:
-        # Fallback si no existe la columna (por compatibilidad)
         costo_por_receta = dict(zip(df_costos_act["Receta"], df_costos_act["Costo_Actual"])) if not df_costos_act.empty else {}
 
     costo_por_combo = {}
@@ -108,19 +126,101 @@ def show_menu_maker():
         else:
             return limpiar_valor(row.get("Costo_Neto", 0))
 
+    # Determinar menú activo desde Menus_Config
+    menu_activo = None
+    if not df_menus_config.empty:
+        activos = df_menus_config[df_menus_config["Activo"].astype(str).str.upper() == "TRUE"]
+        if not activos.empty:
+            menu_activo = str(activos.iloc[0]["Menu_Nombre"])
+
     tab_crear, tab_ver, tab_comparar = st.tabs(["➕ Agregar / Editar Producto", "📋 Menú Actual", "📊 Comparar Menús"])
 
     # ==================== TAB AGREGAR / EDITAR ====================
     with tab_crear:
         st.subheader("Agregar o actualizar producto del menú")
 
-        # ⚡ CARGA VISUAL MEJORADA
-        with st.expander("⚡ Cargar productos al menú (selección visual)", expanded=False):
-            st.markdown("Selecciona recetas/combos para agregarlos al menú. Podrás editar categoría y KPIs antes de guardar.")
-            # Selector de menú destino
+        # Sección de configuración de menú activo
+        with st.expander("🔧 Configurar menú activo", expanded=False):
             menús_existentes = sorted(df_menus["Menu_Nombre"].dropna().unique().tolist()) if not df_menus.empty else ["Menú Actual"]
             if not menús_existentes:
                 menús_existentes = ["Menú Actual"]
+            sel_activo = st.selectbox(
+                "Selecciona el menú activo:",
+                menús_existentes,
+                index=menús_existentes.index(menu_activo) if menu_activo in menús_existentes else 0
+            )
+            if st.button("💾 Guardar menú activo"):
+                ws_cfg, err_cfg = _asegurar_hoja_menus_config()
+                if err_cfg:
+                    st.error(err_cfg)
+                else:
+                    try:
+                        datos_cfg = ws_cfg.get_all_values()
+                        filas_nuevas = []
+                        for fila in datos_cfg[1:]:
+                            nombre_cfg = fila[0]
+                            activo = "TRUE" if nombre_cfg == sel_activo else "FALSE"
+                            filas_nuevas.append([nombre_cfg, activo])
+                        nombres_existentes = [f[0] for f in filas_nuevas]
+                        if sel_activo not in nombres_existentes:
+                            filas_nuevas.append([sel_activo, "TRUE"])
+                        ws_cfg.clear()
+                        ws_cfg.append_row(COLS_MENUS_CONFIG)
+                        ws_cfg.append_rows(filas_nuevas, value_input_option="USER_ENTERED")
+                        cargar_menus_config.clear()
+                        st.success(f"Menú activo actualizado a '{sel_activo}'.")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar menú activo: {e}")
+
+        # Botón para reprocesar costos de todos los menús
+        with st.expander("🔄 Reprocesar costos de todos los menús", expanded=False):
+            st.warning("Esta acción recalculará el costo de todos los productos de todos los menús usando el costo por porción actual de cada receta/combo. Los precios de venta se mantienen igual. Se recomienda hacer respaldo antes.")
+            if st.button("🔄 Reproducir ahora", key="btn_reprocesar_costos_menus"):
+                ws_menu_reproc, err_reproc = _asegurar_hoja_menus()
+                if err_reproc:
+                    st.error(err_reproc)
+                else:
+                    try:
+                        todos_menu = ws_menu_reproc.get_all_values()
+                        if len(todos_menu) <= 1:
+                            st.error("No hay productos en el menú.")
+                        else:
+                            df_menu_old = pd.DataFrame(todos_menu[1:], columns=todos_menu[0])
+                            # Asegurar columnas numéricas
+                            for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
+                                if col in df_menu_old.columns:
+                                    df_menu_old[col] = pd.to_numeric(df_menu_old[col], errors="coerce").fillna(0.0)
+                            # Recalcular costo y KPIs
+                            for idx, row in df_menu_old.iterrows():
+                                tipo = str(row.get("Tipo_Producto", ""))
+                                nombre = str(row.get("Producto", ""))
+                                if tipo == "Receta":
+                                    nuevo_costo = costo_por_receta.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
+                                elif tipo == "Combo":
+                                    nuevo_costo = costo_por_combo.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
+                                else:
+                                    continue  # Reventa no se toca
+                                precio = limpiar_valor(row.get("Precio_Venta", 0))
+                                df_menu_old.at[idx, "Costo_Neto"] = nuevo_costo
+                                df_menu_old.at[idx, "Food_Cost_Pct"] = round((nuevo_costo / precio * 100), 2) if precio > 0 else 0.0
+                                df_menu_old.at[idx, "Margen_Bruto"] = round(precio - nuevo_costo, 2)
+                            ws_menu_reproc.clear()
+                            ws_menu_reproc.append_row(COLS_MENUS + ["Notas", "Incluir_KPI"])
+                            ws_menu_reproc.append_rows(df_menu_old[COLS_MENUS + ["Notas", "Incluir_KPI"]].values.tolist(), value_input_option="USER_ENTERED")
+                            cargar_menus.clear()
+                            st.success("✅ Costos reprocesados correctamente para todos los menús.")
+                            time.sleep(1)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al reprocesar costos: {e}")
+
+        st.divider()
+
+        # ⚡ CARGA VISUAL MEJORADA
+        with st.expander("⚡ Cargar productos al menú (selección visual)", expanded=False):
+            st.markdown("Selecciona recetas/combos para agregarlos al menú. Podrás editar categoría y KPIs antes de guardar.")
             menu_destino_carga = st.selectbox("Menú destino:", menús_existentes + ["Nuevo menú"], key="menu_destino_carga")
             if menu_destino_carga == "Nuevo menú":
                 nuevo_menu_nombre = st.text_input("Nombre del nuevo menú:", value="", key="nuevo_menu_nombre")
@@ -250,6 +350,13 @@ def show_menu_maker():
                             append_rows_con_retry(ws_menu, [nueva_fila])
                             guardados += 1
 
+                        # Si es un menú nuevo, agregarlo a Menus_Config con Activo FALSE
+                        if menu_destino_carga == "Nuevo menú":
+                            ws_cfg, _ = _asegurar_hoja_menus_config()
+                            if ws_cfg:
+                                ws_cfg.append_row([menu_nombre_final, "FALSE"], value_input_option="USER_ENTERED")
+                                cargar_menus_config.clear()
+
                         cargar_menus.clear()
                         st.success(f"{guardados} producto(s) guardado(s) en '{menu_nombre_final}'. {omitidos} omitido(s).")
                         time.sleep(0.5)
@@ -306,9 +413,6 @@ def show_menu_maker():
                     menu_previo = df_menus[mask].iloc[0]
 
             # Selector de menú destino
-            menús_existentes = sorted(df_menus["Menu_Nombre"].dropna().unique().tolist()) if not df_menus.empty else ["Menú Actual"]
-            if not menús_existentes:
-                menús_existentes = ["Menú Actual"]
             menu_destino = st.selectbox("Menú:", menús_existentes + ["Nuevo menú"], key="menu_destino_individual")
             if menu_destino == "Nuevo menú":
                 nuevo_menu_nombre_ind = st.text_input("Nombre del nuevo menú:", value="", key="nuevo_menu_nombre_individual")
@@ -469,9 +573,6 @@ def show_menu_maker():
             producto_nombre_reventa = st.text_input("Nombre del producto:", value=nombre_sugerido, key="rev_nombre")
 
             # Menú destino
-            menús_existentes = sorted(df_menus["Menu_Nombre"].dropna().unique().tolist()) if not df_menus.empty else ["Menú Actual"]
-            if not menús_existentes:
-                menús_existentes = ["Menú Actual"]
             menu_destino_rev = st.selectbox("Menú:", menús_existentes + ["Nuevo menú"], key="menu_destino_reventa")
             if menu_destino_rev == "Nuevo menú":
                 nuevo_menu_rev = st.text_input("Nombre del nuevo menú:", value="", key="nuevo_menu_rev")
@@ -639,6 +740,12 @@ def show_menu_maker():
             menu_sel_ver = st.selectbox("Seleccionar menú:", menús_disponibles, key="menu_sel_ver")
             df_menu_filtrado = df_menus[df_menus["Menu_Nombre"] == menu_sel_ver].copy()
 
+            # Mostrar indicador de menú activo
+            if menu_sel_ver == menu_activo:
+                st.success("✅ Este es el menú activo")
+            else:
+                st.caption("ℹ️ Menú histórico")
+
             categorias_disponibles = sorted(df_menu_filtrado["Categoria_Menu"].dropna().unique().tolist())
             filtro_cat = st.selectbox("Filtrar por categoría:", ["Todas"] + categorias_disponibles, key="menu_filtro_cat")
             if filtro_cat != "Todas":
@@ -755,13 +862,10 @@ def show_menu_maker():
                                 if len(todos_precios) <= 1:
                                     st.error("No hay productos para actualizar.")
                                 else:
-                                    # Crear un diccionario de precios nuevos por Menu_ID
                                     nuevos_precios = {
                                         str(row["Menu_ID"]): float(row["Precio_Venta"])
                                         for _, row in editado.iterrows()
                                     }
-
-                                    # Construir una sola lista de filas para actualizar
                                     filas_actualizacion = []
                                     for i, fila in enumerate(todos_precios[1:], start=2):
                                         menu_id = fila[0]
@@ -770,16 +874,13 @@ def show_menu_maker():
                                             costo_neto = limpiar_valor(fila[7]) if len(fila) > 7 else 0.0
                                             food_cost = (costo_neto / nuevo_precio * 100) if nuevo_precio > 0 else 0.0
                                             margen = nuevo_precio - costo_neto
-                                            # Columnas G (Precio_Venta), H (Costo_Neto), I (Food_Cost_Pct), J (Margen_Bruto)
                                             filas_actualizacion.append([
                                                 nuevo_precio,
                                                 costo_neto,
                                                 round(food_cost, 2),
                                                 margen
                                             ])
-
                                     if filas_actualizacion:
-                                        # Escribir todas las filas en una sola operación
                                         ws_menu_precios.update(
                                             range_name=f"G2:J{len(filas_actualizacion)+1}",
                                             values=filas_actualizacion,
@@ -815,6 +916,12 @@ def show_menu_maker():
                 menu_a = st.selectbox("Menú A:", menús_disponibles, key="menu_comp_a")
             with col_comp2:
                 menu_b = st.selectbox("Menú B:", [m for m in menús_disponibles if m != menu_a], key="menu_comp_b")
+
+            # Mostrar cuál es activo
+            if menu_a == menu_activo:
+                st.caption(f"✅ {menu_a} es el menú activo")
+            elif menu_b == menu_activo:
+                st.caption(f"✅ {menu_b} es el menú activo")
 
             df_a = df_menus[df_menus["Menu_Nombre"] == menu_a].copy()
             df_b = df_menus[df_menus["Menu_Nombre"] == menu_b].copy()
