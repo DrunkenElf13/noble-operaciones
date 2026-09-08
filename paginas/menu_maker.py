@@ -854,6 +854,7 @@ def show_menu_maker():
                         st.metric("Food Cost promedio (vista previa)", f"{editado['Food_Cost'].mean():.1f}%")
                         st.metric("Margen bruto total (vista previa)", f"${editado['Margen'].sum():,.2f}")
 
+                    # Guardar precios editados (reescribir toda la hoja en una sola operación)
                     if st.button("💾 Guardar precios editados", key="btn_guardar_precios_menu"):
                         ws_menu_precios, err_precios = _asegurar_hoja_menus()
                         if err_precios:
@@ -864,36 +865,44 @@ def show_menu_maker():
                                 if len(todos_precios) <= 1:
                                     st.error("No hay productos para actualizar.")
                                 else:
+                                    headers = todos_precios[0]
+                                    df_menu_completo = pd.DataFrame(todos_precios[1:], columns=headers)
+
+                                    # Convertir columnas numéricas
+                                    for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
+                                        if col in df_menu_completo.columns:
+                                            df_menu_completo[col] = pd.to_numeric(df_menu_completo[col], errors="coerce").fillna(0.0)
+
                                     nuevos_precios = {
                                         str(row["Menu_ID"]): float(row["Precio_Venta"])
                                         for _, row in editado.iterrows()
                                     }
-                                    filas_actualizacion = []
-                                    for i, fila in enumerate(todos_precios[1:], start=2):
-                                        menu_id = fila[0]
+
+                                    # Actualizar solo las filas correspondientes
+                                    for idx, row in df_menu_completo.iterrows():
+                                        menu_id = str(row.get("Menu_ID", ""))
                                         if menu_id in nuevos_precios:
                                             nuevo_precio = nuevos_precios[menu_id]
-                                            costo_neto = limpiar_valor(fila[7]) if len(fila) > 7 else 0.0
+                                            costo_neto = limpiar_valor(row.get("Costo_Neto", 0))
                                             food_cost = (costo_neto / nuevo_precio * 100) if nuevo_precio > 0 else 0.0
                                             margen = nuevo_precio - costo_neto
-                                            filas_actualizacion.append([
-                                                nuevo_precio,
-                                                costo_neto,
-                                                round(food_cost, 2),
-                                                margen
-                                            ])
-                                    if filas_actualizacion:
-                                        ws_menu_precios.update(
-                                            range_name=f"G2:J{len(filas_actualizacion)+1}",
-                                            values=filas_actualizacion,
-                                            value_input_option="USER_ENTERED"
-                                        )
-                                        cargar_menus.clear()
-                                        st.success("✅ Precios actualizados correctamente.")
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                    else:
-                                        st.info("No hay cambios para guardar.")
+
+                                            df_menu_completo.at[idx, "Precio_Venta"] = nuevo_precio
+                                            df_menu_completo.at[idx, "Food_Cost_Pct"] = round(food_cost, 2)
+                                            df_menu_completo.at[idx, "Margen_Bruto"] = round(margen, 2)
+
+                                    # Reescribir toda la hoja en una sola operación
+                                    ws_menu_precios.clear()
+                                    ws_menu_precios.append_row(headers)
+                                    ws_menu_precios.append_rows(
+                                        df_menu_completo[headers].values.tolist(),
+                                        value_input_option="USER_ENTERED"
+                                    )
+
+                                    cargar_menus.clear()
+                                    st.success("✅ Precios actualizados correctamente.")
+                                    time.sleep(0.5)
+                                    st.rerun()
                             except Exception as e:
                                 st.error(f"Error al guardar precios: {e}")
 
