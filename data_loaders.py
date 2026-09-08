@@ -392,7 +392,7 @@ def cargar_todas_ventas():
 def cargar_costos_actuales_recetas():
     """
     Devuelve un DataFrame con el costo actual de cada receta,
-    calculado sumando el último costo de cada ingrediente.
+    incluyendo costo por porción.
     """
     df_rec = cargar_recetas()
     df_costos = cargar_costos_insumos()
@@ -408,7 +408,7 @@ def cargar_costos_actuales_recetas():
             .drop_duplicates(subset=["Nombre_Insumo"], keep="last")
         )
 
-    # Mapear insumo -> costo unitario preferido (Costo_Base_Unitario si >0, si no Costo_Unitario)
+    # Mapear insumo -> costo unitario preferido
     costo_map = {}
     if not ultimo_costo.empty:
         for _, row in ultimo_costo.iterrows():
@@ -419,7 +419,6 @@ def cargar_costos_actuales_recetas():
             else:
                 costo_map[insumo] = limpiar_valor(row.get("Costo_Unitario", 0))
 
-    # Calcular costo por receta sumando ingredientes
     filas_recetas = []
     for receta, grupo in df_rec.groupby("Receta"):
         costo_total = 0.0
@@ -427,7 +426,6 @@ def cargar_costos_actuales_recetas():
             ing = row.get("Ingrediente", "")
             cantidad = limpiar_valor(row.get("Cantidad", 0))
             costo_unit = costo_map.get(ing, 0.0)
-            # Si no se encontró en el mapa, buscar en df_costos
             if costo_unit == 0.0 and not df_costos.empty:
                 mask = df_costos["Nombre_Insumo"] == ing
                 if mask.any():
@@ -436,15 +434,21 @@ def cargar_costos_actuales_recetas():
             costo_total += cantidad * costo_unit
 
         precio_venta = limpiar_valor(grupo.iloc[0].get("Precio_Venta", 0))
-        food_cost = (costo_total / precio_venta * 100) if precio_venta > 0 else 0.0
+        rinde = limpiar_valor(grupo.iloc[0].get("Rinde", 1))
+        if rinde <= 0:
+            rinde = 1
+        costo_porcion_actual = round(costo_total / rinde, 4)
+        food_cost = (costo_porcion_actual / precio_venta * 100) if precio_venta > 0 else 0.0
+
         filas_recetas.append({
             "Receta": receta,
             "Linea": str(grupo.iloc[0].get("Linea", "")),
             "Presentacion": str(grupo.iloc[0].get("Presentacion", "")),
             "Precio_Venta": precio_venta,
             "Costo_Actual": round(costo_total, 4),
+            "Costo_Porcion_Actual": costo_porcion_actual,
             "Food_Cost_Actual": round(food_cost, 2),
-            "Margen_Actual": round(precio_venta - costo_total, 2),
-            "Factor_Actual": round(precio_venta / costo_total, 2) if costo_total > 0 else 0.0,
+            "Margen_Actual": round(precio_venta - costo_porcion_actual, 2),
+            "Factor_Actual": round(precio_venta / costo_porcion_actual, 2) if costo_porcion_actual > 0 else 0.0,
         })
     return pd.DataFrame(filas_recetas)
