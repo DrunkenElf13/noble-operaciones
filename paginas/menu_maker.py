@@ -115,7 +115,7 @@ def show_menu_maker():
         for combo, grupo in df_combos.groupby("Combo"):
             costo_por_combo[combo] = grupo["Costo_Total_Componente"].apply(limpiar_valor).sum()
 
-    # Función para obtener costo dinámico (definida una sola vez aquí)
+    # Función para obtener costo dinámico
     def obtener_costo_dinamico(row):
         tipo = str(row.get("Tipo_Producto", ""))
         nombre = str(row.get("Producto", ""))
@@ -188,11 +188,9 @@ def show_menu_maker():
                             st.error("No hay productos en el menú.")
                         else:
                             df_menu_old = pd.DataFrame(todos_menu[1:], columns=todos_menu[0])
-                            # Asegurar columnas numéricas
                             for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
                                 if col in df_menu_old.columns:
                                     df_menu_old[col] = pd.to_numeric(df_menu_old[col], errors="coerce").fillna(0.0)
-                            # Recalcular costo y KPIs
                             for idx, row in df_menu_old.iterrows():
                                 tipo = str(row.get("Tipo_Producto", ""))
                                 nombre = str(row.get("Producto", ""))
@@ -201,7 +199,7 @@ def show_menu_maker():
                                 elif tipo == "Combo":
                                     nuevo_costo = costo_por_combo.get(nombre, limpiar_valor(row.get("Costo_Neto", 0)))
                                 else:
-                                    continue  # Reventa no se toca
+                                    continue
                                 precio = limpiar_valor(row.get("Precio_Venta", 0))
                                 df_menu_old.at[idx, "Costo_Neto"] = nuevo_costo
                                 df_menu_old.at[idx, "Food_Cost_Pct"] = round((nuevo_costo / precio * 100), 2) if precio > 0 else 0.0
@@ -350,7 +348,6 @@ def show_menu_maker():
                             append_rows_con_retry(ws_menu, [nueva_fila])
                             guardados += 1
 
-                        # Si es un menú nuevo, agregarlo a Menus_Config con Activo FALSE
                         if menu_destino_carga == "Nuevo menú":
                             ws_cfg, _ = _asegurar_hoja_menus_config()
                             if ws_cfg:
@@ -412,7 +409,6 @@ def show_menu_maker():
                     existe_menu = True
                     menu_previo = df_menus[mask].iloc[0]
 
-            # Selector de menú destino
             menu_destino = st.selectbox("Menú:", menús_existentes + ["Nuevo menú"], key="menu_destino_individual")
             if menu_destino == "Nuevo menú":
                 nuevo_menu_nombre_ind = st.text_input("Nombre del nuevo menú:", value="", key="nuevo_menu_nombre_individual")
@@ -572,7 +568,6 @@ def show_menu_maker():
 
             producto_nombre_reventa = st.text_input("Nombre del producto:", value=nombre_sugerido, key="rev_nombre")
 
-            # Menú destino
             menu_destino_rev = st.selectbox("Menú:", menús_existentes + ["Nuevo menú"], key="menu_destino_reventa")
             if menu_destino_rev == "Nuevo menú":
                 nuevo_menu_rev = st.text_input("Nombre del nuevo menú:", value="", key="nuevo_menu_rev")
@@ -740,7 +735,6 @@ def show_menu_maker():
             menu_sel_ver = st.selectbox("Seleccionar menú:", menús_disponibles, key="menu_sel_ver")
             df_menu_filtrado = df_menus[df_menus["Menu_Nombre"] == menu_sel_ver].copy()
 
-            # Mostrar indicador de menú activo
             if menu_sel_ver == menu_activo:
                 st.success("✅ Este es el menú activo")
             else:
@@ -917,7 +911,6 @@ def show_menu_maker():
             with col_comp2:
                 menu_b = st.selectbox("Menú B:", [m for m in menús_disponibles if m != menu_a], key="menu_comp_b")
 
-            # Mostrar cuál es activo
             if menu_a == menu_activo:
                 st.caption(f"✅ {menu_a} es el menú activo")
             elif menu_b == menu_activo:
