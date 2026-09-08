@@ -752,20 +752,45 @@ def show_menu_maker():
                         else:
                             try:
                                 todos_precios = ws_menu_precios.get_all_values()
-                                for _, row in editado.iterrows():
-                                    menu_id = row["Menu_ID"]
-                                    nuevo_precio = row["Precio_Venta"]
+                                if len(todos_precios) <= 1:
+                                    st.error("No hay productos para actualizar.")
+                                else:
+                                    # Crear un diccionario de precios nuevos por Menu_ID
+                                    nuevos_precios = {
+                                        str(row["Menu_ID"]): float(row["Precio_Venta"])
+                                        for _, row in editado.iterrows()
+                                    }
+
+                                    # Construir una sola lista de filas para actualizar
+                                    filas_actualizacion = []
                                     for i, fila in enumerate(todos_precios[1:], start=2):
-                                        if fila[0] == menu_id:
-                                            costo_neto = limpiar_valor(row["Costo_Neto"])
+                                        menu_id = fila[0]
+                                        if menu_id in nuevos_precios:
+                                            nuevo_precio = nuevos_precios[menu_id]
+                                            costo_neto = limpiar_valor(fila[7]) if len(fila) > 7 else 0.0
                                             food_cost = (costo_neto / nuevo_precio * 100) if nuevo_precio > 0 else 0.0
                                             margen = nuevo_precio - costo_neto
-                                            ws_menu_precios.update(range_name=f"G{i}:J{i}", values=[[nuevo_precio, costo_neto, round(food_cost,2), margen]])
-                                            break
-                                cargar_menus.clear()
-                                st.success("✅ Precios actualizados correctamente.")
-                                time.sleep(0.5)
-                                st.rerun()
+                                            # Columnas G (Precio_Venta), H (Costo_Neto), I (Food_Cost_Pct), J (Margen_Bruto)
+                                            filas_actualizacion.append([
+                                                nuevo_precio,
+                                                costo_neto,
+                                                round(food_cost, 2),
+                                                margen
+                                            ])
+
+                                    if filas_actualizacion:
+                                        # Escribir todas las filas en una sola operación
+                                        ws_menu_precios.update(
+                                            range_name=f"G2:J{len(filas_actualizacion)+1}",
+                                            values=filas_actualizacion,
+                                            value_input_option="USER_ENTERED"
+                                        )
+                                        cargar_menus.clear()
+                                        st.success("✅ Precios actualizados correctamente.")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    else:
+                                        st.info("No hay cambios para guardar.")
                             except Exception as e:
                                 st.error(f"Error al guardar precios: {e}")
 
