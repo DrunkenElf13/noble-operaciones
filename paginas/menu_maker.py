@@ -216,7 +216,7 @@ def show_menu_maker():
 
         st.divider()
 
-        # ⚡ CARGA VISUAL MEJORADA
+        # ⚡ CARGA VISUAL MEJORADA (con mapeo seguro)
         with st.expander("⚡ Cargar productos al menú (selección visual)", expanded=False):
             st.markdown("Selecciona recetas/combos para agregarlos al menú. Podrás editar categoría y KPIs antes de guardar.")
             menu_destino_carga = st.selectbox("Menú destino:", menús_existentes + ["Nuevo menú"], key="menu_destino_carga")
@@ -226,12 +226,17 @@ def show_menu_maker():
                 nuevo_menu_nombre = ""
 
             opciones_carga = []
+            info_opciones = {}
             if not df_rec.empty:
                 for _, r in df_rec.drop_duplicates(subset=["Receta"]).iterrows():
-                    opciones_carga.append(f"🍽️ {r['Receta']} (Receta)")
+                    label = f"🍽️ {r['Receta']} (Receta)"
+                    opciones_carga.append(label)
+                    info_opciones[label] = {"nombre_real": str(r["Receta"]), "tipo": "Receta"}
             if not df_combos.empty:
                 for _, c in df_combos.drop_duplicates(subset=["Combo"]).iterrows():
-                    opciones_carga.append(f"🍱 {c['Combo']} (Combo)")
+                    label = f"🍱 {c['Combo']} (Combo)"
+                    opciones_carga.append(label)
+                    info_opciones[label] = {"nombre_real": str(c["Combo"]), "tipo": "Combo"}
             opciones_carga = sorted(opciones_carga)
 
             seleccion = st.multiselect("Productos a agregar:", opciones_carga, key="menu_carga_multiselect")
@@ -239,8 +244,11 @@ def show_menu_maker():
             if seleccion:
                 productos_seleccionados = []
                 for s in seleccion:
-                    tipo = "Receta" if "(Receta)" in s else "Combo"
-                    nombre_real = s.split(" (")[0].replace("🍽️ ", "").replace("🍱 ", "")
+                    info = info_opciones.get(s)
+                    if not info:
+                        continue
+                    tipo = info["tipo"]
+                    nombre_real = info["nombre_real"]
                     if tipo == "Receta":
                         categoria = str(df_rec[df_rec["Receta"] == nombre_real].iloc[0].get("Linea", ""))
                         costo_neto = costo_por_receta.get(nombre_real, 0.0)
