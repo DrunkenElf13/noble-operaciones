@@ -67,6 +67,7 @@ COLS_MENUS_HISTORIAL = [
     "ID", "Nombre_Menu", "Producto", "Precio_Anterior", "Precio_Nuevo",
     "Fecha_Cambio", "Responsable"
 ]
+COLS_MENUS_CONFIG = ["Menu_Nombre", "Activo"]
 COLS_CALENDARIO = [
     "ID", "Fecha", "Tipo", "Título", "Cliente", "Contacto",
     "Ubicacion", "Descripcion", "Total_Cotizado", "Adeudo",
