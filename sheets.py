@@ -138,7 +138,6 @@ def _asegurar_hoja_menus():
 
     try:
         actuales = ws.row_values(1)
-        # SOLO si los encabezados no coinciden exactamente, eliminar y recrear vacía
         if actuales != encabezados_correctos:
             sh.del_worksheet(ws)
             ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(encabezados_correctos)))
@@ -318,4 +317,47 @@ def _eliminar_borrador_inventario(usuario, u_sel):
             ws.delete_rows(i)
     except Exception:
         pass
-# Fin del archivo sheets.py
+def sincronizar_precio_menu_activo(tipo, nombre_producto, nuevo_precio):
+    """Actualiza el precio en la hoja Menus para el menú activo."""
+    ws_cfg, err_cfg = _asegurar_hoja_menus_config()
+    if err_cfg:
+        return False, err_cfg
+    try:
+        datos_cfg = ws_cfg.get_all_values()
+        menu_activo = None
+        for fila in datos_cfg[1:]:
+            if len(fila) >= 2 and fila[1].strip().upper() == "TRUE":
+                menu_activo = fila[0].strip()
+                break
+        if not menu_activo:
+            return False, "No hay menú activo configurado."
+    except Exception as e:
+        return False, str(e)
+
+    ws_menu, err_menu = _asegurar_hoja_menus()
+    if err_menu:
+        return False, err_menu
+
+    try:
+        todos_menu = ws_menu.get_all_values()
+        if len(todos_menu) <= 1:
+            return False, "No hay productos en Menus."
+        headers = todos_menu[0]
+        df = pd.DataFrame(todos_menu[1:], columns=headers)
+
+        mask = (df["Menu_Nombre"] == menu_activo) & (df["Producto"] == nombre_producto) & (df["Tipo_Producto"] == tipo)
+        if not mask.any():
+            return False, f"No se encontró '{nombre_producto}' en menú activo."
+
+        for idx in df[mask].index:
+            costo_neto = limpiar_valor(df.at[idx, "Costo_Neto"])
+            df.at[idx, "Precio_Venta"] = nuevo_precio
+            df.at[idx, "Food_Cost_Pct"] = round((costo_neto / nuevo_precio * 100), 2) if nuevo_precio > 0 else 0.0
+            df.at[idx, "Margen_Bruto"] = round(nuevo_precio - costo_neto, 2)
+
+        ws_menu.clear()
+        ws_menu.append_row(headers)
+        ws_menu.append_rows(df[headers].values.tolist(), value_input_option="USER_ENTERED")
+        return True, "Menú activo actualizado."
+    except Exception as e:
+        return False, str(e)
