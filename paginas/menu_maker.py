@@ -8,10 +8,11 @@ from data_loaders import (
 )
 from sheets import (
     _asegurar_hoja_menus, _asegurar_hoja_historial_menus,
-    _asegurar_hoja_menus_config, append_rows_con_retry, safe_worksheet, sh
+    _asegurar_hoja_menus_config, append_rows_con_retry, safe_worksheet, sh,
+    _asegurar_hoja_recetas, _asegurar_hoja_combos
 )
 from utils import limpiar_valor, ts_hermosillo, normalizar_nombre
-from config import COLS_MENUS, COLS_MENUS_HISTORIAL, COLS_MENUS_CONFIG
+from config import COLS_MENUS, COLS_MENUS_HISTORIAL, COLS_MENUS_CONFIG, COLS_RECETAS, COLS_COMBOS
 from components.avisos import mostrar_avisos
 from auth import tiene_permiso
 
@@ -854,7 +855,7 @@ def show_menu_maker():
                         st.metric("Food Cost promedio (vista previa)", f"{editado['Food_Cost'].mean():.1f}%")
                         st.metric("Margen bruto total (vista previa)", f"${editado['Margen'].sum():,.2f}")
 
-                    # Guardar precios editados (reescribir toda la hoja en una sola operación)
+                    # Guardar precios editados y sincronizar recetas/combos base
                     if st.button("💾 Guardar precios editados", key="btn_guardar_precios_menu"):
                         ws_menu_precios, err_precios = _asegurar_hoja_menus()
                         if err_precios:
@@ -868,7 +869,6 @@ def show_menu_maker():
                                     headers = todos_precios[0]
                                     df_menu_completo = pd.DataFrame(todos_precios[1:], columns=headers)
 
-                                    # Convertir columnas numéricas
                                     for col in ["Precio_Venta", "Costo_Neto", "Food_Cost_Pct", "Margen_Bruto"]:
                                         if col in df_menu_completo.columns:
                                             df_menu_completo[col] = pd.to_numeric(df_menu_completo[col], errors="coerce").fillna(0.0)
@@ -878,7 +878,6 @@ def show_menu_maker():
                                         for _, row in editado.iterrows()
                                     }
 
-                                    # Actualizar solo las filas correspondientes
                                     for idx, row in df_menu_completo.iterrows():
                                         menu_id = str(row.get("Menu_ID", ""))
                                         if menu_id in nuevos_precios:
@@ -891,15 +890,58 @@ def show_menu_maker():
                                             df_menu_completo.at[idx, "Food_Cost_Pct"] = round(food_cost, 2)
                                             df_menu_completo.at[idx, "Margen_Bruto"] = round(margen, 2)
 
-                                    # Reescribir toda la hoja en una sola operación
+                                    # Reescribir toda la hoja Menus
                                     ws_menu_precios.clear()
                                     ws_menu_precios.append_row(headers)
                                     ws_menu_precios.append_rows(
                                         df_menu_completo[headers].values.tolist(),
                                         value_input_option="USER_ENTERED"
                                     )
-
                                     cargar_menus.clear()
+
+                                    # Sincronizar a recetas/combos base (solo menú activo)
+                                    for _, row in editado.iterrows():
+                                        tipo = "Receta" if row["Tipo_Producto"] == "Receta" else "Combo"
+                                        nombre_producto = row["Nombre_Menu"]
+                                        nuevo_precio = row["Precio_Venta"]
+                                        try:
+                                            if tipo == "Receta":
+                                                ws_rec_sync, err_rec_sync = _asegurar_hoja_recetas()
+                                                if not err_rec_sync:
+                                                    datos_rec = ws_rec_sync.get_all_values()
+                                                    if len(datos_rec) > 1:
+                                                        headers_rec = datos_rec[0]
+                                                        df_rec = pd.DataFrame(datos_rec[1:], columns=headers_rec)
+                                                        mask_rec = df_rec["Receta"] == nombre_producto
+                                                        if mask_rec.any():
+                                                            df_rec.loc[mask_rec, "Precio_Venta"] = nuevo_precio
+                                                            for idx in df_rec[mask_rec].index:
+                                                                costo_ing = limpiar_valor(df_rec.at[idx, "Costo_Ingrediente"])
+                                                                df_rec.at[idx, "Food_Cost_Pct"] = round((costo_ing / nuevo_precio * 100), 2) if nuevo_precio > 0 else 0.0
+                                                            ws_rec_sync.clear()
+                                                            ws_rec_sync.append_row(COLS_RECETAS)
+                                                            ws_rec_sync.append_rows(df_rec[COLS_RECETAS].values.tolist(), value_input_option="USER_ENTERED")
+                                                            cargar_recetas.clear()
+                                            elif tipo == "Combo":
+                                                ws_combo_sync, err_combo_sync = _asegurar_hoja_combos()
+                                                if not err_combo_sync:
+                                                    datos_combo = ws_combo_sync.get_all_values()
+                                                    if len(datos_combo) > 1:
+                                                        headers_combo = datos_combo[0]
+                                                        df_combo = pd.DataFrame(datos_combo[1:], columns=headers_combo)
+                                                        mask_combo = df_combo["Combo"] == nombre_producto
+                                                        if mask_combo.any():
+                                                            df_combo.loc[mask_combo, "Precio_Venta"] = nuevo_precio
+                                                            for idx in df_combo[mask_combo].index:
+                                                                costo_total = limpiar_valor(df_combo.at[idx, "Costo_Total_Componente"])
+                                                                df_combo.at[idx, "Food_Cost_Pct"] = round((costo_total / nuevo_precio * 100), 2) if nuevo_precio > 0 else 0.0
+                                                            ws_combo_sync.clear()
+                                                            ws_combo_sync.append_row(COLS_COMBOS)
+                                                            ws_combo_sync.append_rows(df_combo[COLS_COMBOS].values.tolist(), value_input_option="USER_ENTERED")
+                                                            cargar_combos.clear()
+                                        except Exception as e:
+                                            st.warning(f"No se pudo sincronizar '{nombre_producto}': {e}")
+
                                     st.success("✅ Precios actualizados correctamente.")
                                     time.sleep(0.5)
                                     st.rerun()
