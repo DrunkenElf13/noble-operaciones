@@ -855,7 +855,6 @@ def show_menu_maker():
                         st.metric("Food Cost promedio (vista previa)", f"{editado['Food_Cost'].mean():.1f}%")
                         st.metric("Margen bruto total (vista previa)", f"${editado['Margen'].sum():,.2f}")
 
-                # Guardar precios editados y sincronizar recetas/combos base
                     if st.button("💾 Guardar precios editados", key="btn_guardar_precios_menu"):
                         ws_menu_precios, err_precios = _asegurar_hoja_menus()
                         if err_precios:
@@ -890,7 +889,6 @@ def show_menu_maker():
                                             df_menu_completo.at[idx, "Food_Cost_Pct"] = round(food_cost, 2)
                                             df_menu_completo.at[idx, "Margen_Bruto"] = round(margen, 2)
 
-                                    # Reescribir toda la hoja Menus
                                     ws_menu_precios.clear()
                                     ws_menu_precios.append_row(headers)
                                     ws_menu_precios.append_rows(
@@ -912,7 +910,6 @@ def show_menu_maker():
                                         if len(datos_rec) > 1:
                                             headers_rec = datos_rec[0]
                                             df_rec = pd.DataFrame(datos_rec[1:], columns=headers_rec)
-                                            # Convertir numéricas
                                             for col in ["Precio_Venta", "Costo_Ingrediente", "Food_Cost_Pct"]:
                                                 if col in df_rec.columns:
                                                     df_rec[col] = pd.to_numeric(df_rec[col], errors="coerce").fillna(0.0)
@@ -992,6 +989,8 @@ def show_menu_maker():
                                     st.success("✅ Precios actualizados correctamente.")
                                     time.sleep(0.5)
                                     st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al guardar precios: {e}")
 
                 with st.expander("Ver productos inactivos de este menú", expanded=False):
                     df_inactivos = df_menu_filtrado[df_menu_filtrado["Activo"].astype(str).str.upper() != "TRUE"]
