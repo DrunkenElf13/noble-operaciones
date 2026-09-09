@@ -899,11 +899,16 @@ def show_menu_maker():
                                     )
                                     cargar_menus.clear()
 
+                                    # Crear diccionarios de tipo y nombre a partir de df_activos
+                                    tipo_por_menu_id = dict(zip(df_activos["Menu_ID"], df_activos["Tipo_Producto"]))
+                                    nombre_por_menu_id = dict(zip(df_activos["Menu_ID"], df_activos["Nombre_Menu"]))
+
                                     # Sincronizar a recetas/combos base (solo menú activo)
                                     for _, row in editado.iterrows():
-                                        tipo = "Receta" if row["Tipo_Producto"] == "Receta" else "Combo"
-                                        nombre_producto = row["Nombre_Menu"]
-                                        nuevo_precio = row["Precio_Venta"]
+                                        menu_id = str(row["Menu_ID"])
+                                        tipo = str(tipo_por_menu_id.get(menu_id, ""))
+                                        nombre_producto = str(nombre_por_menu_id.get(menu_id, row["Nombre_Menu"]))
+                                        nuevo_precio = float(row["Precio_Venta"])
                                         try:
                                             if tipo == "Receta":
                                                 ws_rec_sync, err_rec_sync = _asegurar_hoja_recetas()
