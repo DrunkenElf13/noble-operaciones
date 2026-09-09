@@ -899,51 +899,67 @@ def show_menu_maker():
                                     )
                                     cargar_menus.clear()
 
-                                    # Crear diccionarios de tipo y nombre a partir de df_activos
-                                    tipo_por_menu_id = dict(zip(df_activos["Menu_ID"], df_activos["Tipo_Producto"]))
-                                    nombre_por_menu_id = dict(zip(df_activos["Menu_ID"], df_activos["Nombre_Menu"]))
+                                    # Crear diccionarios a partir de df_menu_completo (más confiable)
+                                    tipo_por_menu_id = dict(zip(df_menu_completo["Menu_ID"].astype(str), df_menu_completo["Tipo_Producto"].astype(str)))
+                                    nombre_por_menu_id = dict(zip(df_menu_completo["Menu_ID"].astype(str), df_menu_completo["Nombre_Menu"].astype(str)))
 
                                     # Sincronizar a recetas/combos base (solo menú activo)
                                     for _, row in editado.iterrows():
                                         menu_id = str(row["Menu_ID"])
-                                        tipo = str(tipo_por_menu_id.get(menu_id, ""))
-                                        nombre_producto = str(nombre_por_menu_id.get(menu_id, row["Nombre_Menu"]))
+                                        tipo = tipo_por_menu_id.get(menu_id, "")
+                                        nombre_producto = nombre_por_menu_id.get(menu_id, row["Nombre_Menu"])
                                         nuevo_precio = float(row["Precio_Venta"])
+
+                                        if not tipo:
+                                            st.warning(f"No se encontró tipo para '{nombre_producto}'")
+                                            continue
+
                                         try:
                                             if tipo == "Receta":
                                                 ws_rec_sync, err_rec_sync = _asegurar_hoja_recetas()
-                                                if not err_rec_sync:
-                                                    datos_rec = ws_rec_sync.get_all_values()
-                                                    if len(datos_rec) > 1:
-                                                        headers_rec = datos_rec[0]
-                                                        df_rec = pd.DataFrame(datos_rec[1:], columns=headers_rec)
-                                                        mask_rec = df_rec["Receta"] == nombre_producto
-                                                        if mask_rec.any():
-                                                            df_rec.loc[mask_rec, "Precio_Venta"] = nuevo_precio
-                                                            for idx in df_rec[mask_rec].index:
-                                                                costo_ing = limpiar_valor(df_rec.at[idx, "Costo_Ingrediente"])
-                                                                df_rec.at[idx, "Food_Cost_Pct"] = round((costo_ing / nuevo_precio * 100), 2) if nuevo_precio > 0 else 0.0
-                                                            ws_rec_sync.clear()
-                                                            ws_rec_sync.append_row(COLS_RECETAS)
-                                                            ws_rec_sync.append_rows(df_rec[COLS_RECETAS].values.tolist(), value_input_option="USER_ENTERED")
-                                                            cargar_recetas.clear()
+                                                if err_rec_sync:
+                                                    st.warning(f"No se pudo acceder a Recetas: {err_rec_sync}")
+                                                    continue
+                                                datos_rec = ws_rec_sync.get_all_values()
+                                                if len(datos_rec) > 1:
+                                                    headers_rec = datos_rec[0]
+                                                    df_rec = pd.DataFrame(datos_rec[1:], columns=headers_rec)
+                                                    mask_rec = df_rec["Receta"] == nombre_producto
+                                                    if mask_rec.any():
+                                                        df_rec.loc[mask_rec, "Precio_Venta"] = nuevo_precio
+                                                        for idx in df_rec[mask_rec].index:
+                                                            costo_ing = limpiar_valor(df_rec.at[idx, "Costo_Ingrediente"])
+                                                            df_rec.at[idx, "Food_Cost_Pct"] = round((costo_ing / nuevo_precio * 100), 2) if nuevo_precio > 0 else 0.0
+                                                        ws_rec_sync.clear()
+                                                        ws_rec_sync.append_row(COLS_RECETAS)
+                                                        ws_rec_sync.append_rows(df_rec[COLS_RECETAS].values.tolist(), value_input_option="USER_ENTERED")
+                                                        cargar_recetas.clear()
+                                                else:
+                                                    st.warning(f"No hay datos en Recetas para sincronizar '{nombre_producto}'")
                                             elif tipo == "Combo":
                                                 ws_combo_sync, err_combo_sync = _asegurar_hoja_combos()
-                                                if not err_combo_sync:
-                                                    datos_combo = ws_combo_sync.get_all_values()
-                                                    if len(datos_combo) > 1:
-                                                        headers_combo = datos_combo[0]
-                                                        df_combo = pd.DataFrame(datos_combo[1:], columns=headers_combo)
-                                                        mask_combo = df_combo["Combo"] == nombre_producto
-                                                        if mask_combo.any():
-                                                            df_combo.loc[mask_combo, "Precio_Venta"] = nuevo_precio
-                                                            for idx in df_combo[mask_combo].index:
-                                                                costo_total = limpiar_valor(df_combo.at[idx, "Costo_Total_Componente"])
-                                                                df_combo.at[idx, "Food_Cost_Pct"] = round((costo_total / nuevo_precio * 100), 2) if nuevo_precio > 0 else 0.0
-                                                            ws_combo_sync.clear()
-                                                            ws_combo_sync.append_row(COLS_COMBOS)
-                                                            ws_combo_sync.append_rows(df_combo[COLS_COMBOS].values.tolist(), value_input_option="USER_ENTERED")
-                                                            cargar_combos.clear()
+                                                if err_combo_sync:
+                                                    st.warning(f"No se pudo acceder a Combos: {err_combo_sync}")
+                                                    continue
+                                                datos_combo = ws_combo_sync.get_all_values()
+                                                if len(datos_combo) > 1:
+                                                    headers_combo = datos_combo[0]
+                                                    df_combo = pd.DataFrame(datos_combo[1:], columns=headers_combo)
+                                                    mask_combo = df_combo["Combo"] == nombre_producto
+                                                    if mask_combo.any():
+                                                        df_combo.loc[mask_combo, "Precio_Venta"] = nuevo_precio
+                                                        for idx in df_combo[mask_combo].index:
+                                                            costo_total = limpiar_valor(df_combo.at[idx, "Costo_Total_Componente"])
+                                                            df_combo.at[idx, "Food_Cost_Pct"] = round((costo_total / nuevo_precio * 100), 2) if nuevo_precio > 0 else 0.0
+                                                        ws_combo_sync.clear()
+                                                        ws_combo_sync.append_row(COLS_COMBOS)
+                                                        ws_combo_sync.append_rows(df_combo[COLS_COMBOS].values.tolist(), value_input_option="USER_ENTERED")
+                                                        cargar_combos.clear()
+                                                else:
+                                                    st.warning(f"No hay datos en Combos para sincronizar '{nombre_producto}'")
+                                            else:
+                                                # Reventa u otro, no se sincroniza
+                                                pass
                                         except Exception as e:
                                             st.warning(f"No se pudo sincronizar '{nombre_producto}': {e}")
 
