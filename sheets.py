@@ -2,11 +2,12 @@ import streamlit as st
 import gspread
 import time
 import json
+import pandas as pd
 from google.oauth2.service_account import Credentials
 from config import (
     SPREADSHEET_ID, COLS_VENTAS, COLS_GASTOS, COLS_PRESUPUESTO,
     COLS_COSTOS_INSUMOS, COLS_RECETAS, COLS_COMBOS, COLS_MERMA, COLS_CALENDARIO,
-    COLS_MENUS, COLS_MENUS_HISTORIAL, COLS_MENUS_CONFIG
+    COLS_MENUS, COLS_MENUS_HISTORIAL, COLS_MENUS_CONFIG, COLS_RECETAS_INSTRUCCIONES
 )
 from utils import ts_hermosillo
 
@@ -114,6 +115,23 @@ def _asegurar_hoja_recetas():
     except Exception as e:
         return None, f"Error accediendo a Recetas: {e}"
 
+def _asegurar_hoja_recetas_instrucciones():
+    ws, err = safe_worksheet(sh, "Recetas_Instrucciones")
+    if err:
+        try:
+            ws = sh.add_worksheet(title="Recetas_Instrucciones", rows="2000", cols="2")
+            ws.append_row(COLS_RECETAS_INSTRUCCIONES)
+            return ws, None
+        except Exception as e:
+            return None, f"No se pudo crear hoja Recetas_Instrucciones: {e}"
+    try:
+        actuales = ws.row_values(1)
+        if actuales != COLS_RECETAS_INSTRUCCIONES:
+            ws.update(range_name="A1:B1", values=[COLS_RECETAS_INSTRUCCIONES])
+    except Exception:
+        pass
+    return ws, None
+
 def _asegurar_hoja_combos():
     ws, err = safe_worksheet(sh, "Combos")
     if err:
@@ -126,26 +144,25 @@ def _asegurar_hoja_combos():
     return ws, None
 def _asegurar_hoja_menus():
     ws, err = safe_worksheet(sh, "Menus")
-    encabezados_correctos = COLS_MENUS + ["Notas", "Incluir_KPI"]
-
     if err:
         try:
-            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(encabezados_correctos)))
-            ws.append_row(encabezados_correctos)
+            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(COLS_MENUS)+2))
+            encabezados = COLS_MENUS + ["Notas", "Incluir_KPI"]
+            ws.append_row(encabezados)
             return ws, None
         except Exception as e:
             return None, f"No se pudo crear hoja Menus: {e}"
-
     try:
         actuales = ws.row_values(1)
-        if actuales != encabezados_correctos:
-            sh.del_worksheet(ws)
-            ws = sh.add_worksheet(title="Menus", rows="2000", cols=str(len(encabezados_correctos)))
+        encabezados_correctos = COLS_MENUS + ["Notas", "Incluir_KPI"]
+        if len(actuales) == 0:
             ws.append_row(encabezados_correctos)
-            return ws, None
+        else:
+            for i, nombre in enumerate(encabezados_correctos):
+                if i >= len(actuales) or str(actuales[i]).strip() != nombre:
+                    ws.update_cell(1, i+1, nombre)
     except Exception:
         pass
-
     return ws, None
 
 def _asegurar_hoja_menus_config():
