@@ -51,6 +51,7 @@ COLS_RECETAS = [
     "Linea", "Presentacion", "Fecha_Revision", "Precio_Insumo",
     "Costo_Neto_Receta", "Rinde", "Costo_Porcion", "Tipo_Componente"
 ]
+COLS_RECETAS_INSTRUCCIONES = ["Receta", "Instrucciones"]
 COLS_COMBOS = [
     "Combo", "Linea", "Presentacion", "Fecha_Revision",
     "Precio_Venta", "Componente", "Tipo_Componente",
