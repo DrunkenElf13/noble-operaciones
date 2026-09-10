@@ -239,7 +239,6 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                                                 break
                                     except Exception as e:
                                         st.error(f"Error: {e}")
-
             # Gestión de Permisos de Páginas
             st.divider()
             with st.expander("🔐 Permisos de Módulos"):
@@ -256,7 +255,9 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                         st.error(f"No se pudo crear hoja Permisos: {e}")
                 with st.form("f_perm"):
                     rol_perm = st.selectbox("Rol:", ["barista"])
-                    paginas_activas = [p for p in all_pages if p in PERMISOS.get(rol_perm, [])]
+                    # Leer permisos frescos desde la hoja
+                    permisos_actuales = cargar_permisos()
+                    paginas_activas = [p for p in all_pages if p in permisos_actuales.get(rol_perm, [])]
                     paginas_sel = st.multiselect("Páginas permitidas:", all_pages, default=paginas_activas)
                     if st.form_submit_button("💾 Guardar Permisos"):
                         if ws_perm:
@@ -275,10 +276,10 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                                 new_rows = [[rol_perm, p] for p in paginas_sel]
                                 if new_rows:
                                     ws_perm.append_rows(new_rows, value_input_option="USER_ENTERED")
-                                global PERMISOS
-                                PERMISOS = cargar_permisos()
-                                st.success("Permisos actualizados.")
-                                time.sleep(1)
+                                # Invalidar caché para que los cambios se apliquen en caliente
+                                cargar_permisos.clear()
+                                st.success("Permisos actualizados. Los cambios se aplican de inmediato.")
+                                time.sleep(0.5)
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error: {e}")
@@ -407,4 +408,5 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                                                 st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error al actualizar: {e}")
+# Fin de render_sidebar
 # Fin del archivo components/sidebar.py
