@@ -55,6 +55,7 @@ def render_sidebar(cambiar_pagina):
         if st.button("💰 Registrar Gasto", width="stretch"): cambiar_pagina("RegistrarGasto")
         if st.button("📋 Presupuesto Anual", width="stretch"): cambiar_pagina("Presupuesto")
         if st.button("🧾 Base de Costos", width="stretch"): cambiar_pagina("BaseCostos")
+        if st.button("📖 Recetario", width="stretch"): cambiar_pagina("Recetario")
         if st.button("📉 Registrar Merma", width="stretch"): cambiar_pagina("RegistrarMerma")
         if st.button("📊 Dashboard Financiero", width="stretch"): cambiar_pagina("DashboardFinanciero")
         st.divider()
@@ -187,7 +188,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                     av_pagina = st.multiselect("Mostrar en páginas:", 
                         ["Todas","Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas",
                          "ImportarVentas","RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma",
-                         "DashboardFinanciero","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes"],
+                         "DashboardFinanciero","Calendario","Impresion","ListaCompra","ReporteStock","CorteMes","Recetario"],
                         default=["Todas"])
                     if st.form_submit_button("📢 Publicar aviso", width="stretch"):
                         if not av_titulo.strip() or not av_msg.strip():
@@ -244,7 +245,7 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
             with st.expander("🔐 Permisos de Módulos"):
                 st.write("Asigna qué páginas puede ver cada rol.")
                 all_pages = ["Dashboard","Inventario","Ingresos","Consulta","Ventas","DashboardVentas","ImportarVentas",
-                             "RegistrarGasto","Presupuesto","BaseCostos","RegistrarMerma","DashboardFinanciero",
+                             "RegistrarGasto","Presupuesto","BaseCostos","Recetario","RegistrarMerma","DashboardFinanciero",
                              "Calendario","Impresion","ListaCompra","ReporteStock","CorteMes","CargaXML","MenuMaker"]
                 ws_perm, err_perm = safe_worksheet(sh, "Permisos")
                 if err_perm:
@@ -406,3 +407,4 @@ Todo lo que hace falta comprar para mejorar la operación de Noble.
                                                 st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error al actualizar: {e}")
+# Fin del archivo components/sidebar.py
