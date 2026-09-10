@@ -3,6 +3,7 @@ from sheets import safe_worksheet, sh
 from config import COLS_ACCESOS
 import pandas as pd
 
+
 @st.cache_data(ttl=60)
 def obtener_usuarios():
     if sh is None:
@@ -38,18 +39,25 @@ def obtener_usuarios():
         st.warning(f"Error cargando usuarios: {e}")
         return {}, [], pd.DataFrame()
 
+
 USUARIOS_PIN, LISTA_RESPONSABLES, DF_USUARIOS = obtener_usuarios()
 
+
+@st.cache_data(ttl=60)
 def cargar_permisos():
+    default_permisos = {
+        "admin": ["*"],
+        "barista": ["Dashboard","Inventario","Ingresos","Consulta","Impresion","ListaCompra","ReporteStock"]
+    }
     if sh is None:
-        return {"admin": ["*"], "barista": ["Dashboard","Inventario","Ingresos","Consulta","Impresion","ListaCompra","ReporteStock"]}
+        return default_permisos
     ws, err = safe_worksheet(sh, "Permisos")
     if err:
-        return {"admin": ["*"], "barista": ["Dashboard","Inventario","Ingresos","Consulta","Impresion","ListaCompra","ReporteStock"]}
+        return default_permisos
     try:
         data = ws.get_all_values()
         if len(data) < 2:
-            return {"admin": ["*"], "barista": ["Dashboard","Inventario","Ingresos","Consulta","Impresion","ListaCompra","ReporteStock"]}
+            return default_permisos
         df = pd.DataFrame(data[1:], columns=data[0])
         permisos = {}
         for _, row in df.iterrows():
@@ -61,21 +69,38 @@ def cargar_permisos():
                 permisos[rol].append(pagina)
         return permisos
     except Exception:
-        return {"admin": ["*"], "barista": ["Dashboard","Inventario","Ingresos","Consulta","Impresion","ListaCompra","ReporteStock"]}
+        return default_permisos
+
 
 PERMISOS = cargar_permisos()
 
+
 def tiene_permiso(pagina: str) -> bool:
-    if not st.session_state.auth_status:
+    """
+    Verifica si el usuario actual tiene permiso para la página indicada.
+    Lee los permisos frescos en cada llamada para reflejar cambios en caliente.
+    """
+    if not st.session_state.get("auth_status", False):
         return False
-    rol = st.session_state.user_role
+
+    rol = st.session_state.get("user_role", None)
+    if rol is None:
+        return False
+
     if rol == "admin":
         return True
-    if rol in PERMISOS:
-        if "*" in PERMISOS[rol]:
+
+    # Leer permisos frescos (caché de 60s se invalida al guardar)
+    permisos_actuales = cargar_permisos()
+
+    if rol in permisos_actuales:
+        if "*" in permisos_actuales[rol]:
             return True
-        return pagina in PERMISOS[rol]
-    return True
+        return pagina in permisos_actuales[rol]
+
+    # Si el rol no está definido, denegar por defecto (más seguro)
+    return False
+
 
 def validar_usuario(clave: str):
     """
